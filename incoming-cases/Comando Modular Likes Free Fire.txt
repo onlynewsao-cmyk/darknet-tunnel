@@ -1,0 +1,83 @@
+module.exports = {
+nome: ["like","enviarlike","darflw"],
+executar: async ({
+waguri,
+from,
+q,
+reply,
+reagir,
+moment
+}) => {
+
+if (!q) return reply(`💗 *Hmph! Achou que ia esquecer de colocar o ID?* 💗\n› *Exemplo:* /like 6514303752\nN-não me faz repetir, tá?!`);
+
+const targetId = q.trim();
+if (!/^\d+$/.test(targetId)) return reply(`🫣 *Hmph! Isso não parece um ID válido...* Tenta só números, bobinho(a)!`);
+
+reply(`🌸 *Hmph! Aguardinha só...* vou mandar todo meu carinho pra esse ID! 💌 N-não é porque eu quero, tá? Tanto faz pra mim!`);
+
+try {
+const { default: axios } = require('axios');
+const res = await axios.get('https://nyxlikesff.store/like', {
+params: { uid: targetId, token: 'SEU_AUTH' },
+timeout: 25000
+});
+
+const data = res.data;
+
+if (data.status === 'erro') {
+const c = data.cooldown;
+if (c) {
+return reply(`💔 *Hmph! Já mandei like hoje...*\n\nEsse ID já recebeu carinho hoje! 🥺\n\n⏳ *Próximo envio em:* ${c.hours}h ${c.minutes}m ${c.seconds}s\nS-seja paciente, baka!`);
+}
+return reply(`💔 *Hmph! Já mandei like hoje...*\n\nEsse ID já recebeu carinho hoje! 🥺\n_Volta amanhã que eu mando mais, tá?_ 💕 ...e nem pense que eu fiz por você, baka!`);
+}
+
+if (data.status === 'success' || data.status === 'sucesso') {
+const enviadas = Number(data.likes_added || data.likes_adicionados || 0);
+
+if (data.message === 'LIKES_LIMIT' || data.mensagem === 'LIKES_LIMIT' || enviadas === 0) {
+return reply(`💔 *Hmph! Já mandei like hoje...*\n\nEsse ID já recebeu carinho hoje! 🥺\n_Volta amanhã que eu mando mais, tá?_ 💕 ...e nem pense que eu fiz por você, baka!`);
+}
+
+const nick = data.nickname || 'Desconhecido';
+const antes = Number(data.likes_before || data.likes_antes || 0);
+const depois = Number(data.likes_end || data.likes_final || 0);
+
+const msg = `💖 *HMPH! LIKES ENVIADOS COM SUCESSO!* 💖
+━━━━━━━━━━━━━━━━
+
+🦊 *Jogador:* ${nick}
+🆔 *ID:* ${targetId}
+
+📊 *Resultado:*
+├ 💫 *Antes:* ${antes.toLocaleString('pt-BR')}
+├ ⭐ *Enviados:* +${enviadas.toLocaleString('pt-BR')}
+└ 🔥 *Depois:* ${depois.toLocaleString('pt-BR')}
+
+━━━━━━━━━━━━━━━━
+✨ *Obrigada por usar a Nyx Services!* 🦊💕
+💌 *Volte sempre, bb!*... n-não se acostume com isso, viu?!`;
+
+await waguri.sendMessage(from, { text: msg });
+reagir(from, '💖');
+
+} else {
+reply(`💔 *Hmph! Ops...* Algo deu errado, meu bem.. Eu tentei, viu?! Tenta de novo! 🥺`);
+}
+
+} catch (e) {
+const dados = e.response?.data;
+const msgErro = dados?.mensagem || dados?.message || e.message;
+if (msgErro.includes('limite') || msgErro.includes('LIKES_LIMIT')) {
+const c = dados?.cooldown;
+if (c) {
+return reply(`💔 *Hmph! Já mandei like hoje...*\n\nEsse ID já recebeu carinho hoje! 🥺\n\n⏳ *Próximo envio em:* ${c.hours}h ${c.minutes}m ${c.seconds}s\nS-seja paciente, baka!`);
+}
+return reply(`💔 *Hmph! Já mandei like hoje...*\n\nEsse ID já recebeu carinho hoje! 🥺\n_Volta amanhã que eu mando mais, tá?_ 💕 ...e nem pense que eu fiz por você, baka!`);
+}
+console.error('[LIKE]', e.message);
+reply(`😵 *Hmph! Ai, deu ruim...* Tenta novamente mais tarde, bobinho(a)! 💕 Não é porque eu me importo, tá?`);
+}
+}
+};

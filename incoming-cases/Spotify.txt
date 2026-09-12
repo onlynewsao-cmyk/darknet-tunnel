@@ -1,0 +1,39 @@
+case 'spotify':
+case 'spotifysearch': {
+  try {
+    if (!q) return reply(`Use: ${prefix+command} nome da música`);
+    setTimeout(() => { reagir(from, "💚") }, 300);
+
+    const search = await fetchJson(`${okarunsite}/api/spotify/search?query=${encodeURI(q)}&types=track&limit=1&apikey=${API_KEY_WAGURI}`);
+
+    const t = search?.resultado?.tracks?.[0];
+    if (!t) return reply("❌ Nenhum resultado encontrado.");
+
+    const dl = await fetchJson(`${okarunsite}/api/dl/spotify?url=${t.external_url}&apikey=${API_KEY_WAGURI}`);
+    if (dl?.error || !dl?.medias?.[0]?.url) return reply("⚠️ Erro ao baixar a música, tente novamente.");
+
+    const audioUrl = dl.medias[0].url;
+
+    const txt = `╭┈ׅׄ┉-ׅ━━━━━━━━━━━━┈ׅׄ┉ׅ-╮
+ 🪐 SPOTIFY DOWNLOAD 🪐
+╰┈ׅׄ┉-ׅ━━━━━━━━━━━━┈ׅׄ┉ׅ-╯
+🎵 Música: ${dl.title || t.name}
+👥 Artista(s): ${dl.author || t.artists}
+💿 Álbum: ${t.album}
+⏱️ Duração: ${dl.duration || t.duration}
+${t.explicit ? '🔞 Explícito: Sim\n' : ''}🔗 Link: ${t.external_url}
+╰┈ׅׄ┉-ׅ━━━━━━━━━━━━┈ׅׄ┉ׅ-╯
+By: ${NomeDoBot}`;
+
+    const cover = dl.thumbnail || t.image;
+
+    sendImage(from, cover, txt, info);
+    await sleep(500);
+    await sendAudio(from, audioUrl, "audio/mpeg", info);
+
+  } catch(e) {
+    console.error(e);
+    reply("Erro ao processar a música.");
+  }
+  break;
+}

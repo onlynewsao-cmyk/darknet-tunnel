@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DARK BOT — Simulador</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+       background:#0b141a;color:#e9edef;display:flex;min-height:100vh;gap:18px;padding:18px}
+  .col{display:flex;flex-direction:column;gap:12px}
+  .fone{width:390px;height:800px;background:#0b141a;border:10px solid #1f2c33;border-radius:36px;
+        position:relative;overflow:hidden;display:flex;flex-direction:column;flex-shrink:0;
+        box-shadow:0 18px 50px rgba(0,0,0,.6)}
+  .barra{background:#202c33;padding:12px 14px;display:flex;align-items:center;gap:11px;flex-shrink:0}
+  .av{width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#8B5CF6,#6366f1);
+      display:flex;align-items:center;justify-content:center;font-size:19px}
+  .nome{font-weight:600;font-size:15px}
+  .est{font-size:12px;color:#8696a0}
+  .ic{margin-left:auto;display:flex;gap:16px;font-size:19px}
+  .ic span{cursor:pointer;opacity:.85}.ic span:hover{opacity:1}
+  .chat{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:8px;
+        background:#0b141a url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40'%3E%3Ccircle cx='5' cy='5' r='1' fill='%23182229'/%3E%3C/svg%3E")}
+  .b{max-width:78%;padding:8px 11px;border-radius:9px;font-size:14px;line-height:1.45;
+     white-space:pre-wrap;word-wrap:break-word;position:relative;animation:sobe .18s ease}
+  @keyframes sobe{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
+  .eu{align-self:flex-end;background:#005c4b;border-bottom-right-radius:2px}
+  .ele{align-self:flex-start;background:#202c33;border-bottom-left-radius:2px}
+  .sis{align-self:center;background:#182229;color:#8696a0;font-size:11.5px;padding:5px 11px;
+       border-radius:7px;text-align:center;max-width:90%}
+  .hora{font-size:10px;color:#8696a0;margin-top:3px;text-align:right}
+  .caixa{background:#202c33;padding:9px;display:flex;gap:9px;align-items:center;flex-shrink:0}
+  .caixa input{flex:1;background:#2a3942;border:0;color:#e9edef;padding:11px 14px;
+               border-radius:20px;font-size:14px;outline:none}
+  .env{width:42px;height:42px;border-radius:50%;background:#00a884;border:0;color:#fff;
+       font-size:18px;cursor:pointer;flex-shrink:0}
+  .env:disabled{opacity:.5;cursor:not-allowed}
+
+  /* ecrã de chamada */
+  .call{position:absolute;inset:0;background:linear-gradient(165deg,#1f2c33,#0b141a);
+        display:none;flex-direction:column;align-items:center;justify-content:space-between;
+        padding:56px 26px;z-index:20}
+  .call.on{display:flex;animation:fade .25s}
+  @keyframes fade{from{opacity:0}to{opacity:1}}
+  .callav{width:118px;height:118px;border-radius:50%;background:linear-gradient(135deg,#8B5CF6,#6366f1);
+          display:flex;align-items:center;justify-content:center;font-size:52px}
+  .callav.ring{animation:pulsa 1.4s infinite}
+  @keyframes pulsa{0%,100%{box-shadow:0 0 0 0 rgba(139,92,246,.55)}
+                   50%{box-shadow:0 0 0 26px rgba(139,92,246,0)}}
+  .vid{position:absolute;inset:0;background:#111b21;display:none;align-items:center;justify-content:center}
+  .vid.on{display:flex}
+  .vidself{position:absolute;right:14px;top:14px;width:96px;height:128px;background:#2a3942;
+           border-radius:9px;border:1px solid #384147;display:flex;align-items:center;
+           justify-content:center;font-size:30px}
+  .btns{display:flex;gap:22px;z-index:2}
+  .bt{width:62px;height:62px;border-radius:50%;border:0;font-size:24px;cursor:pointer;color:#fff}
+  .rej{background:#ea0038}.ace{background:#00a884}
+  .txtc{text-align:center;z-index:2}
+  .txtc h2{font-size:23px;font-weight:500;margin-bottom:7px}
+  .txtc p{color:#8696a0;font-size:14px}
+
+  .lado{width:440px;display:flex;flex-direction:column;gap:12px}
+  .card{background:#111b21;border:1px solid #222d34;border-radius:11px;padding:14px}
+  .card h3{font-size:12px;text-transform:uppercase;color:#8696a0;margin-bottom:11px;letter-spacing:.5px}
+  .lin{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:9px}
+  button.a{background:#2a3942;border:1px solid #384147;color:#e9edef;padding:8px 12px;
+           border-radius:7px;cursor:pointer;font-size:12.5px}
+  button.a:hover{background:#384147}
+  button.p{background:#8B5CF6;border-color:#8B5CF6}
+  input.n{background:#2a3942;border:1px solid #384147;color:#e9edef;padding:8px 10px;
+          border-radius:7px;font-size:12.5px;width:150px}
+  pre{background:#0b141a;border:1px solid #222d34;border-radius:8px;padding:11px;
+      font-size:11px;line-height:1.5;overflow:auto;max-height:290px;color:#8696a0;
+      white-space:pre-wrap;word-break:break-word}
+  .ok{color:#00a884}.mau{color:#ea0038}.av2{color:#f59e0b}
+  .tag{display:inline-block;padding:2px 7px;border-radius:4px;font-size:10.5px;
+       background:#2a3942;margin-right:5px}
+</style>
+</head>
+<body>
+
+<div class="fone">
+  <div class="barra">
+    <div class="av">🕸️</div>
+    <div><div class="nome">DARK BOT</div><div class="est" id="est">simulador</div></div>
+    <div class="ic">
+      <span onclick="ligarPara(true)" title="Videochamada">📹</span>
+      <span onclick="ligarPara(false)" title="Chamada de voz">📞</span>
+    </div>
+  </div>
+
+  <div class="chat" id="chat">
+    <div class="b sis">Simulador local — o bot responde com o código real. Nada é enviado para o WhatsApp.</div>
+  </div>
+
+  <div class="caixa">
+    <input id="txt" placeholder="Escreve uma mensagem" onkeydown="if(event.key==='Enter')enviar()">
+    <button class="env" id="benv" onclick="enviar()">➤</button>
+  </div>
+
+  <!-- ecrã de chamada -->
+  <div class="call" id="call">
+    <div class="vid" id="vid"><div style="font-size:60px;opacity:.25">📹</div>
+      <div class="vidself">🙂</div></div>
+    <div class="txtc"><h2 id="cnome">DARK BOT</h2><p id="cest">a chamar…</p></div>
+    <div class="callav ring" id="cav">🕸️</div>
+    <div class="btns" id="cbtns">
+      <button class="bt rej" onclick="desligar()">📵</button>
+      <button class="bt ace" id="baceitar" onclick="atender()">📞</button>
+    </div>
+  </div>
+</div>
+
+<div class="lado">
+  <div class="card">
+    <h3>Quem fala</h3>
+    <div class="lin">
+      <input class="n" id="de" value="244945280380">
+      <button class="a" onclick="setDe('244945280380')">Dono</button>
+      <button class="a" onclick="setDe('244900000001')">Estranho</button>
+    </div>
+    <div class="lin">
+      <input class="n" id="grupo" placeholder="jid do grupo (vazio = PV)" style="width:230px">
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Chamadas</h3>
+    <div class="lin">
+      <button class="a p" onclick="ligarPara(false)">📞 Bot liga (voz)</button>
+      <button class="a p" onclick="ligarPara(true)">📹 Bot liga (vídeo)</button>
+    </div>
+    <div class="lin">
+      <button class="a" onclick="receber(false)">📲 Recebo chamada de voz</button>
+      <button class="a" onclick="receber(true)">📷 Recebo videochamada</button>
+    </div>
+    <div class="lin">
+      <button class="a" onclick="viaTeste('realCall')">via realCall</button>
+      <button class="a" onclick="viaTeste('callHandler')">via callHandler</button>
+      <button class="a" onclick="viaTeste('callBridge')">via callBridge</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Testes rápidos</h3>
+    <div class="lin">
+      <button class="a" onclick="rapido('.ping')">.ping</button>
+      <button class="a" onclick="rapido('.menu')">.menu</button>
+      <button class="a" onclick="rapido('oi aura')">oi aura</button>
+      <button class="a" onclick="rapido('.ligar 244945280380')">.ligar</button>
+      <button class="a" onclick="reset()">🗑 limpar</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>O que saiu para a rede</h3>
+    <pre id="diag">Faz uma acção para veres o diagnóstico.</pre>
+  </div>
+</div>
+
+<script>
+const chat = document.getElementById('chat');
+let emChamada = false;
+
+function agora(){const d=new Date();return d.getHours().toString().padStart(2,'0')+':'+d.getMinutes().toString().padStart(2,'0');}
+function bolha(txt, cls){
+  const d=document.createElement('div'); d.className='b '+cls;
+  d.textContent=txt;
+  if(cls!=='sis'){const h=document.createElement('div');h.className='hora';h.textContent=agora();d.appendChild(h);}
+  chat.appendChild(d); chat.scrollTop=chat.scrollHeight; return d;
+}
+function setDe(n){document.getElementById('de').value=n;}
+function rapido(t){document.getElementById('txt').value=t;enviar();}
+
+async function api(url, body){
+  const r = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(body||{})});
+  return r.json();
+}
+function mostrar(o){document.getElementById('diag').textContent=JSON.stringify(o,null,2);}
+
+async function enviar(){
+  const i=document.getElementById('txt'); const texto=i.value.trim(); if(!texto)return;
+  const de=document.getElementById('de').value.trim();
+  const grupo=document.getElementById('grupo').value.trim()||null;
+  i.value=''; bolha(texto,'eu');
+  document.getElementById('est').textContent='a escrever…';
+  const res=await api('/api/msg',{texto,de,grupo});
+  document.getElementById('est').textContent='simulador';
+  if(!res.ok){bolha('⚠ '+res.erro,'sis');return mostrar(res);}
+  const r=res.r;
+  if(!r.respostas.length) bolha('(o bot não respondeu)','sis');
+  r.respostas.forEach(x=>bolha(x.texto|| '['+x.tipo+']','ele'));
+  mostrar({ms:r.ms,erro:r.erro,respostas:r.respostas});
+}
+
+// o BOT liga-me
+async function ligarPara(isVideo){
+  const para=document.getElementById('de').value.trim();
+  abrirCall({titulo:'DARK BOT', estado:(isVideo?'videochamada':'chamada')+' a receber…',
+             isVideo, mostrarAtender:true});
+  const res=await api('/api/call/out',{para,isVideo,via:'realCall'});
+  mostrar(res.ok?{resultado:res.r.resultado,offer:res.r.offer,ms:res.r.ms,erro:res.r.erro}:res);
+  if(res.ok && res.r.resultado && res.r.resultado.ok===false){
+    document.getElementById('cest').textContent='falhou: '+(res.r.resultado.motivo||'?');
+  }
+  bolha('📞 O bot originou uma chamada '+(isVideo?'de vídeo':'de voz'),'sis');
+}
+
+// EU ligo ao bot
+async function receber(isVideo){
+  const de=document.getElementById('de').value.trim();
+  abrirCall({titulo:'A chamar DARK BOT', estado:'a tocar…', isVideo, mostrarAtender:false});
+  const res=await api('/api/call/in',{de,isVideo});
+  if(!res.ok){document.getElementById('cest').textContent='erro';return mostrar(res);}
+  const r=res.r;
+  const acc=r.resultado&&r.resultado.aceite;
+  document.getElementById('cest').textContent = acc? 'atendida ('+acc+')' : 'rejeitada';
+  document.getElementById('cav').classList.remove('ring');
+  setTimeout(()=>{desligar(); r.respostas.forEach(x=>bolha(x.texto||'['+x.tipo+']','ele'));},1500);
+  mostrar({resultado:r.resultado,ms:r.ms,erro:r.erro});
+}
+
+async function viaTeste(via){
+  const para=document.getElementById('de').value.trim();
+  const res=await api('/api/call/out',{para,isVideo:false,via});
+  mostrar(res.ok?{via,resultado:res.r.resultado,offer:res.r.offer,stanzas:res.r.stanzas,erro:res.r.erro}:res);
+  bolha('🔬 teste via '+via,'sis');
+}
+
+function abrirCall({titulo,estado,isVideo,mostrarAtender}){
+  emChamada=true;
+  document.getElementById('cnome').textContent=titulo;
+  document.getElementById('cest').textContent=estado;
+  document.getElementById('cav').classList.add('ring');
+  document.getElementById('vid').classList.toggle('on',!!isVideo);
+  document.getElementById('baceitar').style.display=mostrarAtender?'':'none';
+  document.getElementById('call').classList.add('on');
+}
+function atender(){
+  document.getElementById('cest').textContent='em chamada — sem áudio (limitação da lib)';
+  document.getElementById('cav').classList.remove('ring');
+  document.getElementById('baceitar').style.display='none';
+}
+function desligar(){
+  emChamada=false;
+  document.getElementById('call').classList.remove('on');
+  document.getElementById('vid').classList.remove('on');
+}
+async function reset(){
+  await api('/api/reset');
+  chat.innerHTML='<div class="b sis">Simulador reiniciado.</div>';
+  mostrar({ok:true,reiniciado:true});
+}
+</script>
+</body>
+</html>

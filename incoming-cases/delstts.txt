@@ -1,0 +1,110 @@
+// ============================================================
+//  delstts — Apagar Status do grupo (de qualquer participante)
+// ============================================================
+//  ✅ Uso:
+//   • Marcando (respondendo) o status  -> apaga aquele status específico,
+//                                          não importa quem postou
+//   • Sem marcar nada                  -> apaga o último status POSTADO
+//                                          PELO PRÓPRIO BOT (só funciona
+//                                          pra esse caso, já que o bot só
+//                                          "lembra" do que ele mesmo postou)
+//
+//  🔒 Permissão: apenas ADMIN do grupo ou DONO do bot pode usar.
+//
+//  ⚠️ IMPORTANTE: pra apagar status de OUTRA pessoa (delete for everyone),
+//  o WhatsApp exige que o número do BOT seja admin do grupo. Se o bot não
+//  for admin, só consegue apagar mensagens que ele mesmo postou.
+//
+//  🔧 Como adaptar pro seu bot:
+//   1. Ajuste os imports (ultimoStts/removerStts) pra sua própria lib de
+//      histórico de status, ou remova o bloco "fallback sem marcar" se
+//      seu bot não guarda esse histórico.
+//   2. Ajuste a lista OWNER_NUMBERS com o(s) número(s) do dono do bot,
+//      no formato "5511999999999" (com DDI, sem espaços/símbolos).
+//   3. Se seu framework já injeta "isAdmin"/"isOwner" prontos no contexto
+//      do comando, pode trocar a função checarPermissao() por eles.
+// ============================================================
+
+// Números do(s) dono(s) do bot (edite aqui)
+const OWNER_NUMBERS = ["5511999999999"];
+
+// Tenta usar sua lib de histórico de status, se existir no projeto.
+// Se não existir, o comando ainda funciona normalmente marcando o status.
+let ultimoStts = () => null;
+let removerStts = () => {};
+try {
+  const stts = await import("../lib/stts.js");
+  ultimoStts = stts.ultimoStts ?? ultimoStts;
+  removerStts = stts.removerStts ?? removerStts;
+} catch {
+  // Sem lib de histórico? Sem problema, só não vai funcionar o modo
+  // "sem marcar nada" — a pessoa vai precisar sempre marcar o status.
+}
+
+// Checa se quem chamou o comando é admin do grupo ou dono do bot
+async function checarPermissao({ sock, from, sender }) {
+  const senderNumber = sender?.split("@")[0];
+  if (OWNER_NUMBERS.includes(senderNumber)) return true;
+
+  try {
+    const metadata = await sock.groupMetadata(from);
+    const participante = metadata.participants.find((p) => p.id === sender);
+    return participante?.admin === "admin" || participante?.admin === "superadmin";
+  } catch {
+    return false;
+  }
+}
+
+export default {
+  nome: "delstts",
+  aliases: ["delstatus", "rmstts"],
+  categoria: "admin",
+  descricao: "Apaga um status do grupo (de qualquer participante, marcando a msg) ou o último status do bot (sem marcar nada). Apenas admin/dono. Bot precisa ser admin do grupo pra apagar status de terceiros.",
+  async executar({ sock, m, from, sender }) {
+    // 🔒 Verificação de permissão
+    const permitido = await checarPermissao({ sock, from, sender });
+    if (!permitido) {
+      return sock.sendMessage(from, {
+        text: "🚫 Apenas *admins do grupo* ou o *dono do bot* podem apagar status.",
+      }, { quoted: m });
+    }
+
+    const ctx = m.message?.extendedTextMessage?.contextInfo;
+    let key = null;
+
+    if (ctx?.stanzaId) {
+      // Status de grupo: o remoteJid do delete é o JID do próprio grupo,
+      // não "status@broadcast" (isso é do status pessoal).
+      //
+      // ctx.participant é quem REALMENTE postou o status marcado — pode
+      // ser o bot ou qualquer outra pessoa do grupo. fromMe só é true se
+      // esse participant for o próprio número do bot.
+      const autorOriginal = ctx.participant || sender;
+      key = {
+        remoteJid: from,
+        id: ctx.stanzaId,
+        fromMe: autorOriginal === sock.user?.id,
+        participant: autorOriginal,
+      };
+    } else {
+      key = ultimoStts();
+    }
+
+    if (!key) {
+      return sock.sendMessage(from, {
+        text: "⚠️ Nenhum status recente pra apagar. Marque o status do bot e mande de novo.",
+      }, { quoted: m });
+    }
+
+    try {
+      // O delete precisa ser mandado pro JID onde a msg realmente está
+      // (key.remoteJid, com fallback pro grupo atual) — não "status@broadcast",
+      // que só vale pra status PESSOAL.
+      await sock.sendMessage(key.remoteJid || from, { delete: key });
+      removerStts(key.id);
+      await sock.sendMessage(from, { text: "🗑️ Status apagado." }, { quoted: m });
+    } catch (e) {
+      await sock.sendMessage(from, { text: "❌ Falha ao apagar status: " + e.message }, { quoted: m });
+    }
+  },
+};

@@ -1,0 +1,54 @@
+case 'tiktokphoto':
+case 'photooxytiktok': {
+try {
+
+if(!q) return reply(`🎵 *PHOTO OXY TIKTOK*
+
+Use:
+${prefix + command} texto grande|texto pequeno
+
+Exemplo:
+${prefix + command} Gzee|Scripts`);
+
+
+const axios = require("axios");
+
+await reagir(from,"🎵");
+
+
+let [large, small] = q.split("|");
+
+if(!large || !small) {
+return reply("❌ Use o formato:\nTexto grande|Texto pequeno");
+}
+
+
+const { data } = await axios.get(
+`https://systemzone.store/api/photooxy/tiktok?apikey="API_SYSTEM_ZERO"&text1=${encodeURIComponent(large)}&text2=${encodeURIComponent(small)}`
+);
+
+
+if(!data.status) return reply("❌ Erro ao gerar imagem.");
+
+
+await conn.sendMessage(from,{
+image:{
+url:data.imagem
+},
+caption:
+`🎵 *PHOTO OXY TIKTOK*
+
+🔰 Texto principal: ${data.texts.large}
+🔹 Texto secundário: ${data.texts.small}}`,
+},{
+quoted:info
+});
+
+
+}catch(e){
+console.log(e);
+reply("❌ Erro ao criar TikTok.");
+}
+
+}
+break;

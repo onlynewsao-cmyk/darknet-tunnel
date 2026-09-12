@@ -1,0 +1,332 @@
+/**
+ * ================================================================
+ * JOGO MINADO COMPLETO PARA WHATSAPP (BAILEYS)
+ * Compatível com bots em switch(command)
+ * Créditos do jogo: usuário
+ * ================================================================
+ *
+ * Créditos: GleysonDevs
+ *
+ * COMANDOS:
+ *   /minado iniciar [fácil|médio|difícil]
+ *   /minado abrir <linha><coluna>      Ex: /minado abrir A1
+ *   /minado marcar <linha><coluna>     Ex: /minado marcar B3
+ *   /minado desmarcar <linha><coluna>
+ *   /minado ver
+ *   /minado sair
+ *   /minado ajuda
+ *
+ * COMO FUNCIONA:
+ * - Cada usuário pode ter 1 partida ativa por chat.
+ * - O tabuleiro usa letras nas linhas e números nas colunas.
+ * - O jogo gera bombas, calcula adjacências e faz abertura em cascata.
+ * - Há sistema de vitória, derrota, tempo de jogo e bandeiras.
+ *
+ * OBS:
+ * - Este arquivo contém as FUNÇÕES + a CASE pronta.
+ * - Cole as funções fora do switch(command).
+ * - Cole a case dentro do switch(command).
+ * ================================================================
+ */
+
+const minadoDB = global.minadoDB || (global.minadoDB = {});
+
+function getMinadoKey(chatId, userId) {
+  return `${chatId}::${userId}`;
+}
+
+function ensureMinadoStore(chatId, userId) {
+  const key = getMinadoKey(chatId, userId);
+  if (!minadoDB[key]) minadoDB[key] = null;
+  return key;
+}
+
+function minadoConfig(level = 'medio') {
+  const lv = String(level || '').toLowerCase();
+  if (lv === 'facil' || lv === 'fácil') return { rows: 5, cols: 5, bombs: 5, name: 'Fácil' };
+  if (lv === 'dificil' || lv === 'difícil') return { rows: 8, cols: 8, bombs: 12, name: 'Difícil' };
+  return { rows: 6, cols: 6, bombs: 8, name: 'Médio' };
+}
+
+function createMinadoGame(level = 'medio') {
+  const cfg = minadoConfig(level);
+  const board = [];
+
+  for (let r = 0; r < cfg.rows; r++) {
+    const row = [];
+    for (let c = 0; c < cfg.cols; c++) {
+      row.push({
+        bomb: false,
+        open: false,
+        flag: false,
+        around: 0
+      });
+    }
+    board.push(row);
+  }
+
+  let placed = 0;
+  while (placed < cfg.bombs) {
+    const rr = Math.floor(Math.random() * cfg.rows);
+    const cc = Math.floor(Math.random() * cfg.cols);
+    if (!board[rr][cc].bomb) {
+      board[rr][cc].bomb = true;
+      placed++;
+    }
+  }
+
+  for (let r = 0; r < cfg.rows; r++) {
+    for (let c = 0; c < cfg.cols; c++) {
+      if (board[r][c].bomb) continue;
+      let count = 0;
+      for (let dr = -1; dr <= 1; dr++) {
+        for (let dc = -1; dc <= 1; dc++) {
+          if (dr === 0 && dc === 0) continue;
+          const nr = r + dr;
+          const nc = c + dc;
+          if (nr >= 0 && nr < cfg.rows && nc >= 0 && nc < cfg.cols && board[nr][nc].bomb) {
+            count++;
+          }
+        }
+      }
+      board[r][c].around = count;
+    }
+  }
+
+  return {
+    level: cfg.name,
+    rows: cfg.rows,
+    cols: cfg.cols,
+    bombs: cfg.bombs,
+    flagsUsed: 0,
+    startedAt: Date.now(),
+    status: 'playing',
+    board
+  };
+}
+
+function parseMinadoPos(input, rows, cols) {
+  if (!input) return null;
+  const text = String(input).trim().toUpperCase();
+  const match = text.match(/^([A-Z])(\d{1,2})$/);
+  if (!match) return null;
+
+  const row = match[1].charCodeAt(0) - 65;
+  const col = parseInt(match[2], 10) - 1;
+
+  if (row < 0 || row >= rows || col < 0 || col >= cols) return null;
+  return { row, col };
+}
+
+function minadoCellEmoji(cell, revealAll = False) {
+  if (revealAll && cell.bomb) return '💣';
+  if (cell.flag) return '🚩';
+  if (!cell.open) return '⬜';
+  if (cell.bomb) return '💥';
+  if (cell.around === 0) return '🟦';
+  const nums = ['0️⃣','1️⃣','2️⃣','3️⃣','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣'];
+  return nums[cell.around] || '⬛';
+}
+
+function renderMinado(game, revealAll = false) {
+  const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  let out = `💣 *MINADO*\n`;
+  out += `🎚️ Nível: ${game.level}\n`;
+  out += `💥 Bombas: ${game.bombs}\n`;
+  out += `🚩 Bandeiras: ${game.flagsUsed}/${game.bombs}\n\n`;
+
+  out += '⬛ ';
+  for (let c = 0; c < game.cols; c++) {
+    out += `${c + 1}️⃣ `;
+  }
+  out += '\n';
+
+  for (let r = 0; r < game.rows; r++) {
+    out += `${letters[r]} `;
+    for (let c = 0; c < game.cols; c++) {
+      out += `${minadoCellEmoji(game.board[r][c], revealAll)} `;
+    }
+    out += '\n';
+  }
+
+  return out.trim();
+}
+
+function floodOpen(game, row, col, visited = new Set()) {
+  const key = `${row},${col}`;
+  if (visited.has(key)) return;
+  visited.add(key);
+
+  const cell = game.board[row][col];
+  if (cell.open || cell.flag) return;
+  cell.open = true;
+
+  if (cell.around !== 0 || cell.bomb) return;
+
+  for (let dr = -1; dr <= 1; dr++) {
+    for (let dc = -1; dc <= 1; dc++) {
+      if (dr === 0 && dc === 0) continue;
+      const nr = row + dr;
+      const nc = col + dc;
+      if (nr >= 0 && nr < game.rows && nc >= 0 && nc < game.cols) {
+        floodOpen(game, nr, nc, visited);
+      }
+    }
+  }
+}
+
+function openMinado(game, row, col) {
+  if (game.status !== 'playing') {
+    return { ok: false, msg: 'Essa partida já terminou.' };
+  }
+
+  const cell = game.board[row][col];
+
+  if (cell.flag) return { ok: false, msg: 'Essa casa está marcada com bandeira.' };
+  if (cell.open) return { ok: false, msg: 'Essa casa já está aberta.' };
+
+  if (cell.bomb) {
+    cell.open = true;
+    game.status = 'lost';
+    return { ok: true, boom: true, msg: '💥 Você encontrou uma bomba!' };
+  }
+
+  floodOpen(game, row, col);
+
+  if (checkMinadoWin(game)) {
+    game.status = 'won';
+    return { ok: true, win: true, msg: '🏆 Você venceu a partida!' };
+  }
+
+  return { ok: true, msg: 'Casa aberta com sucesso.' };
+}
+
+function flagMinado(game, row, col, mode = 'mark') {
+  if (game.status !== 'playing') {
+    return { ok: false, msg: 'Essa partida já terminou.' };
+  }
+
+  const cell = game.board[row][col];
+  if (cell.open) return { ok: false, msg: 'Você não pode marcar uma casa já aberta.' };
+
+  if (mode === 'mark') {
+    if (cell.flag) return { ok: false, msg: 'Essa casa já está marcada.' };
+    cell.flag = true;
+    game.flagsUsed++;
+    return { ok: true, msg: '🚩 Casa marcada.' };
+  }
+
+  if (mode === 'unmark') {
+    if (!cell.flag) return { ok: false, msg: 'Essa casa não está marcada.' };
+    cell.flag = false;
+    game.flagsUsed = Math.max(0, game.flagsUsed - 1);
+    return { ok: true, msg: '✅ Bandeira removida.' };
+  }
+
+  return { ok: false, msg: 'Modo inválido.' };
+}
+
+function checkMinadoWin(game) {
+  for (let r = 0; r < game.rows; r++) {
+    for (let c = 0; c < game.cols; c++) {
+      const cell = game.board[r][c];
+      if (!cell.bomb && !cell.open) return false;
+    }
+  }
+  return true;
+}
+
+function formatMinadoDuration(ms) {
+  const total = Math.floor(ms / 1000);
+  const min = Math.floor(total / 60);
+  const sec = total % 60;
+  return `${min}m ${sec}s`;
+}
+
+case 'minado': {
+  try {
+    const key = ensureMinadoStore(from, sender);
+    const game = minadoDB[key];
+    const sub = (args[0] || '').toLowerCase();
+    const val = (args[1] || '').toUpperCase();
+
+    if (!sub || sub === 'ajuda' || sub === 'help') {
+      return reply(
+        `💣 *JOGO MINADO*\n\n` +
+        `Comandos:\n` +
+        `• ${prefix + command} iniciar [facil|medio|dificil]\n` +
+        `• ${prefix + command} abrir A1\n` +
+        `• ${prefix + command} marcar B2\n` +
+        `• ${prefix + command} desmarcar B2\n` +
+        `• ${prefix + command} ver\n` +
+        `• ${prefix + command} sair\n\n` +
+        `Exemplo: ${prefix + command} iniciar medio`
+      );
+    }
+
+    if (sub === 'iniciar') {
+      const level = args[1] || 'medio';
+      minadoDB[key] = createMinadoGame(level);
+      return reply(
+        `🎮 Partida iniciada com sucesso!\n\n${renderMinado(minadoDB[key])}\n\n` +
+        `Use *${prefix + command} abrir A1* para jogar.`
+      );
+    }
+
+    if (!game) {
+      return reply(`Você não tem uma partida ativa. Use *${prefix + command} iniciar*.`);
+    }
+
+    if (sub === 'ver') {
+      return reply(renderMinado(game));
+    }
+
+    if (sub === 'sair') {
+      delete minadoDB[key];
+      return reply('🛑 Sua partida de minado foi encerrada.');
+    }
+
+    if (sub === 'abrir') {
+      const pos = parseMinadoPos(val, game.rows, game.cols);
+      if (!pos) return reply('Posição inválida. Exemplo: A1, B3, C5');
+
+      const result = openMinado(game, pos.row, pos.col);
+      if (!result.ok) return reply(result.msg);
+
+      if (result.boom) {
+        const board = renderMinado(game, true);
+        delete minadoDB[key];
+        return reply(`${result.msg}\n\n${board}\n\n💀 Fim de jogo.`);
+      }
+
+      if (result.win) {
+        const tempo = formatMinadoDuration(Date.now() - game.startedAt);
+        const board = renderMinado(game, true);
+        delete minadoDB[key];
+        return reply(`${result.msg}\n⏱️ Tempo: ${tempo}\n\n${board}`);
+      }
+
+      return reply(`${result.msg}\n\n${renderMinado(game)}`);
+    }
+
+    if (sub === 'marcar') {
+      const pos = parseMinadoPos(val, game.rows, game.cols);
+      if (!pos) return reply('Posição inválida. Exemplo: A1, B3, C5');
+      const result = flagMinado(game, pos.row, pos.col, 'mark');
+      return reply(`${result.msg}\n\n${renderMinado(game)}`);
+    }
+
+    if (sub === 'desmarcar') {
+      const pos = parseMinadoPos(val, game.rows, game.cols);
+      if (!pos) return reply('Posição inválida. Exemplo: A1, B3, C5');
+      const result = flagMinado(game, pos.row, pos.col, 'unmark');
+      return reply(`${result.msg}\n\n${renderMinado(game)}`);
+    }
+
+    return reply('Subcomando inválido. Use: iniciar, abrir, marcar, desmarcar, ver, sair.');
+  } catch (e) {
+    console.error('Erro no jogo minado:', e);
+    reply('Ocorreu um erro ao processar o jogo minado.');
+  }
+}
+break;

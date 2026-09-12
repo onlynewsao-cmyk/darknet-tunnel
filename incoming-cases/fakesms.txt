@@ -1,0 +1,28 @@
+case 'fakemsg': {//By Xd
+if (!m.quoted) return m.reply('marca o usuario o inteligente');
+if (!text) return m.reply('cade a mensagem espécime raro.');
+
+const stanzaId = m.quoted.id;
+const participante = m.quoted.sender || m.quoted.participant;
+
+try {
+const msgTemp = await systemZR.sendMessage(m.chat, { text: '' });
+const idTemp = msgTemp.key.id;
+
+await systemZR.sendMessage(m.chat, {
+    text: text.trim(),
+    edit: { id: idTemp }
+}, { messageId: stanzaId });
+
+await Promise.all([
+    systemZR.sendMessage(m.chat, { delete: { remoteJid: m.chat, id: idTemp, fromMe: true } }).catch(() => {}),
+    systemZR.sendMessage(m.chat, { delete: { remoteJid: m.chat, id: stanzaId, fromMe: false, participant: participante } }).catch(() => {}),
+    systemZR.sendMessage(m.chat, { delete: { remoteJid: m.chat, id: m.key.id, fromMe: false, participant: m.sender } }).catch(() => {}),
+]);
+
+} catch (e) {
+console.error('[testsc]', e.message);
+m.reply('Erro: ' + e.message);
+}
+}
+break;

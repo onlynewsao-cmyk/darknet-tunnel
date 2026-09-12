@@ -1,0 +1,367 @@
+'use strict'
+
+// Proteção automática contra webs attack de divulgação de links ocultos e números em blacklist.
+
+const PROCESSADOS = new Map()
+const TEMPO_DEDUP_MS = 60_000
+
+let RedLog = mensagem => console.error(mensagem)
+try {
+  ;({ RedLog } = require('../../arquivos/js/logger.js'))
+} catch {}
+
+const CAMPOS_DE_TEXTO = new Set([
+  'conversation',
+  'text',
+  'caption',
+  'contentText',
+  'description',
+  'title',
+  'footerText',
+  'fileName',
+  'name',
+  'displayText',
+  'matchedText',
+  'canonicalUrl',
+  'sourceUrl',
+  'body',
+  'selectedDisplayText',
+  'hydratedContentText',
+  'paramsJson'
+])
+
+const REGEX_LINK = /(?:https?:\/\/|www\.|chat\.whatsapp\.com\/|whatsapp\.com\/(?:channel|invite)\/|wa\.me\/|(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:com|net|org|gg|io|me|app|site|link|xyz|br)(?:\/|\b))/i
+
+function somenteDigitos(valor) {
+  return String(valor || '').split('@')[0].split(':')[0].replace(/\D/g, '')
+}
+
+function jidParaAcao(valor) {
+  const jid = String(valor || '')
+  if (jid.includes('@')) return jid
+  const numero = somenteDigitos(jid)
+  return numero ? `${numero}@s.whatsapp.net` : ''
+}
+
+function normalizarTexto(texto) {
+  return String(texto || '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[\u200B-\u200F\u202A-\u202E\u2060\uFEFF]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+}
+
+function coletarConteudo(valor, estado, caminho = [], profundidade = 0) {
+  if (!valor || profundidade > 14 || estado.textos.length >= 250) return
+  if (Buffer.isBuffer(valor) || valor instanceof Uint8Array) return
+
+  if (Array.isArray(valor)) {
+    for (const item of valor) coletarConteudo(item, estado, caminho, profundidade + 1)
+    return
+  }
+
+  if (typeof valor !== 'object') return
+
+  for (const [chave, conteudo] of Object.entries(valor)) {
+    // Não pune quem apenas respondeu ou citou uma mensagem infratora.
+    if (chave === 'quotedMessage') continue
+
+    if (chave === 'requestPaymentMessage') estado.temPagamentoDisfarcado = true
+
+    if (typeof conteudo === 'string') {
+      const ehCampoVisivel = CAMPOS_DE_TEXTO.has(chave)
+      const ehUrlDeBotao = chave === 'url' && caminho.some(parte =>
+        /button|externalAdReply|cta/i.test(parte)
+      )
+
+      if ((ehCampoVisivel || ehUrlDeBotao) && conteudo.length <= 50_000) {
+        estado.textos.push(conteudo)
+      }
+      continue
+    }
+
+    coletarConteudo(conteudo, estado, [...caminho, chave], profundidade + 1)
+  }
+}
+
+function analisarMensagem(message) {
+  const estado = { textos: [], temPagamentoDisfarcado: false }
+  coletarConteudo(message, estado)
+
+  const texto = estado.textos.join('\n')
+  const textoNormalizado = normalizarTexto(texto)
+  const temLink = REGEX_LINK.test(texto)
+  const temCliqueNaImagem = textoNormalizado.includes('clique na imagem')
+
+  if (estado.temPagamentoDisfarcado && (temLink || temCliqueNaImagem)) {
+    return {
+      codigo: 'pagamento_com_link',
+      mensagem: 'Vai enviar link na casa do caralho!!!'
+    }
+  }
+
+  if (temLink || temCliqueNaImagem) {
+    return {
+      codigo: 'divulgacao',
+      mensagem: 'Tentou divulgar sem permissão!!!'
+    }
+  }
+
+  return null
+}
+
+function jidsDoParticipante(participante) {
+  if (!participante) return []
+  if (typeof participante === 'string') return [participante]
+
+  return [
+    participante.id,
+    participante.jid,
+    participante.lid,
+    participante.phoneNumber,
+    participante.pn
+  ].filter(valor => typeof valor === 'string' && valor)
+}
+
+function encontrarParticipante(participantes, jid) {
+  if (!jid) return null
+
+  return (participantes || []).find(participante => {
+    const relacionados = jidsDoParticipante(participante)
+    if (relacionados.includes(jid)) return true
+
+    // Só compara números quando o remetente não é LID. LID não é telefone.
+    if (String(jid).endsWith('@lid')) return false
+    const numero = somenteDigitos(jid)
+    return numero && relacionados
+      .filter(item => !item.endsWith('@lid'))
+      .some(item => somenteDigitos(item) === numero)
+  }) || null
+}
+
+function idsRelacionados(jid, participante) {
+  return new Set([jid, ...jidsDoParticipante(participante)].filter(Boolean))
+}
+
+function correspondeAAlgum(relacionados, candidatos) {
+  for (const candidatoOriginal of candidatos.filter(Boolean)) {
+    const candidato = String(candidatoOriginal)
+    if (relacionados.has(candidato)) return true
+
+    if (!candidato.includes('@') || candidato.endsWith('@s.whatsapp.net')) {
+      const numero = somenteDigitos(candidato)
+      if (numero && [...relacionados]
+        .filter(item => !String(item).endsWith('@lid'))
+        .some(item => somenteDigitos(item) === numero)) return true
+    }
+  }
+  return false
+}
+
+function ehConfiavel({ sender, participante, bot, config }) {
+  const relacionados = idsRelacionados(sender, participante)
+  const idsBot = [bot?.user?.id, bot?.user?.lid]
+  const idsDono = [
+    config?.NumeroDoDono,
+    config?.LidDoDono,
+    config?.DONO_JID,
+    config?.DONO,
+    config?.dono
+  ]
+
+  if (correspondeAAlgum(relacionados, idsBot)) return true
+  if (correspondeAAlgum(relacionados, idsDono)) return true
+  return participante?.admin === 'admin' || participante?.admin === 'superadmin'
+}
+
+function telefoneDoParticipante(participanteOuJid) {
+  if (!participanteOuJid) return ''
+
+  if (typeof participanteOuJid === 'object') {
+    const telefone = participanteOuJid.phoneNumber || participanteOuJid.pn
+    if (telefone) return somenteDigitos(telefone)
+
+    const jidTelefone = [participanteOuJid.id, participanteOuJid.jid]
+      .find(item => typeof item === 'string' && item.endsWith('@s.whatsapp.net'))
+    return jidTelefone ? somenteDigitos(jidTelefone) : ''
+  }
+
+  const jid = String(participanteOuJid)
+  if (jid.includes('@') && !jid.endsWith('@s.whatsapp.net')) return ''
+  return somenteDigitos(jid)
+}
+
+function limparProcessados() {
+  const agora = Date.now()
+  for (const [chave, criadoEm] of PROCESSADOS) {
+    if (agora - criadoEm > TEMPO_DEDUP_MS) PROCESSADOS.delete(chave)
+  }
+}
+
+function reservar(chave) {
+  limparProcessados()
+  if (PROCESSADOS.has(chave)) return false
+  PROCESSADOS.set(chave, Date.now())
+  return true
+}
+
+function nomeDoBot(config) {
+  return config?.NomeDoBot || 'TOPh-BOT'
+}
+
+function mensagemDeBan(config, alvo, motivo) {
+  const numero = somenteDigitos(alvo) || 'desconhecido'
+  return [
+    `╔━◈『 *${nomeDoBot(config)} • Ant-Carente* 』◈`,
+    `┃`,
+    `┃ 𝄞 *Ação   »* Mensagem apagada e usuário banido`,
+    `┃ 𝄞 *Usuário »* @${numero}`,
+    `┃`,
+    `┃ 𝄞 *Motivo  »* ${motivo}`,
+    `┗━◈`
+  ].join('\n')
+}
+
+function mensagemDeBlacklist(config, alvo, motivo) {
+  const numero = somenteDigitos(alvo) || 'desconhecido'
+  return [
+    `╔━◈『 *${nomeDoBot(config)} • Ant-Carente* 』◈`,
+    `┃`,
+    `┃ 𝄞 *Ação   »* Entrada bloqueada e usuário banido`,
+    `┃ 𝄞 *Usuário »* @${numero}`,
+    `┃`,
+    `┃ 𝄞 *Motivo  »* ${motivo}`,
+    `┗━◈`
+  ].join('\n')
+}
+
+async function apagarMensagem(bot, grupoId, info) {
+  try {
+    await bot.sendMessage(grupoId, { delete: info.key })
+    return true
+  } catch (e) {
+    RedLog(`[antcarente] Não foi possível apagar a mensagem: ${e.message}`)
+    return false
+  }
+}
+
+async function removerParticipante(bot, grupoId, alvo) {
+  await bot.groupParticipantsUpdate(grupoId, [alvo], 'remove')
+}
+
+async function avisarBan(bot, grupoId, alvo, texto) {
+  await bot.sendMessage(grupoId, {
+    text: texto,
+    mentions: [alvo]
+  })
+}
+
+async function punirMensagem({ bot, info, config, violacao }) {
+  const grupoId = info?.key?.remoteJid
+  const sender = info?.key?.participant
+  if (!grupoId?.endsWith('@g.us') || !sender || info.key.fromMe) return
+
+  const chave = `msg:${grupoId}:${sender}:${info.key.id || ''}`
+  if (!reservar(chave)) return
+
+  let metadata
+  try {
+    metadata = await bot.groupMetadata(grupoId)
+  } catch (e) {
+    PROCESSADOS.delete(chave)
+    RedLog(`[antcarente] Erro ao consultar o grupo: ${e.message}`)
+    return
+  }
+
+  const participante = encontrarParticipante(metadata?.participants, sender)
+  if (ehConfiavel({ sender, participante, bot, config })) return
+
+  await apagarMensagem(bot, grupoId, info)
+
+  const alvo = sender
+  try {
+    await removerParticipante(bot, grupoId, alvo)
+  } catch (e) {
+    RedLog(`[antcarente] Não foi possível banir ${alvo}: ${e.message}`)
+    return
+  }
+
+  try {
+    await avisarBan(bot, grupoId, alvo, mensagemDeBan(config, alvo, violacao.mensagem))
+  } catch (e) {
+    RedLog(`[antcarente] Usuário banido, mas o aviso falhou: ${e.message}`)
+  }
+}
+
+module.exports = {
+  name: 'antcarente',
+  description: 'Proteção automática contra divulgações ocultas e números em blacklist',
+  category: 'admin',
+
+  async onMessage(contexto) {
+    const bot = contexto?.sock || contexto?.columbina
+    const info = contexto?.info || contexto?.messages?.[0]
+    if (!bot || !info?.message || info.key?.fromMe) return
+    if (!info.key?.remoteJid?.endsWith('@g.us')) return
+
+    const violacao = analisarMensagem(info.message)
+    if (!violacao) return
+
+    await punirMensagem({
+      bot,
+      info,
+      config: contexto?.config || {},
+      violacao
+    })
+  },
+
+  async onGroupParticipantsUpdate({ sock, columbina, update, config }) {
+    const bot = sock || columbina
+    if (!bot || update?.action !== 'add' || !update?.id) return
+
+    let metadata
+    try {
+      metadata = await bot.groupMetadata(update.id)
+    } catch (e) {
+      RedLog(`[antcarente] Erro ao consultar entrada no grupo: ${e.message}`)
+      return
+    }
+
+    for (const entrada of update.participants || []) {
+      const idsEntrada = jidsDoParticipante(entrada)
+      const jidEntrada = idsEntrada[0] || (typeof entrada === 'string' ? entrada : '')
+      const participante = encontrarParticipante(metadata?.participants, jidEntrada) || entrada
+      const telefone = telefoneDoParticipante(participante) || telefoneDoParticipante(entrada)
+
+      if (!telefone.startsWith('63')) continue
+
+      const alvo = jidParaAcao(jidEntrada || jidsDoParticipante(participante)[0])
+      if (!alvo) continue
+      if (ehConfiavel({ sender: alvo, participante, bot, config: config || {} })) continue
+
+      const chave = `entrada:${update.id}:${alvo}`
+      if (!reservar(chave)) continue
+
+      try {
+        await removerParticipante(bot, update.id, alvo)
+      } catch (e) {
+        RedLog(`[antcarente] Não foi possível banir número +63 (${alvo}): ${e.message}`)
+        continue
+      }
+
+      try {
+        const motivo = 'Numero com codigo de pais na blacklist, banido!!!'
+        await avisarBan(
+          bot,
+          update.id,
+          alvo,
+          mensagemDeBlacklist(config || {}, alvo, motivo)
+        )
+      } catch (e) {
+        RedLog(`[antcarente] Número +63 banido, mas o aviso falhou: ${e.message}`)
+      }
+    }
+  }
+}

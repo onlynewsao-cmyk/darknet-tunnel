@@ -1,0 +1,163 @@
+# =============================================================
+# DARK BOT — Render Blueprint v3 ULTRA
+# Render Free Tier optimizado + UptimeRobot ready
+#
+# COMO FAZER DEPLOY:
+# 1. Faz fork do repositório no GitHub
+# 2. No Render: New → Web Service → liga ao teu repositório
+# 3. Preenche as variáveis marcadas com "sync: false" no painel
+#    Render → Environment (nunca as ponhas aqui)
+# 4. Clica em Deploy
+# 5. Acede a /dashboard/connect para conectar o WhatsApp
+#
+# UPTIME ROBOT (evita hibernação no Render Free):
+# 1. Cria conta em uptimerobot.com (gratuito)
+# 2. Add New Monitor → HTTP(s)
+# 3. URL: https://SEU-NOME.onrender.com/ping
+# 4. Interval: 5 minutes
+#
+# NOTA v5.1: o bot também faz keep-alive sozinho (ping interno a
+# cada 14 min quando ligado ao WhatsApp), mas o UptimeRobot é mais
+# fiável no Render Free.
+# =============================================================
+
+services:
+  - type: web
+    name: dark-bot
+    env: node
+    plan: free
+    region: oregon
+    autoDeploy: true
+
+    # yt-dlp é OPCIONAL — se o pip não existir no Render Free, o bot usa os
+    # fallbacks: SystemZone API → @distube/ytdl-core → youtubei.js → Invidious
+    buildCommand: npm ci --omit=dev && (pip3 install --user yt-dlp 2>/dev/null || pip3 install yt-dlp 2>/dev/null || pip install yt-dlp 2>/dev/null || true)
+    startCommand: node src/index.js
+
+    # Render usa /health para verificar se o serviço está vivo
+    # UptimeRobot deve monitorar /ping (mais leve, sem JSON)
+    healthCheckPath: /health
+
+    envVars:
+      # ── Ambiente ──────────────────────────────────────────────
+      - key: NODE_ENV
+        value: production
+
+      # Render Free expõe na porta 10000 por defeito
+      - key: PORT
+        value: 10000
+
+      # Limitar memória ao disponível no Free (512 MB RAM)
+      # gc-interval mais frequente liberta memória mais rápido
+      - key: NODE_OPTIONS
+        value: --max-old-space-size=400 --gc-interval=100
+
+      # ── URL do teu serviço (OBRIGATÓRIO) ─────────────────────
+      # Substitui pelo URL real que o Render te dá
+      - key: APP_URL
+        value: https://dark-bot-hq2k.onrender.com
+
+      # ── Bot ───────────────────────────────────────────────────
+      - key: BOT_NAME
+        value: DARK BOT
+
+      - key: BOT_NUMBER
+        sync: false
+        # Número do WhatsApp do bot (só dígitos: 244XXXXXXXXX)
+
+      - key: BOT_PREFIX
+        value: "!"
+
+      # ── Dono ──────────────────────────────────────────────────
+      - key: OWNER_NAME
+        value: Dark Net
+
+      - key: OWNER_NUMBER
+        sync: false
+        # Teu número WhatsApp (só dígitos: 244XXXXXXXXX)
+
+      - key: OWNER_USERNAME
+        value: darknet
+
+      - key: OWNER_PASSWORD
+        sync: false
+        # Senha de acesso ao dashboard (define no painel do Render)
+
+      # ── Segurança da sessão web ───────────────────────────────
+      - key: SESSION_SECRET
+        sync: false
+        # String aleatória longa (mín 32 chars)
+        # Exemplo: openssl rand -hex 32
+
+      # ── MongoDB Atlas (OBRIGATÓRIO para produção) ─────────────
+      - key: MONGODB_URI
+        sync: false
+        # mongodb+srv://USUARIO:SENHA@cluster.mongodb.net/darkbot?retryWrites=true&w=majority
+        # Cria grátis em mongodb.com → Shared (M0)
+
+      # ── Cloudinary (hospedagem de mídia) ──────────────────────
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+
+      - key: CLOUDINARY_API_KEY
+        sync: false
+
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+
+      # ── IA — pelo menos uma chave activa o assistente ─────────
+      # GROQ: gratuito, rápido — obtém em console.groq.com
+      - key: GROQ_API_KEY
+        sync: false
+
+      # GEMINI: gratuito — obtém em aistudio.google.com
+      - key: GEMINI_API_KEY
+        sync: false
+
+      # OPENROUTER: opcional — openrouter.ai
+      # - key: OPENROUTER_API_KEY
+      #   sync: false
+
+      # OPENAI: opcional — platform.openai.com
+      # - key: OPENAI_API_KEY
+      #   sync: false
+
+      # ── Downloads (YouTube/yt-dlp) ────────────────────────────
+      - key: YTDLP_EXTRACTOR_ARGS
+        value: youtube:player_client=default,web_creator,android_vr
+
+      - key: YTDLP_COOKIES_BASE64
+        sync: false
+        # Opcional: cookies do YouTube em base64 (melhora downloads)
+
+      - key: MAX_YOUTUBE_SECONDS
+        value: 3600
+
+      - key: STICKER_VIDEO_MAX_SEC
+        value: 8
+
+      # ── GIFs (Tenor) ──────────────────────────────────────────
+      - key: TENOR_API_KEY
+        sync: false
+
+      # Canal WhatsApp do bot (aparece no menu)
+      - key: WHATSAPP_CHANNEL_URL
+        value: https://whatsapp.com/channel/0029VbC8voN4Y9lszc9VuT2D
+        # Grátis em tenor.com/gifapi
+
+      # ── Facebook Publisher (opcional) ─────────────────────────
+      - key: FB_PAGE_ID
+        sync: false
+
+      - key: FB_PAGE_ACCESS_TOKEN
+        sync: false
+
+      - key: FB_GRAPH_VERSION
+        value: v20.0
+
+      # ── Outros ────────────────────────────────────────────────
+      - key: SYSTEMZONE_API_URL
+        value: https://systemzone.store
+
+      - key: SYSTEMZONE_API_KEY
+        value: freekey

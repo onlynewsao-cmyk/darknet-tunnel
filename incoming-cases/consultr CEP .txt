@@ -1,0 +1,39 @@
+case 'cep': {
+try {
+
+const cep = args[0]?.replace(/\D/g, '');
+
+if (!cep) {
+return reply(`📍 Use:\n${prefix}cep 01001000`);
+}
+
+if (cep.length !== 8) {
+return reply('❌ CEP inválido.');
+}
+
+const { data } = await axios.get(`https://viacep.com.br/ws/${cep}/json/`);
+
+if (data.erro) {
+return reply('❌ CEP não encontrado.');
+}
+
+reply(`
+📍 *CONSULTA DE CEP*
+
+🔎 CEP: ${data.cep}
+🛣️ Logradouro: ${data.logradouro || 'Não informado'}
+🏘️ Bairro: ${data.bairro || 'Não informado'}
+🏙️ Cidade: ${data.localidade}
+🌎 Estado: ${data.uf}
+🗺️ Região: ${data.regiao || 'Não informado'}
+🏠 Complemento: ${data.complemento || 'Nenhum'}
+
+🤖 Zyron AI
+`.trim());
+
+} catch (e) {
+console.error(e);
+reply('❌ Erro ao consultar o CEP.');
+}
+}
+break;

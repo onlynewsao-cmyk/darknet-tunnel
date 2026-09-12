@@ -1,0 +1,36 @@
+# Dependências
+node_modules/
+
+# Segredos
+.env
+.env.*
+!.env.example
+uploads/
+
+# Sessões e auth
+/data/auth/
+data/
+sessions/
+*.session
+
+# Logs
+logs/
+*.log
+
+# OS / editores
+.DS_Store
+.vscode/
+.idea/
+
+# Temp ytdl-core
+*-player-script.js
+*-watch.html
+*.part
+*.ytdl
+
+# Build
+.cache/
+dist/
+build/
+coverage/
+.env

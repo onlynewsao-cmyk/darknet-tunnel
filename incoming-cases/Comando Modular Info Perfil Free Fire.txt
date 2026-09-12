@@ -1,0 +1,50 @@
+module.exports = {
+nome: ["infoff","ffinfo","perfilff"],
+executar: async ({
+waguri,
+from,
+q,
+reply,
+reagir
+  }) => {
+if (!q) return reply(`💗 *Hmph! Achou que ia esquecer de colocar o ID?* 💗\n› *Exemplo:* /infoff UID\nN-não me faz repetir, tá?!`);
+const targetId = q.trim();
+if (!/^\d+$/.test(targetId)) return reply(`🫣 *Hmph! Isso não parece um ID válido...* Tenta só números, bobinho(a)!`);
+reply(`🌸 *Hmph! Aguardinha só...* vou dar uma olhadinha nesse perfil pra você! 💌 N-não é porque eu quero, tá? Tanto faz pra mim!`);
+try {
+const { default: axios } = require('axios');
+const res = await axios.get('https://nyxlikesff.store/info', {
+params: { uid: targetId, token: 'SEU_AUTH' },
+timeout: 25000
+});
+
+const data = res.data;
+if (data.status === 'erro') {
+return reply(`💔 *Hmph! Não consegui consultar...*\n\n_${data.mensagem || data.message || 'Algo deu errado.'}_\n_Volta amanhã que eu tento de novo, tá?_ 💕`);
+}
+const msg = `🦊 *PERFIL DO JOGADOR* 🦊
+━━━━━━━━━━━━━━━━
+
+👤 *Jogador:* ${data.nickname || 'Desconhecido'}
+🆔 *ID:* ${data.id || targetId}
+⭐ *Nível:* ${data.level ?? '?'}
+💖 *Likes:* ${Number(data.likes ?? 0).toLocaleString('pt-BR')}
+🔥 *XP:* ${Number(data.xp ?? 0).toLocaleString('pt-BR')}
+🌎 *Região:* ${data.region || '?'}
+📦 *Versão:* ${data.release_version || '?'}
+🏆 *Rank BR:* ${data.br_max_rank ?? '?'} (${Number(data.br_rank_point ?? 0).toLocaleString('pt-BR')} pts)
+🎖️ *Rank CS:* ${data.cs_max_rank ?? '?'} (${Number(data.cs_rank_point ?? 0).toLocaleString('pt-BR')} pts)${data.has_booyah_pass ? '\n🎟️ *Booyah Pass:* Ativo' : ''}${data.guild ? `\n🏛️ *Guilda:* ${data.guild}` : ''}${data.biography ? `\n📝 *Bio:* ${data.biography}` : ''}
+
+━━━━━━━━━━━━━━━━
+✨ *Obrigada por usar a Nyx Services!* 🦊💕
+💌 *Volte sempre, bb!*... n-não se acostume com isso, viu?!`;
+
+await waguri.sendMessage(from, { text: msg });
+reagir(from, '💖');
+} catch (e) {
+const dados = e.response?.data;
+const msgErro = dados?.mensagem || dados?.message || e.message;
+reply(`😵 *Hmph! Ai, deu ruim...* Tenta novamente mais tarde, bobinho(a)! 💕 Não é porque eu me importo, tá?`);
+}
+}
+};

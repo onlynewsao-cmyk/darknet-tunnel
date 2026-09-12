@@ -1,0 +1,180 @@
+//INICIO DE COMANDOS DE FECHAR E ABRIR GRUPO NO HORÁRIO PROGRAMADO!!
+const horariosPath = './arquivos/grupos/grupo.json';
+
+let horarios = {};
+let dados = {
+  horarios: {},
+  executado: {}
+};
+
+// ✅ CARREGA DADOS DO ARQUIVO
+const carregarDados = () => {
+  if (fs.existsSync(horariosPath)) {
+    try {
+      const raw = JSON.parse(fs.readFileSync(horariosPath));
+      dados.horarios = raw.horarios || raw || {};
+      dados.executado = raw.executado || {};
+      if (!raw.horarios && !raw.executado) dados.horarios = raw;
+    } catch (e) {
+      console.error('❌ ERRO CARREGAR HORARIOS:', e);
+    }
+  }
+};
+
+// ✅ SALVA TUDO NO JSON
+const salvarDados = () => {
+  try { fs.writeFileSync(horariosPath, JSON.stringify(dados, null, 2)); }
+  catch (e) { console.error('❌ ERRO SALVAR:', e); }
+};
+
+
+const definirFechamento = (from, horario) => {
+  dados.horarios[from] = dados.horarios[from] || {};
+  dados.horarios[from].fechamento = horario;
+  delete dados.executado[from + '_fechamento'];
+  salvarDados();
+};
+
+const definirAbertura = (from, horario) => {
+  dados.horarios[from] = dados.horarios[from] || {};
+  dados.horarios[from].abertura = horario;
+  delete dados.executado[from + '_abertura'];
+  salvarDados();
+};
+
+const removerHorarios = (from) => {
+  delete dados.horarios[from];
+  delete dados.executado[from + '_fechamento'];
+  delete dados.executado[from + '_abertura'];
+  salvarDados();
+};
+
+// ✅ VERIFICA SE PODE EXECUTAR
+const deveExecutar = (chave, horarioAlvo) => {
+  const agora = moment().tz('America/Sao_Paulo');
+  const hoje = agora.format('YYYY-MM-DD');
+  const alvo = moment.tz(`${hoje} ${horarioAlvo}`, 'YYYY-MM-DD HH:mm', 'America/Sao_Paulo');
+  const jaFez = dados.executado[chave] === `${hoje} ${horarioAlvo}`;
+  return !jaFez && agora.isSameOrAfter(alvo);
+};
+
+const marcarFeito = (chave, horarioAlvo) => {
+  const hoje = moment().tz('America/Sao_Paulo').format('YYYY-MM-DD');
+  dados.executado[chave] = `${hoje} ${horarioAlvo}`;
+  salvarDados();
+};
+
+const verificarTodosGrupos = async (aoLigar = false) => {
+  for (const from in dados.horarios) {
+    const h = dados.horarios[from];
+    if (!h) continue;
+
+    try {
+      // 🔒 FECHAR GRUPO
+      if (h.fechamento && deveExecutar(from + '_fechamento', h.fechamento)) {
+        await sandro.groupSettingUpdate(from, 'announcement');
+        await sandro.sendMessage(from, { 
+          text: `🔒 GRUPO FECHADO\nHorário: ${h.fechamento}${aoLigar ? '\n⚡ Bot reiniciou, executado agora!' : ''}` 
+        });
+        marcarFeito(from + '_fechamento', h.fechamento);
+        console.log(`✅ FECHOU: ${from} | ${h.fechamento}`);
+      }
+
+      // 🔓 ABRIR GRUPO
+      if (h.abertura && deveExecutar(from + '_abertura', h.abertura)) {
+        await sandro.groupSettingUpdate(from, 'not_announcement');
+        await sandro.sendMessage(from, { 
+          text: `🔓 GRUPO ABERTO\nHorário: ${h.abertura}${aoLigar ? '\n⚡ Bot reiniciou, executado agora!' : ''}` 
+        });
+        marcarFeito(from + '_abertura', h.abertura);
+        console.log(`✅ ABRIU: ${from} | ${h.abertura}`);
+      }
+
+    } catch (e) {
+      console.error(`❌ ERRO ${from}:`, e.message);
+    }
+  }
+};
+
+// ✅ INICIA TUDO
+carregarDados();
+// ✅ RODA LOGO AO LIGAR — SE PERDEU HORÁRIO, EXECUTA AGORA
+setTimeout(() => verificarTodosGrupos(true), 2000);
+
+// ✅ LOOP 1 EM 1 SEGUNDO
+if (global.intervalHorarios) clearInterval(global.intervalHorarios);
+global.intervalHorarios = setInterval(() => verificarTodosGrupos(false), 1000);
+
+// ✅ RESETAR MEIA NOITE
+setInterval(() => {
+  if (moment().tz('America/Sao_Paulo').format('HH:mm') === '00:00') {
+    dados.executado = {};
+    salvarDados();
+    console.log('🔄 NOVO DIA — HORARIOS RESETADOS');
+  }
+}, 30000);
+
+
+
+
+
+
+case 'abrirgp':
+case 'abertura': {
+if (!isGroup) return reply("Esse comando só funciona em grupo.")
+if (!isBotGroupAdmins) return reply("Eu preciso ser administrador.")
+if (!isGroupAdmins) return reply("Você precisa ser administrador.")
+try {
+let barra = q.trim();
+if (!barra.includes(':')) return reply('*ꜰᴏʀᴍᴀᴛᴏ ɪɴᴠᴀ́ʟɪᴅᴏ, ᴜꜱᴇ 06:00* ❌');
+
+let [horas, minutos] = barra.split(':');
+if (!horas || !minutos) return reply('*ʜᴏʀᴀʀɪᴏ ɪɴᴄᴏᴍᴘʟᴇᴛᴏ, ᴜꜱᴇ 00:00* ⚠️');
+if (isNaN(horas) || isNaN(minutos)) return reply('*ᴜꜱᴇ ᴀᴘᴇɴᴀꜱ ɴᴜ́ᴍᴇʀᴏꜱ ɴᴏ ʜᴏʀᴀʀɪᴏ*');
+
+horas = horas.padStart(2, '0');
+minutos = minutos.padStart(2, '0');
+
+if (parseInt(horas) > 23 || parseInt(minutos) > 59) return reply('*ʜᴏʀᴀ́ʀɪᴏ ɪɴᴠᴀ́ʟɪᴅᴏ* ❌');
+
+let horarioFinal = `${horas}:${minutos}:00`;
+definirAbertura(from, horarioFinal);
+
+reply(`*🔓 ᴏ ɢʀᴜᴘᴏ ᴠᴀɪ ᴀʙʀɪʀ àꜱ ${horarioFinal}*`);
+
+} catch (e) {
+console.error('erro ao definir abertura:', e);
+reply('*ᴏᴄᴏʀʀᴇᴜ ᴜᴍ ᴇʀʀᴏ ᴀᴏ ᴅᴇꜰɪɴɪʀ ᴏ ʜᴏʀᴀʀɪᴏ ᴅᴇ ᴀʙᴇʀᴛᴜʀᴀ* ❌');
+}
+}
+break;
+
+case 'fechargp':
+case 'fechamento': {
+if (!isGroup) return reply("Esse comando só funciona em grupo.")
+if (!isBotGroupAdmins) return reply("Eu preciso ser administrador.")
+if (!isGroupAdmins) return reply("Você precisa ser administrador.")
+try {
+let barra = q.trim();
+if (!barra.includes(':')) return reply('*ꜰᴏʀᴍᴀᴛᴏ ɪɴᴠᴀ́ʟɪᴅᴏ, ᴜꜱᴇ ʜʜ:ᴍᴍ* ❌');
+
+let [horas, minutos] = barra.split(':');
+if (!horas || !minutos) return reply('*ʜᴏʀᴀʀɪᴏ ɪɴᴄᴏᴍᴘʟᴇᴛᴏ, ᴜꜱᴇ 23:00* ⚠️');
+if (isNaN(horas) || isNaN(minutos)) return reply('*ᴜꜱᴇ ᴀᴘᴇɴᴀꜱ ɴᴜ́ᴍᴇʀᴏꜱ ɴᴏ ʜᴏʀᴀʀɪᴏ* 🔢');
+
+horas = horas.padStart(2, '0');
+minutos = minutos.padStart(2, '0');
+
+if (parseInt(horas) > 23 || parseInt(minutos) > 59) return reply('*ʜᴏʀᴀ́ʀɪᴏ ɪɴᴠᴀ́ʟɪᴅᴏ* ❌');
+
+let horarioFinal = `${horas}:${minutos}:00`;
+definirFechamento(from, horarioFinal);
+
+await reply(`*🔒 ᴏ ɢʀᴜᴘᴏ ꜱᴇʀᴀ́ ꜰᴇᴄʜᴀᴅᴏ àꜱ ${horarioFinal}*`);
+
+} catch (e) {
+console.error('erro ao definir fechamento:', e);
+reply('*ᴏᴄᴏʀʀᴇᴜ ᴜᴍ ᴇʀʀᴏ ᴀᴏ ᴅᴇꜰɪɴɪʀ ᴏ ʜᴏʀᴀʀɪᴏ ᴅᴇ ꜰᴇᴄʜᴀᴍᴇɴᴛᴏ* ❌');
+}
+}
+break;

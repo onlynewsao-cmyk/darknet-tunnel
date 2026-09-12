@@ -1,0 +1,405 @@
+'use strict'
+
+const fs = require('fs')
+const path = require('path')
+const {
+  encontrarMembro,
+  jidsDoParticipante,
+  jidsRelacionados,
+  melhorJid,
+  mesmoParticipante,
+  numeroDoJid
+} = require('../_utils/participantes.js')
+
+const CONFIG_FILE = process.env.TOPH_AUTOAPRESENTAR_CONFIG_FILE ||
+  path.resolve(__dirname, '../../arquivos/json/autoapresentar.json')
+const MINUTO_MS = Math.max(
+  50,
+  Number(process.env.TOPH_AUTOAPRESENTAR_MINUTO_MS) || 60_000
+)
+const PRAZO_MINUTOS = 5
+const PRAZO_MS = PRAZO_MINUTOS * MINUTO_MS
+
+// grupoId => Map(token, pendencia)
+const pendentes = new Map()
+
+let RedLog = mensagem => console.error(mensagem)
+try {
+  ;({ RedLog } = require('../../arquivos/js/logger.js'))
+} catch {}
+
+function nomeDoBot(config) {
+  return config?.NomeDoBot || 'TOPh-BOT'
+}
+
+function painel(config, linhas) {
+  return [
+    `╔━◈『 *${nomeDoBot(config)}* 』◈`,
+    `┃`,
+    ...linhas.map(linha => `┃ 𝄞 ${linha}`),
+    `┗━◈`
+  ].join('\n')
+}
+
+function lerConfiguracao() {
+  try {
+    if (!fs.existsSync(CONFIG_FILE)) return {}
+    return JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'))
+  } catch (e) {
+    RedLog(`[autoapresentar] Erro ao ler configuracao: ${e.message}`)
+    return {}
+  }
+}
+
+function salvarConfiguracao(configuracao) {
+  fs.mkdirSync(path.dirname(CONFIG_FILE), { recursive: true })
+  fs.writeFileSync(CONFIG_FILE, JSON.stringify(configuracao, null, 2))
+}
+
+function estaAtivo(grupoId) {
+  return lerConfiguracao()[grupoId]?.ativo === true
+}
+
+function mapaDoGrupo(grupoId, criar = false) {
+  let mapa = pendentes.get(grupoId)
+  if (!mapa && criar) {
+    mapa = new Map()
+    pendentes.set(grupoId, mapa)
+  }
+  return mapa
+}
+
+function cancelarTimers(pendencia) {
+  if (!pendencia) return
+  pendencia.cancelada = true
+  if (pendencia.timer) clearTimeout(pendencia.timer)
+  for (const timer of pendencia.timers || []) clearTimeout(timer)
+  pendencia.timer = null
+  pendencia.timers = []
+}
+
+function apagarPendencia(grupoId, token) {
+  const mapa = mapaDoGrupo(grupoId)
+  if (!mapa) return null
+
+  const pendencia = mapa.get(token)
+  cancelarTimers(pendencia)
+  mapa.delete(token)
+  if (mapa.size === 0) pendentes.delete(grupoId)
+  return pendencia || null
+}
+
+function cancelarPendenciasDoGrupo(grupoId) {
+  const mapa = mapaDoGrupo(grupoId)
+  if (!mapa) return 0
+
+  const quantidade = mapa.size
+  for (const pendencia of mapa.values()) {
+    cancelarTimers(pendencia)
+  }
+  pendentes.delete(grupoId)
+  return quantidade
+}
+
+function cancelarPendenciasDeParticipantes(grupoId, participantes) {
+  const mapa = mapaDoGrupo(grupoId)
+  if (!mapa?.size) return 0
+
+  const idsSaida = new Set(
+    (participantes || []).flatMap(participante =>
+      jidsDoParticipante(participante)
+    )
+  )
+  let canceladas = 0
+
+  for (const [token, pendencia] of [...mapa.entries()]) {
+    if ([...pendencia.jids].some(jid => idsSaida.has(jid))) {
+      apagarPendencia(grupoId, token)
+      canceladas++
+    }
+  }
+
+  return canceladas
+}
+
+function participanteAtual(pendencia, membros) {
+  return (membros || []).find(membro => {
+    return jidsDoParticipante(membro).some(jid => pendencia.jids.has(jid))
+  }) || encontrarMembro(pendencia.participante, membros)
+}
+
+function botEhAdmin(sock, membros) {
+  const numeroBot = String(sock?.user?.id || '').split(':')[0].split('@')[0]
+  if (!numeroBot) return false
+
+  const bot = (membros || []).find(membro => {
+    return jidsDoParticipante(membro).some(jid => numeroDoJid(jid) === numeroBot)
+  })
+  return bot?.admin === 'admin' || bot?.admin === 'superadmin'
+}
+
+async function enviarLembrete(sock, grupoId, token, minutoPassado) {
+  const pendencia = mapaDoGrupo(grupoId)?.get(token)
+  if (!pendencia || pendencia.cancelada) return
+
+  const minutosRestantes = PRAZO_MINUTOS - minutoPassado
+  try {
+    await sock.sendMessage(grupoId, {
+      text: painel({ NomeDoBot: pendencia.nomeBot }, [
+        `*Alerta  »* ⏰ @${numeroDoJid(pendencia.jid)}`,
+        `*Tempo   »* ${minutoPassado} ${minutoPassado === 1 ? 'minuto passou' : 'minutos passaram'}`,
+        `*Restam  »* ${minutosRestantes} ${minutosRestantes === 1 ? 'minuto' : 'minutos'}`,
+        `*Ação    »* Envie uma mensagem para não ser removido.`
+      ]),
+      mentions: [pendencia.jid]
+    })
+  } catch (e) {
+    RedLog(`[autoapresentar] Nao foi possivel enviar lembrete: ${e.message}`)
+  }
+}
+
+async function removerSeNaoApresentou(sock, grupoId, token) {
+  const mapa = mapaDoGrupo(grupoId)
+  const pendencia = mapa?.get(token)
+  if (!pendencia) return
+
+  // Retira da fila primeiro para uma mensagem enviada depois do prazo nao
+  // cancelar uma remocao que ja comecou.
+  apagarPendencia(grupoId, token)
+
+  try {
+    const metadata = await sock.groupMetadata(grupoId)
+    const membros = metadata?.participants || []
+    const membro = participanteAtual(pendencia, membros)
+
+    // O participante pode ter saído sozinho durante os 5 minutos.
+    if (!membro) return
+
+    // Evita remover administradores caso o membro tenha sido promovido durante
+    // o prazo. A remocao automatica vale somente para membros comuns.
+    if (membro.admin === 'admin' || membro.admin === 'superadmin') return
+
+    if (!botEhAdmin(sock, membros)) {
+      throw new Error('o bot nao e administrador do grupo')
+    }
+
+    const jidRemocao = membro.id || membro.jid || membro.lid || pendencia.jid
+    await sock.groupParticipantsUpdate(grupoId, [jidRemocao], 'remove')
+
+    await sock.sendMessage(grupoId, {
+      text: painel({ NomeDoBot: pendencia.nomeBot }, [
+        `*Ação    »* 🚫 Membro removido`,
+        `*Membro  »* @${numeroDoJid(pendencia.jid)}`,
+        `*Motivo  »* Não enviou uma mensagem em ${PRAZO_MINUTOS} minutos.`
+      ]),
+      mentions: [pendencia.jid]
+    }).catch(() => {})
+  } catch (e) {
+    RedLog(`[autoapresentar] Nao foi possivel remover ${pendencia.jid} de ${grupoId}: ${e.stack || e.message}`)
+    await sock.sendMessage(grupoId, {
+      text: painel({ NomeDoBot: pendencia.nomeBot }, [
+        `*Aviso   »* ⚠️ Falha na remoção`,
+        `*Membro  »* @${numeroDoJid(pendencia.jid)}`,
+        `*Motivo  »* Verifique se o bot é administrador.`
+      ]),
+      mentions: [pendencia.jid]
+    }).catch(() => {})
+  }
+}
+
+async function criarPendencia(sock, grupoId, participante, membros, config) {
+  const membro = encontrarMembro(participante, membros)
+  const jid = melhorJid(membro, jidsDoParticipante(participante)[0])
+  if (!jid) return
+
+  // Administradores não precisam cumprir a apresentação automática.
+  if (membro?.admin === 'admin' || membro?.admin === 'superadmin') return
+
+  const numeroBot = String(sock?.user?.id || '').split(':')[0].split('@')[0]
+  if (numeroDoJid(jid) === numeroBot) return
+
+  const jids = new Set(jidsRelacionados(membro || participante, membros))
+  jids.add(jid)
+
+  const mapa = mapaDoGrupo(grupoId, true)
+
+  // Se o mesmo participante for adicionado novamente, substitui o prazo antigo.
+  for (const [tokenExistente, atual] of mapa.entries()) {
+    if ([...atual.jids].some(id => jids.has(id))) apagarPendencia(grupoId, tokenExistente)
+  }
+
+  const token = `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  const pendencia = {
+    participante,
+    jid,
+    jids,
+    nomeBot: nomeDoBot(config),
+    timer: null,
+    timers: [],
+    cancelada: false
+  }
+  mapaDoGrupo(grupoId, true).set(token, pendencia)
+
+  try {
+    await sock.sendMessage(grupoId, {
+      text: painel(config, [
+        `*Aviso   »* ⚠️ @${numeroDoJid(jid)}`,
+        `*Ação    »* Apresente-se para o grupo.`,
+        `*Prazo   »* ${PRAZO_MINUTOS} minutos`,
+        `*Alertas »* A cada 1 minuto.`,
+        `*Punição »* Remoção automática.`
+      ]),
+      mentions: [jid]
+    })
+  } catch (e) {
+    apagarPendencia(grupoId, token)
+    throw e
+  }
+
+  // O membro pode ter enviado uma mensagem enquanto o aviso era enviado.
+  const aindaPendente = mapaDoGrupo(grupoId)?.get(token)
+  if (!aindaPendente) return
+
+
+  for (let minuto = 1; minuto < PRAZO_MINUTOS; minuto++) {
+    const timerLembrete = setTimeout(() => {
+      enviarLembrete(sock, grupoId, token, minuto).catch(e => {
+        RedLog(`[autoapresentar] Erro no lembrete: ${e.stack || e.message}`)
+      })
+    }, minuto * MINUTO_MS)
+    timerLembrete.unref?.()
+    aindaPendente.timers.push(timerLembrete)
+  }
+
+  aindaPendente.timer = setTimeout(() => {
+    removerSeNaoApresentou(sock, grupoId, token).catch(e => {
+      RedLog(`[autoapresentar] Erro no temporizador: ${e.stack || e.message}`)
+    })
+  }, PRAZO_MS)
+  aindaPendente.timer.unref?.()
+}
+
+module.exports = {
+  name: 'autoapresentar',
+  description: 'Exige que novos membros enviem uma mensagem em ate 5 minutos',
+  category: 'admin',
+  aliases: ['autoapresentacao', 'apresentacao'],
+  needBotAdmin: true,
+
+  async execute({ from, args, prefix = '!', reply, reagir, isGroup, isAdm, isBotAdm, isDono, config }) {
+    if (!isGroup) return reply(painel(config, [
+      `*Erro »* ❌ Este comando funciona apenas em grupos.`
+    ]))
+
+    const dono = typeof isDono === 'function' ? isDono() : Boolean(isDono)
+    if (!isAdm && !dono) return reply(painel(config, [
+      `*Erro »* ❌ Apenas administradores podem usar este comando.`
+    ]))
+
+    const acao = String(args[0] || 'status').toLowerCase()
+    const configuracao = lerConfiguracao()
+    const ativo = configuracao[from]?.ativo === true
+
+    if (['on', 'ativar', 'ligar', '1'].includes(acao)) {
+      if (!isBotAdm) return reply(painel(config, [
+        `*Erro »* ❌ Preciso ser administrador do grupo.`,
+        `*Motivo »* A remoção automática exige permissão de admin.`
+      ]))
+
+      configuracao[from] = { ...(configuracao[from] || {}), ativo: true }
+      salvarConfiguracao(configuracao)
+      await reagir('✅')
+      return reply(painel(config, [
+        `*Recurso »* Autoapresentação`,
+        `*Status  »* Ativado ✅`,
+        `*Prazo   »* ${PRAZO_MINUTOS} minutos`,
+        `*Alertas »* A cada 1 minuto`,
+        `*Ação    »* Novos membros devem enviar uma mensagem.`
+      ]))
+    }
+
+    if (['off', 'desativar', 'desligar', '0'].includes(acao)) {
+      configuracao[from] = { ...(configuracao[from] || {}), ativo: false }
+      salvarConfiguracao(configuracao)
+      cancelarPendenciasDoGrupo(from)
+      await reagir('✅')
+      return reply(painel(config, [
+        `*Recurso »* Autoapresentação`,
+        `*Status  »* Desativado ❌`
+      ]))
+    }
+
+    if (!['status', 'ajuda', 'help'].includes(acao)) {
+      return reply(painel(config, [
+        `*Erro »* ❌ Opção inválida.`,
+        `*Uso  »* ${prefix}autoapresentar on/off`
+      ]))
+    }
+
+    return reply(painel(config, [
+      `*Recurso »* Autoapresentação`,
+      `*Status  »* ${ativo ? 'Ativado ✅' : 'Desativado ❌'}`,
+      `*Prazo   »* ${PRAZO_MINUTOS} minutos`,
+      `*Alertas »* A cada 1 minuto`,
+      `*Uso     »* ${prefix}autoapresentar on/off`
+    ]))
+  },
+
+  async onGroupParticipantsUpdate({ sock, columbina, update, config }) {
+    const bot = sock || columbina
+    const { id: grupoId, participants = [], action } = update || {}
+    if (!bot || !grupoId) return
+
+    if (action === 'remove') {
+      cancelarPendenciasDeParticipantes(grupoId, participants)
+      return
+    }
+
+    if (action !== 'add' || !estaAtivo(grupoId)) return
+
+    let metadata
+    try {
+      metadata = await bot.groupMetadata(grupoId)
+    } catch (e) {
+      RedLog(`[autoapresentar] Nao foi possivel obter o grupo ${grupoId}: ${e.message}`)
+      return
+    }
+
+    for (const participante of participants) {
+      try {
+        await criarPendencia(bot, grupoId, participante, metadata?.participants || [], config)
+      } catch (e) {
+        RedLog(`[autoapresentar] Nao foi possivel avisar o participante: ${e.stack || e.message}`)
+      }
+    }
+  },
+
+  async onMessage({ sock, columbina, msg, message, info, messages }) {
+    const bot = sock || columbina
+    const evento = msg || message || info || messages?.[0]
+    if (!bot || !evento?.message || evento.key?.fromMe) return
+
+    const grupoId = evento.key?.remoteJid || ''
+    if (!grupoId.endsWith('@g.us')) return
+
+    const mapa = mapaDoGrupo(grupoId)
+    if (!mapa?.size) return
+
+    const remetente = evento.key?.participant || grupoId
+    let encontrado = [...mapa.entries()].find(([, pendencia]) => pendencia.jids.has(remetente))
+
+    // Em algumas mensagens o WhatsApp alterna entre LID e telefone. Se nao
+    // houve correspondencia direta, cruza novamente com a lista atual do grupo.
+    if (!encontrado) {
+      try {
+        const metadata = await bot.groupMetadata(grupoId)
+        encontrado = [...mapa.entries()].find(([, pendencia]) => {
+          return mesmoParticipante(remetente, pendencia.participante, metadata?.participants || [])
+        })
+      } catch {}
+    }
+
+    if (!encontrado) return
+    apagarPendencia(grupoId, encontrado[0])
+  }
+}

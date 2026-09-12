@@ -1,0 +1,56 @@
+case 'fakemsg':
+case 'fakechat': {
+  try {
+    if (!q || !q.includes('|')) {
+      return reply(`*Formato incorreto!*\n\n📌 Exemplo:\n${prefix + command} mensagem fake|resposta\n\n💡 *Responda a mensagem de alguém para usar!*`);
+    }
+
+    const partes = q.split("|");
+    const textoFake = partes[0]?.trim();
+    const bott = partes[1]?.trim();
+
+    if (!textoFake || !bott) {
+      return reply(`*Preencha tudo corretamente!*\n\n📌 Exemplo:\n${prefix + command} mensagem fake|resposta`);
+    }
+
+    const prefixosBloqueados = [prefix, "-", "/", "#", "+", ".", "!"];
+    if (prefixosBloqueados.some(p => bott.startsWith(p))) {
+      return reply('*Não é permitido fazer o bot enviar comandos no fake chat, seu desgraçado.*');
+    }
+
+    const ctxInfo = info?.message?.extendedTextMessage?.contextInfo;
+
+    if (!ctxInfo?.participant || ctxInfo?.stanzaId === info?.key?.id) {
+      return reply(`*Responda a mensagem de alguém para usar esse comando!*`);
+    }
+
+    const mentioned = jidNormalizedUser(normalizar(ctxInfo.participant));
+    const msgId = "BAE5" + require('crypto').randomBytes(13).toString('hex').toUpperCase();
+
+    await reagir(from, "🎭");
+
+    await conn.sendMessage(from, {
+      text: bott
+    }, {
+      quoted: {
+        key: {
+          fromMe: false,
+          remoteJid: from,
+          participant: mentioned,
+          id: msgId
+        },
+        message: {
+          conversation: textoFake
+        }
+      }
+    });
+
+    await reagir(from, "✅");
+
+  } catch (e) {
+    console.error(e);
+    await reagir(from, "❌");
+    reply('*Erro ao criar fake chat.*');
+  }
+}
+break;

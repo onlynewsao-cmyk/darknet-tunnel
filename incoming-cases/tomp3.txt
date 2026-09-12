@@ -1,0 +1,50 @@
+case 'tomp3': {
+    const q = m.quoted ? m.quoted : m;
+    const mime = (q.msg || q).mimetype || '';
+
+    if (!/video/.test(mime) && !/audio/.test(mime)) {
+        return m.reply(`Responda a um vídeo com o comando *${prefix}tomp3* para converter em áudio.`);
+    }
+
+    await systemZR.sendMessage(m.chat, { react: { text: '⏳', key: m.key } });
+
+    try {
+        const fs = require('fs');
+        const { exec } = require('child_process');
+        const crypto = require('crypto');
+        const mediaBuffer = await q.download();
+        const randomName = crypto.randomBytes(6).toString('hex');
+        const inputPath = `./${randomName}.mp4`;
+        const outputPath = `./${randomName}.mp3`;
+
+        fs.writeFileSync(inputPath, mediaBuffer);
+
+        exec(`ffmpeg -i ${inputPath} -vn -ar 44100 -ac 2 -b:a 192k ${outputPath}`, async (err) => {
+            if (err) {
+                if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
+                console.error('[TOMP3 ERROR]', err);
+                await systemZR.sendMessage(m.chat, { react: { text: '❌', key: m.key } });
+                return m.reply('Erro ao converter o vídeo para MP3.');
+            }
+
+            const audioBuffer = fs.readFileSync(outputPath);
+
+            await systemZR.sendMessage(m.chat, {
+                audio: audioBuffer,
+                mimetype: 'audio/mpeg',
+                ptt: false 
+            }, { quoted: m });
+
+            await systemZR.sendMessage(m.chat, { react: { text: '✅', key: m.key } });
+
+            fs.unlinkSync(inputPath);
+            fs.unlinkSync(outputPath);
+        });
+
+    } catch (e) {
+        console.error('[TOMP3 ERROR]', e);
+        await systemZR.sendMessage(m.chat, { react: { text: '❌', key: m.key } });
+        m.reply('Falha ao tentar baixar ou converter a mídia.');
+    }
+}
+break;

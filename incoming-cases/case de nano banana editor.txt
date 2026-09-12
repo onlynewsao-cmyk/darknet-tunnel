@@ -1,0 +1,148 @@
+case 'edits': {
+    const q = m.quoted ? m.quoted : m
+    const mime = (q.msg || q).mimetype || ''
+
+    if (!/image/.test(mime)) return m.reply(
+        `Marque uma *imagem* para adicionar à seleção!\n\n` +
+        `Uso: *${prefix}edits* (marcando uma imagem)\n\n` +
+        `Depois use *${prefix}edit [prompt]* marcando outra imagem\n` +
+        `ou use *${prefix}editl* para limpar a seleção.`
+    )
+    const userId = m.sender.split('@')[0].split(':')[0]
+
+    if (!global._editSelectCache.has(userId)) {
+        global._editSelectCache.set(userId, { images: [], timer: null })
+    }
+    const session = global._editSelectCache.get(userId)
+    if (session.images.length >= 2) return m.reply(
+        `Você já tem *${session.images.length} imagens* na seleção (máximo 2).\n` +
+        `Use *${prefix}editl* para limpar e começar de novo.`
+    )
+
+    const imgBuffer = await q.download()
+    session.images.push(imgBuffer)
+
+    if (session.timer) clearTimeout(session.timer)
+    session.timer = setTimeout(() => {
+        global._editSelectCache.delete(userId)
+    }, 300000)
+
+    await systemZR.sendMessage(m.chat, { react: { text: '✅', key: m.key } })
+    m.reply(
+        `╔━᳀『 *Seleção de Imagens* 』═᳀\n` +
+        `⌬ *Imagem ${session.images.length} adicionada!*\n` +
+        `⌬ Total na seleção: *${session.images.length}/4*\n` +
+        `⌬ Expira em *5 minutos* sem uso\n` +
+        `╚━═━═━═━═━═━═━═━═━═᳀\n\n`
+    )
+}
+break
+case 'editl': {
+const userId = m.sender.split('@')[0].split(':')[0]
+const session = global._editSelectCache.get(userId)
+    if (session?.timer) clearTimeout(session.timer)
+    global._editSelectCache.delete(userId)
+    await systemZR.sendMessage(m.chat, { react: { text: '🗑️', key: m.key } })
+    m.reply('Seleção de imagens limpa!') }
+break
+
+case 'edit':
+case 'editimg':
+case 'aiedit': {
+    const q = m.quoted ? m.quoted : m
+    const mime = (q.msg || q).mimetype || ''
+    const userId = m.sender.split('@')[0].split(':')[0]
+    const session = global._editSelectCache.get(userId)
+    const temCache = session && session.images.length > 0
+    const temImagem = /image/.test(mime)
+
+    if (!temCache && !temImagem) return m.reply(
+        `Marque uma *imagem* ou use *${prefix}editselect* para selecionar imagens antes!\n\n` +
+        `Uso: *${prefix}edit [prompt]*\n` +
+        `Exemplos:\n` +
+        `*${prefix}edit faça ela sorrir*\n` +
+        `*${prefix}edit troque o fundo por praia*`
+    )
+
+    const prompt = (m.text || m.body || '').trim().split(/\s+/).slice(1).join(' ')
+    if (!prompt) return m.reply(`Informe o que deseja editar!\nExemplo: *${prefix}edit faça ela sorrir*`)
+
+    try {
+        await systemZR.sendMessage(m.chat, { react: { text: '🤔', key: m.key } })
+        const processMsg = await systemZR.sendMessage(m.chat, {
+            text: '*Iniciando edição...*'
+        }, { quoted: m })
+
+        const FormData = require('form-data')
+        const axios    = require('axios')
+
+        async function criarJob(buffers, p) {
+            const form = new FormData()
+            form.append('image', buffers[0], 'image1.jpg')
+            if (buffers[1]) form.append('image2', buffers[1], 'image2.jpg')
+            form.append('prompt', p)
+
+            const r = await axios.post('https://zone.api.br/api/v2/nano-banana?apikey=freekey', form, {
+                headers: form.getHeaders(),
+                maxBodyLength: Infinity,
+                maxContentLength: Infinity,
+                timeout: 60000,
+            })
+            if (!r.data?.status || !r.data?.job_id) throw new Error('Falha ao criar o job de edição')
+            return r.data.job_id
+        }
+
+        async function checarJob(jobId) {
+            const r = await axios.get('https://zone.api.br/api/v2/nano-banana/status', {
+                params: { job_id: jobId },
+                timeout: 15000,
+            })
+            return r.data
+        }
+const buffers = []
+
+        if (temCache) {
+            buffers.push(...session.images)
+        }
+
+        if (temImagem) {
+            await systemZR.sendMessage(m.chat, { text: '*Extraindo imagem marcada...*', edit: processMsg.key })
+            const imgBuffer = await q.download()
+            buffers.push(imgBuffer)
+        }
+        const usadas = buffers.slice(0, 2)
+        const totalImgs = usadas.length
+        const ignoradas = buffers.length - usadas.length
+
+        await systemZR.sendMessage(m.chat, {
+            text: `*Enviando ${totalImgs} imagem(ns) para o servidor...*${ignoradas > 0 ? `\n_(${ignoradas} imagem(ns) extra ignorada(s), limite é 2)_` : ''}`,
+            edit: processMsg.key
+        })
+        if (session?.timer) clearTimeout(session.timer)
+        global._editSelectCache.delete(userId)
+        const jobId = await criarJob(usadas, prompt)
+        await systemZR.sendMessage(m.chat, { text: `*Editando com ${totalImgs} imagem(ns)...*`, edit: processMsg.key })
+        let result, tries = 0
+        do {
+            await new Promise(r => setTimeout(r, 4000))
+            result = await checarJob(jobId)
+            if (++tries > 30) throw new Error('Tempo esgotado, tente novamente')
+        } while (result?.estado !== 'done' && result?.estado !== 'error')
+
+        if (result?.estado === 'error' || !result?.imagem) throw new Error('Nenhum resultado retornado')
+        await systemZR.sendMessage(m.chat, { text: '*Edição concluída! Enviando...*', edit: processMsg.key })
+        await systemZR.sendMessage(m.chat, {
+            image: { url: result.imagem },
+            caption:
+                `╔━᳀『 *SYSTEM ZERO* 』═᳀\n` +
+                `⌬ *Imagens usadas:* ${totalImgs}\n` +
+                `⌬ *Prompt:* ${prompt}\n` +
+                `╚━═━═━═━═━═━═━═᳀`
+        }, { quoted: m })
+        await systemZR.sendMessage(m.chat, { react: { text: '😮‍💨', key: m.key } })
+    } catch (e) {
+        console.error('[EDIT ERROR]', e?.message || e)
+        await systemZR.sendMessage(m.chat, { react: { text: '👎', key: m.key } })
+        m.reply('Erro ao editar imagem: ' + (e?.message || 'tente novamente'))
+    } }
+break

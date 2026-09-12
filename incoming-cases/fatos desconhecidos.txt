@@ -1,0 +1,29 @@
+case 'fdc': {
+    try {
+        await systemZR.sendMessage(m.chat, { react: { text: '🤔', key: m.key } });
+
+          const axios = require('axios');
+        const apiUrl = 'https://zone.api.br/api/fatosdesconhecidos';
+          const response = await axios.get(apiUrl);
+        const data = response.data;
+
+        if (!data || !data.status || !data.resultado) {
+            throw new Error('Falha ao obter dados da API');
+        }
+
+        const res = data.resultado;
+       const textoFdc = `╔━᳀『 *FATOS DESCONHECIDOS* 』═᳀\n\n` + `⌬ *${res.titulo}*\n\n` + `${res.conteudo}\n\n` + `╚━═━═━═━═━═━═━═━═━═᳀`;
+        await systemZR.sendMessage(m.chat, {
+            image: { url: res.imagem },
+            caption: textoFdc
+        }, { quoted: m });
+
+        await systemZR.sendMessage(m.chat, { react: { text: '☝️', key: m.key } });
+
+    } catch (e) {
+        console.error('[FDC ERROR]', e?.message || e);
+        await systemZR.sendMessage(m.chat, { react: { text: '👎', key: m.key } });
+        m.reply('Erro ao buscar curiosidade: ' + (e?.message || 'tente novamente'));
+    }
+}
+break;

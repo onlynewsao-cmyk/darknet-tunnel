@@ -1,0 +1,114 @@
+case 'pdf': {
+    try {
+        if (!q || !q.trim()) {
+            return reply(`❌ Digite o que você quer transformar em PDF.
+
+Exemplo:
+$pdf Crie um currículo para João, 20 anos, com experiência em programação`);
+        }
+
+        const axios = require('axios');
+        const PDFDocument = require('pdfkit');
+        const fs = require('fs');
+        const path = require('path');
+
+        const prompt = q.trim();
+
+        // Chama sua API de IA
+        const apiUrl = `https://systemzone.store/ai/gptoss?apikey="API_KEY_SYSTEM_ZERO"&text=${encodeURIComponent(prompt)}`;
+
+        const { data } = await axios.get(apiUrl);
+
+        if (!data?.status || !data?.result) {
+            return reply('❌ Não foi possível gerar o conteúdo.');
+        }
+
+        const texto = data.result;
+
+        // Pasta temporária
+        const pasta = path.join(__dirname, 'tmp');
+
+        if (!fs.existsSync(pasta)) {
+            fs.mkdirSync(pasta, { recursive: true });
+        }
+
+        const nomeArquivo = `documento_${Date.now()}.pdf`;
+        const caminho = path.join(pasta, nomeArquivo);
+
+        // Cria PDF
+        const doc = new PDFDocument({
+            size: 'A4',
+            margins: {
+                top: 50,
+                bottom: 50,
+                left: 50,
+                right: 50
+            }
+        });
+
+        const stream = fs.createWriteStream(caminho);
+
+        doc.pipe(stream);
+
+        doc.font('Helvetica');
+
+        // Remove algumas marcações Markdown
+        const textoLimpo = texto
+            .replace(/\*\*(.*?)\*\*/g, '$1')
+            .replace(/###\s*/g, '')
+            .replace(/---+/g, '')
+            .replace(/\|/g, ' ')
+            .replace(/^\s*[-*]\s*/gm, '• ');
+
+        doc.fontSize(11).text(textoLimpo, {
+            align: 'left',
+            lineGap: 4
+        });
+
+        doc.end();
+
+        // Aguarda terminar de criar
+        stream.on('finish', async () => {
+
+            try {
+
+                await sock.sendMessage(from, {
+                    document: {
+                        url: caminho
+                    },
+                    mimetype: 'application/pdf',
+                    fileName: nomeArquivo,
+                    caption: `📄 PDF gerado com sucesso!`
+                });
+
+                // Apaga o arquivo depois do envio
+                setTimeout(() => {
+                    if (fs.existsSync(caminho)) {
+                        fs.unlinkSync(caminho);
+                    }
+                }, 5000);
+
+            } catch (err) {
+                console.log('Erro ao enviar PDF:', err);
+                reply('❌ Erro ao enviar o PDF.');
+            }
+
+        });
+
+        stream.on('error', (err) => {
+            console.log('Erro ao criar PDF:', err);
+            reply('❌ Erro ao criar o arquivo PDF.');
+        });
+
+    } catch (error) {
+        console.log('Erro no comando PDF:', error);
+
+        if (error.response) {
+            console.log('Resposta da API:', error.response.data);
+        }
+
+        reply('❌ Ocorreu um erro ao gerar o PDF.');
+    }
+
+    break;
+}

@@ -1,0 +1,30 @@
+case 'grok': {
+    if (!text) return m.reply(`Uso: ${prefix}grok <pergunta>\nOu com imagem: ${prefix}grok <pergunta> | <url da imagem>`);
+
+    const pedacos = text.split('|').map(p => p.trim());
+    const pergunta = pedacos[0];
+    const imagemUrl = pedacos[1] || null;
+    if (!pergunta) return m.reply(`Uso: ${prefix}grok <pergunta>\nOu com imagem: ${prefix}grok <pergunta> | <url da imagem>`);
+    try {
+        await systemZR.sendMessage(m.chat, { react: { text: '🤔', key: m.key } });
+        const params = { apikey: 'freekey', text: pergunta };
+        if (imagemUrl) params.image = imagemUrl;
+
+        const { data } = await axios.get('https://zone.api.br/api/ia/grok-4-5', {
+            params,
+            timeout: 60000
+        });
+        if (!data?.status || !data?.text) {
+            await systemZR.sendMessage(m.chat, { react: { text: '❌', key: m.key } });
+            return m.reply('Erro na mísera do Grok.');
+        }
+
+        await systemZR.sendMessage(m.chat, { text: data.text }, { quoted: m });
+        await systemZR.sendMessage(m.chat, { react: { text: '✅', key: m.key } });
+    } catch (e) {
+        console.error('grok', e?.message || e);
+        await systemZR.sendMessage(m.chat, { react: { text: '❌', key: m.key } });
+        m.reply('Erro na mísera do Grok.');
+    }
+}
+break;
