@@ -45,16 +45,39 @@ async function _get(bcc, k) { return bcc.get(`divulg_${k}`, null); }
 async function _set(bcc, k, v) { return bcc.set(`divulg_${k}`, v); }
 
 // ── DARKTOXIC (mesmo ADN do cartão de prefixo) ───────────────
+// v9.18 🕷️ TEMAS DO CLIENTE — a moldura dos painéis do dono (darktoxic é
+// sempre a base da casa; ARANHA é a variante web). Cache por dono +
+// _TEMA_ATUAL por invocação (o wrapper do registerCase trata do carregamento).
+const TEMAS = {
+  darktoxic: {
+    selo: '   ☠️ *DARKTOXIC* ☠️',
+    top: '☣️◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢☣️',
+    fim: '☣️◤◢◤◢◤◢◤◢◤◢◤◢◤◢◢☣️',
+    marco: (t) => `🕸️〘 ${t} 〙🕸️`,
+  },
+  aranha: {
+    selo: '   🕷️ *WEB TOXICA* 🕸️',
+    top: '🕸️╔══»»»»»»»══╗🕷️',
+    fim: '🕷️╚══«««««««══╝🕸️',
+    marco: (t) => `🕸️《 ${t} 》🕷️`,
+  },
+};
+const _TEMA_CACHE = new Map(); // own → nome do tema (gravado no BotConfig)
+let _TEMA_ATUAL = 'darktoxic';
+
+function _tema(own) { return _TEMA_CACHE.get(String(own)) || 'darktoxic'; }
+
 function _dtox(titulo, linhas, rodape = '') {
+  const T = TEMAS[_TEMA_ATUAL] || TEMAS.darktoxic;
   const corpo = (linhas || []).map(l => `▸ ${l}`).join('\n');
   return [
-    '☣️◢◤◢◤◢◤◢◤◢◤◢◤◢◤◢☣️',
-    `   ☠️ *DARKTOXIC* ☠️`,
-    `🕸️〘 ${titulo} 〙🕸️`,
+    T.top,
+    T.selo,
+    T.marco(titulo),
     '',
     corpo,
     rodape ? '\n' + rodape : '',
-    '☣️◤◢◤◢◤◢◤◢◤◢◤◢◤◢◢☣️',
+    T.fim,
   ].join('\n').replace(/\n\n\n+/g, '\n\n');
 }
 
@@ -329,8 +352,10 @@ async function _painelCliente(sock, msg, ctx) {
       R('canal reage', '🤡 reacções em massa nos posts (dono)', `${p}canalreagir 🤡`),
       R('cartão de links', '📇 botões de link «iguais aos do canal», 1–3, foto opcional', `${p}linkcartao`),
       R('onda em cartão', '📇🚀 cartão de links para TODOS os grupos (visível/invisível)', `${p}divulgarcartao`),
+      R('lista de comandos', '⚡ nomes curtos da onda — !onda, !parar, !cartao…', `${p}comandosonda`),
     ] },
     { title: '🎨 ESTILO & LETRAS', rows: [
+      R('tema do cliente', '🕷️ aranha ou ☣️ clássico — moldura dos painéis', `${p}clientetema`),
       R('as 22 fontes', 'letras E números — negrito, 𝓼𝓬𝓻𝓲𝓹𝓽, 🄱🄰🄽🄳…', `${p}letras dark`),
       R('6 tamanhos', '𝐆𝐑𝐀𝐍𝐃𝐄 ↔ ₘᵢᴄᵣₒ — 𝐝𝐢𝐠í𝐭𝐨𝐬 incluídos', `${p}tamanho dark 2026`),
       R('nick único', '10 nicks do tabuleiro, sem repetir', `${p}nick meu nome`),
@@ -492,6 +517,35 @@ async function _mediaDe(msg, tipo, caption) {
 }
 
 
+/** Apaga UMA mensagem do grupo (o botão só pode apagar como admin —
+ * se não puder, falha em silêncio). */
+async function _apagar(sock, jid, key) {
+  try { if (key) await sock.sendMessage(jid, { delete: key }); } catch {}
+}
+
+/**
+ * v9.18 🔏 SELAR O RASTO — «porque é que as fotos não ficam invisíveis?»
+ * Porque a moderação via a TUA mensagem: o comando com o URL escrito, a
+ * foto que enviaste para responderes, o «invisivel» que teclaste. A onda
+ * já era limpa; o rasto do dono não era. Com o dono a usar a divulgação
+ * num grupo, este selo APAGA a mensagem do comando e, SE a foto/vídeo
+ * citado era do próprio dono, a original também. Nunca toca em mensagens
+ * de terceiros.
+ */
+async function _selar(sock, msg, ctx, { comQuote = true } = {}) {
+  try {
+    if (!ctx || !ctx.isGroup || !msg || !msg.key) return;
+    const ownerNum = _num((config.owner && config.owner.number) || '');
+    if (!ownerNum || _num(ctx.senderNumber) !== ownerNum) return; // só o dono
+    await _apagar(sock, msg.key.remoteJid || ctx.remoteJid, msg.key);
+    if (!comQuote) return;
+    const ci = msg?.message?.extendedTextMessage?.contextInfo;
+    if (ci && ci.stanzaId && String(ci.participant || '').startsWith(ownerNum + '@')) {
+      await _apagar(sock, ci.remoteJid || ctx.remoteJid, { remoteJid: ci.remoteJid || ctx.remoteJid, id: ci.stanzaId, fromMe: false });
+    }
+  } catch {}
+}
+
 /**
  * v9.17 📇 parser do cartão: «TÍTULO | Nome=url ; Nome2=url2».
  * Corpo antes do `|`; 1–3 links depois (separados por `;` ou quebra de linha
@@ -598,6 +652,16 @@ module.exports = function registerDivulgacao(_registerCase) {
   // o comando veio de grupo — ADM deixa de VER painéis e botões (e de
   // os achar «mortos» ao carregar).
   const registerCase = (names, fn, ...resto) => _registerCase(names, async (argz) => {
+    // v9.18 🕷️ tema do dono: carrega (1× em memória) e veste o _dtox da invocação
+    const own0 = argz && argz.ctx ? _num(argz.ctx.senderNumber) : '';
+    const temaAntigo = _TEMA_ATUAL;
+    if (own0) {
+      try {
+        if (!_TEMA_CACHE.has(String(own0))) _TEMA_CACHE.set(String(own0), (await _get(require('../botConfigCache'), `tema_${own0}`)) || 'darktoxic');
+        _TEMA_ATUAL = _tema(own0);
+      } catch {}
+    }
+    try {
     if (argz && argz.sock && argz.ctx) {
       const { sock, ctx } = argz;
       const reply0 = argz.reply;
@@ -606,18 +670,19 @@ module.exports = function registerDivulgacao(_registerCase) {
         return sock.sendMessage(alvo, { text: t }).catch(() => reply0 ? reply0(t) : null);
       };
     }
-    return fn(argz);
+    return await fn(argz);
+    } finally { _TEMA_ATUAL = temaAntigo; }
   }, ...resto);
   const deny = (reply) => reply('☣️ Este painel é *só do dono* — darktoxic fechado fora.');
 
   // ── HUB MASTER ──
-  registerCase(['cliente', 'clienteonline', 'divulgacao'], async ({ sock, msg, ctx, isOwner, reply }) => {
+  registerCase(['cliente', 'clienteonline', 'divulgacao', 'cli'], async ({ sock, msg, ctx, isOwner, reply }) => {
     if (!isOwner) return deny(reply);
     return _painelCliente(sock, msg, ctx);
   });
 
   // ── GRUPOS ──
-  registerCase(['divulgar'], async ({ sock, msg, ctx, args, prefix, isOwner, reply }) => {
+  const _fDivulgar = async ({ sock, msg, ctx, args, prefix, isOwner, reply }) => {
     if (!isOwner) return deny(reply);
     const bcc = require('../botConfigCache');
     const own = _num(ctx.senderNumber);
@@ -752,21 +817,27 @@ module.exports = function registerDivulgacao(_registerCase) {
       '❌ `.cancelar` para cancelar');
 
   // fim do case divulgar (o assistente continua por ESCRITO, via consumir)
-  });
+  };
+  // v9.18 ⚡ NOMES CURTOS — a onda fala a língua do bot: ONDA. Tudo o que
+  // era !divulgar* ganha a forma !onda*/curta, sem partir nada: os nomes
+  // velhos continuam à ordem. Lista completa: !comandosonda
+  registerCase(['divulgar', 'onda'], _fDivulgar);
+  registerCase(['medidor', 'ondamedidor'], async (p0) => _fDivulgar({ ...p0, args: ['metricas'] }));
 
   // ── ATALHO RÁPIDO ──
-  registerCase(['divulgarrapido'], async ({ sock, msg, ctx, args, isOwner, reply }) => {
+  registerCase(['divulgarrapido', 'ondarapida'], async ({ sock, msg, ctx, args, isOwner, reply }) => {
     if (!isOwner) return deny(reply);
     const vis = /^(visivel|visível)$/i.test(args[0] || '') ? 'visivel' : /^invis/i.test(args[0] || '') ? 'invisivel' : 'sem';
     const texto = _textoDe(msg, args.slice(1));
-    if (!texto) return reply(`☣️ \`${ctx.prefix || config.bot.prefix}divulgarrapido visivel|invisivel <texto>\` — a mensagem vai de imediato.`);
+    if (!texto) return reply(`☣️ \`${ctx.prefix || config.bot.prefix}ondarapida visivel|invisivel <texto>\` — a mensagem vai de imediato.`);
+    if (vis === 'invisivel') await _selar(sock, msg, ctx); // v9.18 🔏 zero rasto no grupo
     await _onda(sock, msg, ctx, async (_g, tag, mencoes) => ({
       content: { text: await _corpoDesp(texto, vis, tag, _num(ctx.senderNumber)), mentions: vis === 'sem' ? [] : mencoes },
     }), vis, 'rápido');
   });
 
   // ── TESTE (só para o próprio dono, 1 envio) ──
-  registerCase(['divulgarteste'], async ({ sock, msg, ctx, args, isOwner, reply }) => {
+  registerCase(['divulgarteste', 'ondateste'], async ({ sock, msg, ctx, args, isOwner, reply }) => {
     if (!isOwner) return deny(reply);
     const vis = /^visivel|visível$/i.test(args[0] || '') ? 'visivel' : /^invis/i.test(args[0] || '') ? 'invisivel' : 'sem';
     const texto = _textoDe(msg, args.slice(1)) || '(teste darktoxic ☣️)';
@@ -779,7 +850,7 @@ module.exports = function registerDivulgacao(_registerCase) {
   });
 
   // ── STOP & HISTÓRICO ──
-  registerCase(['divulgarstop'], async ({ sock, msg, ctx, isOwner, reply }) => {
+  registerCase(['divulgarstop', 'ondaparar', 'parar'], async ({ sock, msg, ctx, isOwner, reply }) => {
     if (!isOwner) return deny(reply);
     const own = _num(ctx.senderNumber);
     _STOP.add(own);
@@ -790,7 +861,7 @@ module.exports = function registerDivulgacao(_registerCase) {
   });
 
   // v9.9: REPETIR a última onda — botão fixo do relatório
-  registerCase(['divulgarrepetir'], async ({ sock, msg, ctx, isOwner, reply }) => {
+  registerCase(['divulgarrepetir', 'ondarepetir', 'repetir'], async ({ sock, msg, ctx, isOwner, reply }) => {
     if (!isOwner) return deny(reply);
     const ult = _ULTIMOS.get(_num(ctx.senderNumber));
     if (!ult) return reply('☣️ Ainda não há onda anterior nesta sessão para repetir.');
@@ -798,7 +869,7 @@ module.exports = function registerDivulgacao(_registerCase) {
   });
 
   // v9.9: DASHBOARD de totais (a prova dos números, darktoxic)
-  registerCase(['divulgarstats', 'divulgarestatistica', 'divgstat'], async ({ sock, msg, ctx, isOwner, reply }) => {
+  registerCase(['divulgarstats', 'divulgarestatistica', 'divgstat', 'ondastats'], async ({ sock, msg, ctx, isOwner, reply }) => {
     if (!isOwner) return deny(reply);
     const bcc = require('../botConfigCache');
     const own = _num(ctx.senderNumber);
@@ -831,7 +902,7 @@ module.exports = function registerDivulgacao(_registerCase) {
    * A agenda é PERSISTIDA (BotConfig) e re-armada no arranque do bot —
    * reiniciar já não a apaga. Ver: !divulgaragendas · apaga: !divulgarstop.
    */
-  registerCase(['divulgaragenda', 'divulgarprogramar'], async ({ sock, msg, ctx, args, isOwner, reply }) => {
+  registerCase(['divulgaragenda', 'divulgarprogramar', 'ondaagenda', 'agenda'], async ({ sock, msg, ctx, args, isOwner, reply }) => {
     if (!isOwner) return deny(reply);
     const p = ctx.prefix || config.bot.prefix || '!';
     const bcc = require('../botConfigCache');
@@ -868,7 +939,7 @@ module.exports = function registerDivulgacao(_registerCase) {
     ]));
   });
 
-  registerCase(['divulgaragendas'], async ({ sock, msg, ctx, prefix, isOwner, reply }) => {
+  registerCase(['divulgaragendas', 'ondaagendas', 'agendas'], async ({ sock, msg, ctx, prefix, isOwner, reply }) => {
     if (!isOwner) return deny(reply);
     const bcc = require('../botConfigCache');
     const ags = await _get(bcc, `agenda_${_num(ctx.senderNumber)}`);
@@ -923,7 +994,7 @@ module.exports = function registerDivulgacao(_registerCase) {
     return reply(_dtox('🌀 G I R O  L I G A D O', copias.map((x, i) => `${i + 1}. ${x.slice(0, 70)}${x.length > 70 ? '…' : ''}`).concat(['', `✅ ${copias.length} cópias em rotação — a próxima onda já usa. Ver: \`${p}giro\``])));
   });
 
-  registerCase(['divulgaragendaremove', 'desagendar'], async ({ ctx, isOwner, reply }) => {
+  registerCase(['divulgaragendaremove', 'desagendar', 'ondadesagenda', 'desagenda'], async ({ ctx, isOwner, reply }) => {
     if (!isOwner) return deny(reply);
     const bcc = require('../botConfigCache');
     const own = _num(ctx.senderNumber);
@@ -932,7 +1003,7 @@ module.exports = function registerDivulgacao(_registerCase) {
     return reply(`✅ Agenda de *${own}* apagada (timer + registo).`);
   });
 
-  registerCase(['divulgarhistorico'], async ({ sock, msg, ctx, isOwner, reply }) => {
+  registerCase(['divulgarhistorico', 'ondahistorico', 'historico'], async ({ sock, msg, ctx, isOwner, reply }) => {
     if (!isOwner) return deny(reply);
     const bcc = require('../botConfigCache');
     const hist = (await _get(bcc, `hist_${_num(ctx.senderNumber)}`)) || [];
@@ -991,7 +1062,66 @@ module.exports = function registerDivulgacao(_registerCase) {
     const nome = Object.entries(DELAYS).find(([, v]) => v?.ms === ms)?.[0];
     return reply(_dtox('V E L O C I D A D E  F I X A D A', [`${(DELAYS[nome]?.icon) || '🔧'} *${nome || 'custom'}* — *${ms}ms*`, `${(DELAYS[nome]?.aviso) || 'customizado'}`, `A tua próxima onda usa isto. 🚀`]));
   };
-  registerCase(['delay'], _delayCase);
+  registerCase(['delay', 'velocidade'], _delayCase);
+
+  // ── v9.18 🕷️ TEMA DO CLIENTE — moldura dos painéis do dono ──
+  registerCase(['clientetema', 'temacliente'], async ({ sock, msg, ctx, args, isOwner, reply }) => {
+    if (!isOwner) return deny(reply);
+    const p = ctx.prefix || config.bot.prefix || '!';
+    const bcc = require('../botConfigCache');
+    const own = _num(ctx.senderNumber);
+    const escolha = String(args[0] || '').toLowerCase().replace(/[^a-z]/g, '');
+    if (escolha && escolha !== 'aranha' && escolha !== 'darktoxic' && escolha !== 'dark' && escolha !== 'classico') {
+      return reply(`☣️ Temas: \`aranha\` 🕷️ ou \`darktoxic\` ☣️ — \`${p}clientetema aranha\`.`);
+    }
+    if (escolha) {
+      const tema = (escolha === 'dark' || escolha === 'classico') ? 'darktoxic' : escolha;
+      await _set(bcc, `tema_${own}`, tema);
+      _TEMA_CACHE.set(String(own), tema);
+      const ant = _TEMA_ATUAL; _TEMA_ATUAL = tema;
+      const ok = _dtox('T E M A  G U A R D A D O', [`🖼️ Painéis do cliente agora em *${tema.toUpperCase()}* — moldura nova em tudo: ${p}cliente, métricas, agenda, relatórios.`]);
+      _TEMA_ATUAL = ant;
+      return reply(ok);
+    }
+    const atual = _tema(own);
+    const bt = require('../buttonHandler');
+    const textoT = _dtox('T E M A  D O  C L I E N T E', [
+      `🖼️ atual: *${atual.toUpperCase()}*`,
+      '☣️ darktoxic — a clássica ◢◤◣◥',
+      '🕷️ aranha — teia ╔» ╝« (nova)',
+      '',
+      'Muda a moldura de TODOS os painéis e relatórios do dono.',
+    ]);
+    try {
+      await bt.sendButtons(sock, _alvo(ctx), textoT, '☣️ DARKTOXIC · tema', [
+        { id: `${p}clientetema aranha`, text: '🕷️ Aranha' },
+        { id: `${p}clientetema darktoxic`, text: '☣️ Darktoxic' },
+      ], msg);
+    } catch { return reply(textoT); }
+  });
+
+  // ── v9.18 📜 LISTA DE COMANDOS — texto puro, zero botões (contrato) ──
+  registerCase(['comandosonda', 'comandosdivulgar', 'ondacomandos'], async ({ ctx, isOwner, reply }) => {
+    if (!isOwner) return deny(reply);
+    const p = ctx.prefix || config.bot.prefix || '!';
+    return reply([
+      '⚡ *COMANDOS DA ONDA — ' + (config.bot.name || 'DARK BOT').toUpperCase() + '*',
+      '',
+      '`!cli` — painel completo (hubs, listas, tudo)',
+      '`!onda` — assistente 4 passos · `!ondarapida invisivel texto` — direto',
+      '`!ondafoto !ondavideo !ondadoc !ondaaudio` [visivel|invisivel] — responde à media',
+      '`!cartao título | Nome=url` — cartão p/ ti · `!ondacartao invisivel t | N=url` — p/ a onda',
+      '`!onda add` (este grupo) · `!onda addall` · `!onda list` · `!onda del N`',
+      '`!parar` · `!repetir` · `!historico` · `!medidor` — controlo da onda',
+      '`!agenda 21:30 texto` · `!agendas` · `!desagenda`',
+      '`!velocidade 0..5000` (=!delay) · `!giro a || b || c`',
+      '`!clientetema` — 🕷️ aranha ou ☣️ darktoxic',
+      '`!enquete "P" | a | b` · `!canalreagir 🤡 10 <link>`',
+      '',
+      'Invisível = menção sem tags + rasto do dono SELADO (apago os teus comandos e a foto citada).',
+      'DARK BOT 🕸️',
+    ].join('\n'));
+  });
   registerCase(['delayultrarapido'], async (p0) => _delayCase({ ...p0, args: ['super'] }));
 
   // ── MÍDIA (foto/video/doc/audio via quote) ──────────────────
@@ -1000,12 +1130,15 @@ module.exports = function registerDivulgacao(_registerCase) {
     { cmd: 'divulgardoc', tipo: 'doc' }, { cmd: 'divulgaraudio', tipo: 'audio' },
   ];
   for (const { cmd, tipo } of MEDIA) {
-    registerCase([cmd], async ({ sock, msg, ctx, args, isOwner, reply }) => {
+    registerCase([cmd, `onda${tipo === 'audio' ? 'audio' : tipo}`], async ({ sock, msg, ctx, args, isOwner, reply }) => {
       if (!isOwner) return deny(reply);
       const p = ctx.prefix || config.bot.prefix || '!';
       const vis = /^invis/i.test(args[0] || '') ? 'invisivel' : /^vis/i.test(args[0] || '') ? 'visivel' : 'sem';
       const caption = _textoDe(msg, args.slice(0).filter(Boolean)) || '';
       const midia = await _mediaDe(msg, tipo, caption.replace(/^visível$|^visivel$|^invisível$|^invisivel$/i, '').trim());
+      // v9.18 🔏 invisível a sério: apaga o comando E a foto original do dono
+      // no grupo — era ISSO que deixava «as fotos visíveis» ao ADM.
+      if (vis === 'invisivel') await _selar(sock, msg, ctx);
       if (!midia) return reply(`☣️ Responde a ${tipo === 'foto' ? 'uma foto' : tipo === 'video' ? 'um vídeo' : tipo === 'doc' ? 'um documento' : 'um áudio'} com \`${p}${cmd} [visivel|invisivel] [legenda]\`.`);
       await _onda(sock, msg, ctx, async (_g, tag, mencoes) => ({
         content: {
@@ -1023,16 +1156,17 @@ module.exports = function registerDivulgacao(_registerCase) {
   // Os links vivem nos BOTÕES (urlButton/cta_url) — corpo limpo, foto opcional
   // (responder a uma foto). O anti-link deste mesmo bot (v9.17) varre esta
   // superfície: um cartão destes SÓ engana moderadores que leem texto.
-  registerCase(['divulgarcartao'], async ({ sock, msg, ctx, args, isOwner, reply }) => {
+  registerCase(['divulgarcartao', 'ondacartao'], async ({ sock, msg, ctx, args, isOwner, reply }) => {
     if (!isOwner) return deny(reply);
     const p = ctx.prefix || config.bot.prefix || '!';
     const t0 = String(args[0] || '').toLowerCase();
     const vis = /^invis/i.test(t0) ? 'invisivel' : /^vis/i.test(t0) ? 'visivel' : 'sem';
     const parsed = _parseCartao(_textoDe(msg, vis !== 'sem' ? args.slice(1) : args));
+    await _selar(sock, msg, ctx); // v9.18 🔏 o comando com URL não fica no grupo
     if (!parsed) return reply(
       `☣️ \`${p}divulgarcartao [visivel|invisivel] TÍTULO | Nome=https://link ; Nome2=https://link2\`\n` +
       '1 a 3 botões de link por cartão · foto: responde a uma foto com o comando.\n' +
-      `Testar só para ti: \`${p}linkcartao …\``);
+      `Testar só para ti: \`${p}cartao …\` (=!linkcartao)`);
     const midia = await _mediaDe(msg, 'foto', parsed.titulo);
     const mkBtns = () => parsed.links.map((l, i) => ({ index: i + 1, urlButton: { displayText: l.text.slice(0, 20), url: l.url } }));
     // PROBE real: um envio no PV do dono valida o formato ANTES da onda — se
@@ -1067,10 +1201,11 @@ module.exports = function registerDivulgacao(_registerCase) {
     }, vis, 'cartão');
   });
 
-  registerCase(['linkcartao', 'cartaolink', 'cartaodelinks'], async ({ sock, msg, ctx, args, isOwner, reply }) => {
+  registerCase(['linkcartao', 'cartaolink', 'cartaodelinks', 'cartao'], async ({ sock, msg, ctx, args, isOwner, reply }) => {
     if (!isOwner) return deny(reply);
     const p = ctx.prefix || config.bot.prefix || '!';
     const parsed = _parseCartao(_textoDe(msg, args));
+    await _selar(sock, msg, ctx); // v9.18 🔏 idem — cartão é privado
     if (!parsed) return reply(
       `☣️ \`${p}linkcartao TÍTULO | Nome=https://link ; Nome2=https://link2\`\n` +
       '1 a 3 botões de link, iguais aos dos posts de canal · foto opcional (responde a uma foto).\n' +
@@ -1086,7 +1221,7 @@ module.exports = function registerDivulgacao(_registerCase) {
   });
 
   // contato (vcard pelo número) + localização (lat,lon)
-  registerCase(['divulgarcontato'], async ({ sock, msg, ctx, args, isOwner, reply }) => {
+  registerCase(['divulgarcontato', 'ondacontato'], async ({ sock, msg, ctx, args, isOwner, reply }) => {
     if (!isOwner) return deny(reply);
     const p = ctx.prefix || config.bot.prefix || '!';
     const numero = String(args[0] || '').replace(/\D/g, '');
@@ -1101,7 +1236,7 @@ module.exports = function registerDivulgacao(_registerCase) {
     await _onda(sock, msg, ctx, async () => ({ content: mensagem }), 'sem', 'contato');
   });
 
-  registerCase(['divulgarloc'], async ({ sock, msg, ctx, args, isOwner, reply }) => {
+  registerCase(['divulgarloc', 'ondaloc'], async ({ sock, msg, ctx, args, isOwner, reply }) => {
     if (!isOwner) return deny(reply);
     const p = ctx.prefix || config.bot.prefix || '!';
     const m = String(args.join(' ')).match(/(-?\d+\.\d+)[\s,]+(-?\d+\.\d+)/);
@@ -1189,6 +1324,11 @@ async function consumir(sock, msg, ctx, text) {
   }
   if (!sess) return false;
   if (Date.now() > sess.expira) { _FLUXO.delete(key); return false; }
+  // v9.18: o consumir corre fora do wrapper — veste o tema do dono à mão
+  try {
+    if (!_TEMA_CACHE.has(String(sess.own))) _TEMA_CACHE.set(String(sess.own), (await _get(require('../botConfigCache'), `tema_${sess.own}`)) || 'darktoxic');
+    _TEMA_ATUAL = _tema(sess.own);
+  } catch {}
   const alvo = sess.alvo || ctx.remoteJid;   // respostas sempre no PV/quando começou
 
   // é subcomando real com prefixo (ex.: !divulgarhistorico)? Não toca —
@@ -1196,6 +1336,9 @@ async function consumir(sock, msg, ctx, text) {
   const raw = String(text || '').trim();
   const t = raw.toLowerCase().replace(/^[.!·/#]+/, '');
   if (/^cancel(ar|e)$/.test(t)) {
+    // v9.18 🔏 abortar limpa o rasto: as passadas escritas no grupo somem-se
+    for (const k2 of (sess.k || [])) await _apagar(sock, k2.remoteJid || ctx.remoteJid, k2);
+    await _apagar(sock, ctx.remoteJid, msg.key);
     _FLUXO.delete(key);
     await sock.sendMessage(alvo, {
       text: _dtox('A S S I S T E N T E  A B O R T A D O', ['🛑 Saíste do assistente de divulgação. Nada foi enviado.']),
@@ -1205,6 +1348,13 @@ async function consumir(sock, msg, ctx, text) {
   if (/^[.!·/#]/.test(raw)) return false;   // comandos reais passam sempre
   if (!raw && sess.passo !== 'texto') return false;
   sess.expira = Date.now() + TTL_FLUXO;
+  // v9.18 🔏 guarda a pegada deste passo (key) — se o dono escolher INVISÍVEL
+  // (ou abortar), apagamos tudo o que ele teclou no grupo: texto, números,
+  // a palavra «invisivel» e as próprias fotos/vídeos que citou.
+  if (ctx.isGroup && msg && msg.key) {
+    (sess.k = sess.k || []).push({ ...(msg.key), remoteJid: msg.key.remoteJid || ctx.remoteJid });
+    if (sess.k.length > 6) sess.k.shift();
+  }
 
   // ── PASSO 1/4: o texto chega livre ──
   if (sess.passo === 'texto') {
@@ -1270,6 +1420,11 @@ async function consumir(sock, msg, ctx, text) {
     }
     _FLUXO.delete(key);
     const texto = sess.texto, vezes = sess.vezes || 1;
+    // v9.18 🔏 INVISÍVEL = zero rasto: apaga TODAS as passadas do assistente
+    if (vis === 'invisivel') {
+      for (const k2 of (sess.k || [])) await _apagar(sock, k2.remoteJid || ctx.remoteJid, k2);
+      await _apagar(sock, ctx.remoteJid, msg.key);
+    }
     await _onda(sock, msg, ctx, async (_g, tag, mencoes) => ({
       content: { text: await _corpoDesp(texto, vis, tag, _num(ctx.senderNumber)), mentions: mencoes },
     }), vis, 'assistente', vezes);

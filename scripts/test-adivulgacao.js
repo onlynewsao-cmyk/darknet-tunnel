@@ -34,6 +34,7 @@ let _db = new Map();      // botConfigCache
 let _donorFail = {};
 let _carroOk = true;
 let _carroH = null;
+const dels = [];
 
 const GRUPO1 = { id: 'G1@g.us', subject: '💎 RÁDIO DARK', participants: [
   { id: '2441@s.whatsapp.net' }, { id: '2442@s.whatsapp.net' }, { id: '2449@s.whatsapp.net' },
@@ -71,7 +72,7 @@ Module.prototype.require = function (id) {
 };
 
 const sockF = {
-  sendMessage: async (jid, c) => { if (_donorFail[jid]) throw new Error('forbidden'); sent.push({ jid, ...c }); return { key: { id: 'k' } }; },
+  sendMessage: async (jid, c) => { if (c && c.delete) { dels.push({ jid, key: c.delete }); return { key: { id: 'd' } }; } if (_donorFail[jid]) throw new Error('forbidden'); sent.push({ jid, ...c }); return { key: { id: 'k' } }; },
   relayMessage: async (j, m, o) => { _relays.push({ m, o }); return {}; },
   groupMetadata: async (jid) => ({ 'G1@g.us': GRUPO1, 'G2@g.us': GRUPO2, 'GRP@g.us': GRUPO1 }[jid] || { participants: [] }),
   groupFetchAllParticipating: async () => ({ 'G1@g.us': GRUPO1, 'G2@g.us': GRUPO2 }),

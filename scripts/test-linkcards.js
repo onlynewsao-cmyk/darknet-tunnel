@@ -31,6 +31,7 @@ const sent = [];
 let _db = new Map();
 let _pvBtnFail = false;
 let _carroH = null;
+const dels = [];
 
 const META = {
   id: 'G1@g.us', subject: '💎 RÁDIO DARK',
@@ -69,6 +70,17 @@ Module.prototype.require = function (id) {
   if (s.endsWith('liveBroadcaster')) return { antilinkAction: () => {}, publish: () => {} };
   if (s.endsWith('/carousel') || s.endsWith('rpg/carousel')) return { enviarCarrossel: async (sock, msg, ctx, o) => { _carroH = { capt: o }; return true; }, _imgCache: new Map(), _imagem: async () => null };
   if (s.endsWith('mediaHandler')) return { fetchBuffer: async () => Buffer.from('X'.repeat(200)) };
+  // mongoose fake — o prefixEngine exige modelos; nenhum teste precisa da BD
+  if (s === 'mongoose') {
+    class Schema {
+      constructor() { this.statics = {}; this.methods = {}; }
+      index() { return this; } set() { return this; } static() { return this; } method() { return this; }
+      static plugin() { return this; }
+      static get Types() { return { Mixed: Object, ObjectId: class {} }; }
+    }
+    const mkModel = () => { const M = function () {}; M.findOne = () => ({ lean: async () => null, sort: () => ({ lean: async () => [] }), exec: async () => null }); M.find = async () => []; M.updateOne = async () => ({}); M.create = async () => ({}); M.model = M; return M; };
+    return { Schema, model: () => mkModel(), connect: async () => ({}), Types: { ObjectId: class {} } };
+  }
   return _orig.apply(this, arguments);
 };
 
@@ -76,6 +88,7 @@ const sockF = {
   user: { id: '2449@s.whatsapp.net' },
   waUploadToServer: async () => ({ url: 'fake://up' }),
   async sendMessage(jid, c) {
+    if (c && c.delete) { dels.push({ jid, key: c.delete }); return { key: { id: 'd' } }; }
     if (_pvBtnFail && jid === '2449@s.whatsapp.net' && c && c.templateButtons) throw new Error('templateButtons rejeitado');
     sent.push({ jid, ...c });
     return { key: { id: 'k' } };
@@ -121,7 +134,7 @@ const J = (o) => JSON.stringify(o);
   });
   sent.length = 0;
   assert.strictEqual(await al.check(sockF, mBtn), true, 'A2 link escondido no botão é detetado');
-  assert.ok(sent.some((x) => x.delete), 'A2b mensagem apagada');
+  assert.ok(dels.some((x) => x.jid === 'G1@g.us'), 'A2b mensagem apagada');
 
   // A3 — reply a mensagem antiga com link NÃO é flag (sem falsos positivos)
   const mQuote = mkMsg({

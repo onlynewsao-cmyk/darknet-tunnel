@@ -400,6 +400,15 @@ function categorize(cmd) {
     divgstat:'owner', divulgaragenda:'owner', divulgarprogramar:'owner',
     // v9.17 — cartões de link «iguais aos do canal» (só dono, como a onda)
     linkcartao:'owner', cartaolink:'owner', cartaodelinks:'owner', divulgarcartao:'owner',
+    // v9.18 ⚡ NOMES CURTOS da onda + tema + lista (tudo owner, como a família)
+    onda:'owner', ondarapida:'owner', ondateste:'owner', ondaparar:'owner', parar:'owner',
+    ondarepetir:'owner', repetir:'owner', ondastats:'owner', medidor:'owner', ondamedidor:'owner',
+    ondaagenda:'owner', agenda:'owner', ondaagendas:'owner', agendas:'owner',
+    ondadesagenda:'owner', desagenda:'owner', ondahistorico:'owner', historico:'owner',
+    ondacontato:'owner', ondaloc:'owner', ondacartao:'owner', cartao:'owner', cli:'owner',
+    ondafoto:'owner', ondavideo:'owner', ondadoc:'owner', ondaaudio:'owner', ondamenu:'owner',
+    comandosonda:'owner', comandosdivulgar:'owner', ondacomandos:'owner',
+    clientetema:'owner', temacliente:'owner', velocidade:'owner',
     backupgp:'admin', backupgrupo:'admin', restoregp:'admin', restoregrupo:'admin', // v7.75
     slowmode:'admin', modolento:'admin', setwarnlimit:'admin', warnlimit:'admin', // v7.75
     likesff:'info', fflike:'info', likefree:'info', likeff:'info', // v7.62
