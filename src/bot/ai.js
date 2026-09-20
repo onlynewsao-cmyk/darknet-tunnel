@@ -60,6 +60,12 @@ const HUGGINGFACE_MODELS = [
   'meta-llama/Llama-3.1-8B-Instruct',
   'Qwen/Qwen2.5-7B-Instruct',
 ];
+// v9.20: DeepSeek — modelo open-source 671B MoE, gratuito via API.
+// Superou GPT-4o em muitos benchmarks; raciocínio profundo, código, PT-BR.
+const DEEPSEEK_MODELS = [
+  'deepseek-chat',             // ✅ modelo principal (V3, 671B MoE)
+  'deepseek-reasoner',         // ✅ raciocínio profundo (R1)
+];
 
 // ─────────────────────────────────────────────
 // CACHE DE CONTEXTO WEB
@@ -75,40 +81,95 @@ function withTimeout(p, ms) {
 }
 
 // ─────────────────────────────────────────────
-// CIRCUIT BREAKER DE PROVIDERS (v6.42)
+// CIRCUIT BREAKER DE PROVIDERS (v6.42 → v9.20)
 // ─────────────────────────────────────────────
 // Alguns providers falham SEMPRE por motivos que não se resolvem a
 // tentar de novo: sem créditos (402), IP de datacenter bloqueado (403),
 // chave inválida (401). Sem isto, cada mensagem do utilizador gastava
 // segundos a bater numa porta fechada antes de chegar a um que funciona.
-// Falha permanente → 30 min de pausa. Falha temporária → 60 s.
-const _providerDown = new Map(); // nome → timestamp até quando ignorar
+//
+// v9.20: backoff exponencial — em vez de pausa fixa, cada falha
+// consecutiva DUPLICA o tempo de pausa (60s → 120s → 240s → … tecto 30min).
+// Reset ao primeiro sucesso. Isto evita martelar um provider instável.
+const _providerDown = new Map();   // nome → { until, fails }
+const _providerFails = new Map();  // nome → contagem consecutiva
 
-const DOWN_PERMANENT = 30 * 60 * 1000; // 30 min
-const DOWN_TEMPORARY = 60 * 1000;      // 1 min
+const DOWN_MAX = 30 * 60 * 1000;  // tecto: 30 min
+const DOWN_BASE = 60 * 1000;      // base: 1 min (temporário)
+const DOWN_PERMANENT = 30 * 60 * 1000;
 
 function providerUp(name) {
-  const until = _providerDown.get(name);
-  if (!until) return true;
-  if (Date.now() >= until) { _providerDown.delete(name); return true; }
+  const entry = _providerDown.get(name);
+  if (!entry) return true;
+  if (Date.now() >= entry.until) { _providerDown.delete(name); return true; }
   return false;
 }
 
 function providerFail(name, err) {
   const m = String(err?.message || '');
-  // 401 chave inválida · 402 sem créditos · 403 IP bloqueado → pausa longa
   const permanent = /\b(401|402|403)\b|payment.?required|invalid.*(key|token)|datacenter|residential/i.test(m);
-  _providerDown.set(name, Date.now() + (permanent ? DOWN_PERMANENT : DOWN_TEMPORARY));
+  if (permanent) {
+    _providerDown.set(name, { until: Date.now() + DOWN_PERMANENT, fails: 999 });
+    return;
+  }
+  // Backoff exponencial: 60s × 2^(fails-1), tecto 30min
+  const fails = (_providerFails.get(name) || 0) + 1;
+  _providerFails.set(name, fails);
+  const wait = Math.min(DOWN_BASE * Math.pow(2, fails - 1), DOWN_MAX);
+  _providerDown.set(name, { until: Date.now() + wait, fails });
+}
+
+function providerReset(name) {
+  _providerDown.delete(name);
+  _providerFails.delete(name);
 }
 
 /** Estado actual dos providers (para o comando !aiapis). */
 function providerStatus() {
   const out = {};
-  for (const [k, v] of _providerDown) {
-    const left = Math.max(0, Math.round((v - Date.now()) / 1000));
-    if (left > 0) out[k] = left;
+  for (const [k, entry] of _providerDown) {
+    const left = Math.max(0, Math.round((entry.until - Date.now()) / 1000));
+    if (left > 0) out[k] = { seconds: left, fails: entry.fails };
   }
   return out;
+}
+
+// ─────────────────────────────────────────────
+// CACHE DE RESPOSTAS DA IA (v9.20)
+// ─────────────────────────────────────────────
+// Perguntas repetidas (ex: "quem és tu?", "que dia é hoje?") não
+// precisam de gastar tokens nem esperar pela rede. Cache LRU com
+// TTL de 10 min e máx 200 entradas.
+const _aiCache = new Map(); // hash → { response, ts }
+const AI_CACHE_TTL = 10 * 60 * 1000;
+const AI_CACHE_MAX = 200;
+
+function _hashPrompt(prompt, system) {
+  const crypto = require('crypto');
+  const h = crypto.createHash('md5').update(String(prompt).slice(0, 500) + '|' + String(system).slice(0, 200)).digest('hex');
+  return h;
+}
+
+function aiCacheGet(prompt, system) {
+  const h = _hashPrompt(prompt, system);
+  const entry = _aiCache.get(h);
+  if (!entry) return null;
+  if (Date.now() - entry.ts > AI_CACHE_TTL) { _aiCache.delete(h); return null; }
+  // Move para o fim (mais recente)
+  _aiCache.delete(h);
+  _aiCache.set(h, entry);
+  return entry.response;
+}
+
+function aiCacheSet(prompt, system, response) {
+  if (!response || response.startsWith('❌')) return; // não cachear erros
+  const h = _hashPrompt(prompt, system);
+  _aiCache.set(h, { response, ts: Date.now() });
+  // Evict LRU se ultrapassar o máximo
+  while (_aiCache.size > AI_CACHE_MAX) {
+    const firstKey = _aiCache.keys().next().value;
+    _aiCache.delete(firstKey);
+  }
 }
 
 /**
@@ -519,21 +580,25 @@ async function chat(prompt, context = '', memoryOpts = {}, isPriority = false) {
     config.ai.groqApiKey || config.ai.geminiApiKey ||
     config.ai.openrouterApiKey || config.ai.openaiApiKey ||
     config.ai.huggingfaceKey || config.ai.cerebrasApiKey ||
-    config.ai.apifreellmKey
+    config.ai.apifreellmKey || config.ai.deepseekApiKey
   );
-  if (!hasAny) return '❌ IA sem chave. Configure GROQ_API_KEY na Northflank.';
+  if (!hasAny) return '❌ IA sem chave. Configure GROQ_API_KEY ou DEEPSEEK_API_KEY na Northflank.';
+
+  // System prompt com personalidade (inclui tema activo e papel do utilizador)
+  const system = context || await buildSystemPrompt(userTone, userProfile, groupContext, userRole);
+
+  // v9.20: cache de respostas — perguntas repetidas não gastam tokens
+  const cached = aiCacheGet(prompt, system);
+  if (cached) return cached;
 
   // Contexto web se necessário
   let finalPrompt = prompt;
   if (allowWeb && needsWeb(prompt)) {
     try {
       const web = await withTimeout(getWebContext(prompt), 5000);
-      if (web) finalPrompt = web + '\n\nPergunta: ' + prompt;
+      if (web) finalPrompt = web + '\nPergunta: ' + prompt;
     } catch {}
   }
-
-  // System prompt com personalidade (inclui tema activo e papel do utilizador)
-  const system = context || await buildSystemPrompt(userTone, userProfile, groupContext, userRole);
 
   // Histórico de conversa (últimas 16 mensagens)
   const histMsgs = history.slice(-16).map(h => ({
@@ -545,42 +610,81 @@ async function chat(prompt, context = '', memoryOpts = {}, isPriority = false) {
   // Timeout menor para VIP/Dono (prioridade de resposta)
   const TIMEOUT = isPriority ? 15000 : 22000;
 
+  let result = null;
+
   // 1. Groq (MAIS RÁPIDO — primário)
   if (config.ai.groqApiKey && providerUp('groq')) {
-    try { return await withTimeout(chatGroq(messages, system), TIMEOUT); }
-    catch (e) { providerFail('groq', e); console.warn('[IA] Groq:', shortErr(e)); }
+    try {
+      result = await withTimeout(chatGroq(messages, system), TIMEOUT);
+      providerReset('groq');
+      aiCacheSet(prompt, system, result);
+      return result;
+    } catch (e) { providerFail('groq', e); console.warn('[IA] Groq:', shortErr(e)); }
   }
-  // 2. Gemini (visão + áudio)
+  // 2. DeepSeek (v9.20 — gratuito, 671B MoE, muito capaz)
+  if (config.ai.deepseekApiKey && providerUp('deepseek')) {
+    try {
+      result = await withTimeout(chatDeepSeek(messages, system), TIMEOUT);
+      providerReset('deepseek');
+      aiCacheSet(prompt, system, result);
+      return result;
+    } catch (e) { providerFail('deepseek', e); console.warn('[IA] DeepSeek:', shortErr(e)); }
+  }
+  // 3. Gemini (visão + áudio)
   if (config.ai.geminiApiKey && providerUp('gemini')) {
-    try { return await withTimeout(chatGemini(messages, system), TIMEOUT); }
-    catch (e) { providerFail('gemini', e); console.warn('[IA] Gemini:', shortErr(e)); }
+    try {
+      result = await withTimeout(chatGemini(messages, system), TIMEOUT);
+      providerReset('gemini');
+      aiCacheSet(prompt, system, result);
+      return result;
+    } catch (e) { providerFail('gemini', e); console.warn('[IA] Gemini:', shortErr(e)); }
   }
-  // 3. Hugging Face — v6.42: subiu à frente do Cerebras porque funciona
+  // 4. Hugging Face — v6.42: subiu à frente do Cerebras porque funciona
   if (config.ai.huggingfaceKey && providerUp('huggingface')) {
-    try { return await withTimeout(chatHuggingFace(messages, system), TIMEOUT); }
-    catch (e) { providerFail('huggingface', e); console.warn('[IA] HuggingFace:', shortErr(e)); }
+    try {
+      result = await withTimeout(chatHuggingFace(messages, system), TIMEOUT);
+      providerReset('huggingface');
+      aiCacheSet(prompt, system, result);
+      return result;
+    } catch (e) { providerFail('huggingface', e); console.warn('[IA] HuggingFace:', shortErr(e)); }
   }
-  // 4. Cerebras — ⚠️ conta sem créditos (HTTP 402 em todos os modelos).
+  // 5. Cerebras — ⚠️ conta sem créditos (HTTP 402 em todos os modelos).
   //    O circuit breaker evita gastar tempo nisto a cada mensagem.
   if (config.ai.cerebrasApiKey && providerUp('cerebras')) {
-    try { return await withTimeout(chatCerebras(messages, system), TIMEOUT); }
-    catch (e) { providerFail('cerebras', e); console.warn('[IA] Cerebras:', shortErr(e)); }
+    try {
+      result = await withTimeout(chatCerebras(messages, system), TIMEOUT);
+      providerReset('cerebras');
+      aiCacheSet(prompt, system, result);
+      return result;
+    } catch (e) { providerFail('cerebras', e); console.warn('[IA] Cerebras:', shortErr(e)); }
   }
-  // 5. ApiFreeLLM — ⚠️ o tier grátis bloqueia IPs de datacenter, por isso
+  // 6. ApiFreeLLM — ⚠️ o tier grátis bloqueia IPs de datacenter, por isso
   //    NUNCA funciona a partir do Render (HTTP 403). Só é tentado em local.
   if (config.ai.apifreellmKey && providerUp('apifreellm')) {
-    try { return await withTimeout(chatApiFreeLLM(messages, system), TIMEOUT); }
-    catch (e) { providerFail('apifreellm', e); console.warn('[IA] ApiFreeLLM:', shortErr(e)); }
+    try {
+      result = await withTimeout(chatApiFreeLLM(messages, system), TIMEOUT);
+      providerReset('apifreellm');
+      aiCacheSet(prompt, system, result);
+      return result;
+    } catch (e) { providerFail('apifreellm', e); console.warn('[IA] ApiFreeLLM:', shortErr(e)); }
   }
-  // 6. OpenRouter (25+ modelos)
+  // 7. OpenRouter (25+ modelos)
   if (config.ai.openrouterApiKey && providerUp('openrouter')) {
-    try { return await withTimeout(chatRouter(messages, system), TIMEOUT); }
-    catch (e) { providerFail('openrouter', e); console.warn('[IA] Router:', shortErr(e)); }
+    try {
+      result = await withTimeout(chatRouter(messages, system), TIMEOUT);
+      providerReset('openrouter');
+      aiCacheSet(prompt, system, result);
+      return result;
+    } catch (e) { providerFail('openrouter', e); console.warn('[IA] Router:', shortErr(e)); }
   }
-  // 7. OpenAI (pago — último recurso antes de desistir)
+  // 8. OpenAI (pago — último recurso antes de desistir)
   if (config.ai.openaiApiKey && providerUp('openai')) {
-    try { return await withTimeout(chatOpenAI(messages, system), TIMEOUT); }
-    catch (e) { providerFail('openai', e); console.warn('[IA] OpenAI:', shortErr(e)); }
+    try {
+      result = await withTimeout(chatOpenAI(messages, system), TIMEOUT);
+      providerReset('openai');
+      aiCacheSet(prompt, system, result);
+      return result;
+    } catch (e) { providerFail('openai', e); console.warn('[IA] OpenAI:', shortErr(e)); }
   }
   // v7.63: SEM fallback público — o PopCat morreu ("Timed Out" sempre),
   // o Pollinations exige chave e o DuckDuckGo mete captcha anti-bot.
@@ -799,6 +903,35 @@ async function chatHuggingFace(messages, system) {
     }
   }
   throw lastErr || new Error('sem resposta Hugging Face');
+}
+
+// ─────────────────────────────────────────────
+// DEEPSEEK (v9.20 — 671B MoE, gratuito, nível GPT-4)
+// ─────────────────────────────────────────────
+// DeepSeek V3 (chat) e R1 (reasoner) — API compatível com OpenAI.
+// Gratuito com registo em platform.deepseek.com.
+// R1 tem raciocínio profundo (cot) — ideal para perguntas complexas,
+// código, matemática e tradução.
+async function chatDeepSeek(messages, system) {
+  if (!config.ai.deepseekApiKey) throw new Error('sem chave DeepSeek');
+  let lastErr;
+  for (const model of DEEPSEEK_MODELS) {
+    try {
+      const data = await post('https://api.deepseek.com/v1/chat/completions', {
+        model,
+        messages: [{ role: 'system', content: system }, ...messages],
+        temperature: 0.75,
+        max_tokens: 2000,
+        stream: false,
+      }, { Authorization: `Bearer ${config.ai.deepseekApiKey}` });
+      const out = data.choices?.[0]?.message?.content;
+      if (out) return stripThinking(out);
+    } catch (e) {
+      lastErr = e;
+      if (/401|invalid.*key/i.test(e.message)) break;
+    }
+  }
+  throw lastErr || new Error('sem resposta DeepSeek');
 }
 
 // ─────────────────────────────────────────────
@@ -1180,9 +1313,13 @@ module.exports = {
   chatCerebras,
   chatHuggingFace,
   chatApiFreeLLM,
+  chatDeepSeek,        // v9.20
   providerUp,
   providerFail,
+  providerReset,       // v9.20
   providerStatus,
+  aiCacheGet,          // v9.20
+  aiCacheSet,          // v9.20
   speakElevenLabs,
   getElevenVoice,
   speakWithFallback,
@@ -1210,6 +1347,7 @@ module.exports = {
   GROQ_MODELS,
   GEMINI_MODELS,
   OPENAI_MODELS,
+  DEEPSEEK_MODELS,    // v9.20
   getGeminiModels,
   stripThinking,
 };

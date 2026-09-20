@@ -73,11 +73,14 @@ module.exports = {
     elevenlabsKey:    env('ELEVENLABS_API_KEY', ''),
     tavilyKey:        env('TAVILY_API_KEY', ''),
     huggingfaceKey:   env('HUGGINGFACE_API_KEY', ''),
+    // v9.20: DeepSeek (gratuito, nível GPT-4, 671B params MoE)
+    deepseekApiKey:   env('DEEPSEEK_API_KEY', ''),
     // aliases para compatibilidade
     groqKey:       env('GROQ_API_KEY', ''),
     geminiKey:     env('GEMINI_API_KEY', ''),
     openaiKey:     env('OPENAI_API_KEY', ''),
     openrouterKey: env('OPENROUTER_API_KEY', ''),
+    deepseekKey:   env('DEEPSEEK_API_KEY', ''),
   },
 
   tenorApiKey: env('TENOR_API_KEY', ''),

@@ -402,13 +402,16 @@ module.exports = function registerInfoCases(registerCase) {
 
     // v6.42: mostra o estado REAL (chave presente + circuit breaker),
     // em vez de dizer só "OK" por a variável existir.
+    // v9.20: formato actualizado com backoff exponencial (seconds, fails)
     const down = aiMod.providerStatus ? aiMod.providerStatus() : {};
     const mark = (key, name) => {
       if (!key) return `\u2b1c *${name}* — sem chave`;
-      const secs = down[name.toLowerCase()];
-      if (secs) {
+      const entry = down[name.toLowerCase()];
+      if (entry) {
+        const secs = typeof entry === 'object' ? entry.seconds : entry;
+        const fails = typeof entry === 'object' ? entry.fails : '?';
         const m = Math.ceil(secs / 60);
-        return `\u26a0\ufe0f *${name}* — em pausa (${m} min)`;
+        return `\u26a0\ufe0f *${name}* — em pausa (${m} min, ${fails} falhas)`;
       }
       return `\u2705 *${name}* — pronta`;
     };
@@ -419,6 +422,7 @@ module.exports = function registerInfoCases(registerCase) {
       ``,
       `*\ud83e\udde0 Texto*`,
       mark(a.groqApiKey,      'Groq'),
+      mark(a.deepseekApiKey,  'DeepSeek'),
       mark(a.geminiApiKey,    'Gemini'),
       mark(a.huggingfaceKey,  'HuggingFace'),
       mark(a.cerebrasApiKey,  'Cerebras'),
@@ -431,13 +435,14 @@ module.exports = function registerInfoCases(registerCase) {
       mark(a.tavilyKey,     'Tavily'),
       ``,
       `${b} *Modelos Groq:* ${(aiMod.GROQ_MODELS || []).slice(0, 2).join(' \u00b7 ')}`,
+      `${b} *Modelos DeepSeek:* ${(aiMod.DEEPSEEK_MODELS || []).slice(0, 2).join(' \u00b7 ')}`,
       `${b} *Modelos Gemini:* ${(aiMod.GEMINI_MODELS || []).slice(0, 2).join(' \u00b7 ')}`,
       ``,
       `\u2705 Not\u00edcias RSS \u00b7 Imagens Pollinations \u2014 sem chave`,
       ``,
-      (a.groqApiKey || a.geminiApiKey || a.huggingfaceKey)
+      (a.groqApiKey || a.geminiApiKey || a.huggingfaceKey || a.deepseekApiKey)
         ? `\ud83d\udfe2 IA ACTIVA \u2014 *${prefix}ia* <pergunta>`
-        : `\ud83d\udd34 IA INACTIVA \u2014 configura GROQ_API_KEY no Render`,
+        : `\ud83d\udd34 IA INACTIVA \u2014 configura GROQ_API_KEY ou DEEPSEEK_API_KEY no Render`,
       ``,
       `> ${t.vibe}`,
     ];

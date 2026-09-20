@@ -197,8 +197,11 @@ async function bootstrap() {
   // ── /health — Render liveness + UptimeRobot monitor ──────────────────
   // UptimeRobot deve monitorar esta URL com status 200.
   // Endpoint SEM autenticação, público, resposta rápida.
+  // v9.20: métricas detalhadas (providers IA, memória, sessões)
   app.get('/health', (req, res) => {
     const botStatus = getBot(io).getStatus();
+    const mem = process.memoryUsage();
+    const aiStatus = (() => { try { return require('./bot/ai').providerStatus(); } catch { return {}; } })();
     res.status(200).json({
       status: 'ok',
       bot: botStatus.status,
@@ -207,6 +210,14 @@ async function bootstrap() {
       uptime: botStatus.uptime || 0,
       messages: botStatus.messageCount || 0,
       commands: botStatus.commandCount || 0,
+      ai_providers_down: Object.keys(aiStatus).length,
+      ai_providers_detail: aiStatus,
+      memory: {
+        heapUsed: Math.round(mem.heapUsed / 1024 / 1024) + 'MB',
+        heapTotal: Math.round(mem.heapTotal / 1024 / 1024) + 'MB',
+        rss: Math.round(mem.rss / 1024 / 1024) + 'MB',
+      },
+      node: process.version,
       ts: Date.now(),
       version: (() => { try { return require('../package.json').version || 'unknown'; } catch { return 'unknown'; } })(),
     });
@@ -551,6 +562,25 @@ bootstrap().catch(err => {
   console.error('Erro fatal:', err);
   process.exit(1);
 });
+
+// ── v9.20: GRACEFUL SHUTDOWN ──────────────────────────────────
+// Quando o Render faz deploy novo ou o serviço é reiniciado, o
+// processo recebe SIGTERM. Sem isto, o socket Baileys ficava
+// "preso" do lado do WhatsApp e causava conflito de sessão (440)
+// na nova instância. Agora: fecha socket → espera 2s → sai.
+function gracefulShutdown(signal) {
+  console.log(`\n🛑 ${signal} recebido — encerrando gracefully...`);
+  try {
+    const bot = getBot();
+    if (bot?.sock) {
+      bot.sock.ev.removeAllListeners();
+      bot.sock.end();
+    }
+  } catch {}
+  setTimeout(() => process.exit(0), 2000);
+}
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 // ── v6.91: rede de segurança do processo ──────────────────────
 // Uma promise rejeitada fora de rota (timer, scheduler, agenda) não
