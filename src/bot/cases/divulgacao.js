@@ -202,12 +202,31 @@ async function _historico(sock, bcc, own, entrada) {
  * vis: 'visivel' (tags à vista) · 'invisivel' (menção silenciosa) · 'sem'
  * montar: (grupo) => {content, precisaMencoes}
  */
-async function _disparar(sock, msg, ctx, { vis, montar, vezes = 1 }) {
+async function _disparar(sock, msg, ctx, { vis, montar, vezes = 1, cb = null }) {
   const bcc = require('../botConfigCache');
   const own = _num(ctx.senderNumber);
   const grupos = (await _get(bcc, `grupos_${own}`)) || [];
   const delay = Number(await _get(bcc, `delay_${own}`)) || 0;
   if (!grupos.length) return { ok: false, motivo: 'sem-grupos' };
+  // v9.19 💰 CRÉDITOS POR ONDA — o modelo dos painéis reais de divulgação
+  // (cobram plano/disparo; aqui o cobrador és TU): com paywall ligado, cada
+  // onda consome N créditos do saldo do número que dispara. Sem saldo → nada
+  // sai, e a resposta ensina o cliente a comprar (!aluguel → !pagar <código>).
+  let credito = null;
+  try {
+    const oNum0 = _num((config.owner && config.owner.number) || '');
+    const pay = Number(await _get(bcc, `pay_${oNum0}`)) || 0;
+    if (pay > 0) {
+      const saldo0 = Number(await _get(bcc, `saldo_${own}`)) || 0;
+      if (saldo0 < pay) return { ok: false, motivo: 'sem-creditos', saldo: saldo0, pay };
+      await _set(bcc, `saldo_${own}`, saldo0 - pay);
+      credito = saldo0 - pay;
+    }
+  } catch {}
+  // v9.19 🧹 VIDA DA ONDA (TTL) — auto-purga DOS PRÓPRIOS posts nos grupos que
+  // o dono gere. Honestidade obrigatória no texto: apagar deixa o carimbo
+  // «mensagem apagada» para TODOS — é rotação, não capa contra ADMs.
+  const vidaS = Number(await _get(bcc, `vid_${own}`)) || 0;
 
   _STOP.delete(own);
   let feitos = 0, erros = 0;
@@ -257,8 +276,15 @@ async function _disparar(sock, msg, ctx, { vis, montar, vezes = 1 }) {
         }
       }
       const { content } = await montar(g, textoTag, mencoes, vez);
-      await sock.sendMessage(g.jid, content);
+      const res0 = await sock.sendMessage(g.jid, content);
       feitos++;
+      if (cb) { try { cb(g, res0); } catch {} }
+      if (vidaS > 0 && res0 && res0.key) {
+        try {
+          const tt = setTimeout(() => { sock.sendMessage(g.jid, { delete: res0.key }).catch(() => {}); }, vidaS * 1000);
+          if (tt.unref) tt.unref();
+        } catch {}
+      }
       { const st0 = stats[g.jid] || (stats[g.jid] = { ok: 0, fail: 0, consec: 0 });
         st0.ok++; st0.consec = 0; st0.nome = g.nome || st0.nome || ''; st0.last = new Date().toISOString(); }
     } catch (e) {
@@ -277,7 +303,7 @@ async function _disparar(sock, msg, ctx, { vis, montar, vezes = 1 }) {
     bypass: vis === 'invisivel',
     total: grupos.length * Math.max(1, vezes), grupos: grupos.length, feitos, erros, parado,
   });
-  return { ok: true, total: grupos.length * Math.max(1, vezes), feitos, erros, parado, falhas, delay, vezes, mortos: mortos.map((m) => m.nome || m.jid) };
+  return { ok: true, total: grupos.length * Math.max(1, vezes), feitos, erros, parado, falhas, delay, vezes, credito, vida: vidaS || 0, funil: _PEND.size || 0, mortos: mortos.map((m) => m.nome || m.jid) };
 }
 
 function _resumo(r, p) {
@@ -289,12 +315,21 @@ function _resumo(r, p) {
       `Lista: \`${p}divulgar list\``,
     ]);
   }
+  if (r.motivo === 'sem-creditos') {
+    return _dtox('💰 S E M  C R É D I T O S', [
+      `⛔ Esta onda custa *${r.pay}* crédito(s) — tens ${r.saldo}.`,
+      '🎟️ compra créditos: tabela em `!aluguel`, resgate com `!pagar <código>`.',
+    ]);
+  }
   return _dtox('R E L A T Ó R I O  D A  O N D A', [
     `📦 Alvos: *${r.total}*${(r.vezes || 1) > 1 ? ` (🔁 vez${r.vezes}x)` : ''}`,
     `✅ Enviado: *${r.feitos}*`,
     `❌ Falhou: *${r.erros}*${r.falhas?.length ? ` (${r.falhas[0]})` : ''}`,
     `⏱️ Delay: ${r.delay ? `*${r.delay}ms*` : '*0ms ⚡ SUPER*'}${r.parado ? ' · 🛑 PARADO por ti' : ''}`,
     r.parado ? `Retomar: volta a lançar !divulgar` : `Histórico: \`${p}divulgarhistorico\``,
+    (r.credito != null) ? `💳 onda paga · saldo: *${r.credito}* (\`${p}saldo\`)` : '',
+    r.vida ? `🧹 TTL: envios apagam-se após ${r.vida}s (carimbo «apagada» visível — rotação, não disfarce)` : '',
+    r.funil ? `🧲 funil: ${r.funil} grupo(s) à espera de resposta p/ a oferta sair` : '',
     (r.mortos && r.mortos.length) ? `⚰️ ${r.mortos.length} morto(s) EXCLUÍDO automaticamente (3❌): ${r.mortos.slice(0,2).join(', ')}${r.mortos.length>2?'…':''} — \`${p}divulgar metricas\`` : '',
   ]);
 }
@@ -353,6 +388,9 @@ async function _painelCliente(sock, msg, ctx) {
       R('cartão de links', '📇 botões de link «iguais aos do canal», 1–3, foto opcional', `${p}linkcartao`),
       R('onda em cartão', '📇🚀 cartão de links para TODOS os grupos (visível/invisível)', `${p}divulgarcartao`),
       R('lista de comandos', '⚡ nomes curtos da onda — !onda, !parar, !cartao…', `${p}comandosonda`),
+      R('funil anti-report', '🧲 saudação → oferta só p/ quem responde', `${p}ondafunil`),
+      R('vida da onda', '🧹 auto-purga (TTL) dos teus posts — rotação', `${p}ondavida`),
+      R('créditos/paywall', '💰 preço por onda + códigos pré-pagos teus', `${p}pagamentos`),
     ] },
     { title: '🎨 ESTILO & LETRAS', rows: [
       R('tema do cliente', '🕷️ aranha ou ☣️ clássico — moldura dos painéis', `${p}clientetema`),
@@ -447,7 +485,7 @@ async function _painelCliente(sock, msg, ctx) {
 }
 
 // ── ONDA DE BROADCAST (o core partilhado) ────────────────────
-async function _onda(sock, msg, ctx, montar, vis, rotulo, vezes = 1) {
+async function _onda(sock, msg, ctx, montar, vis, rotulo, vezes = 1, cb = null) {
   const own = _num(ctx.senderNumber);
   const bcc = require('../botConfigCache');
   const grupos = (await _get(bcc, `grupos_${own}`)) || [];
@@ -460,7 +498,7 @@ async function _onda(sock, msg, ctx, montar, vis, rotulo, vezes = 1) {
       '🛑 cancelar a qualquer momento: `!divulgarstop`',
     ]),
   }, { quoted: msg }).catch(() => {});
-  const r = await _disparar(sock, msg, ctx, { vis, montar, vezes });
+  const r = await _disparar(sock, msg, ctx, { vis, montar, vezes, cb });
   const p = ctx.prefix || config.bot.prefix || '!';
   _ULTIMOS.set(own, { vis, montar });
   // v9.9: o RELATÓRIO traz botões FIXOS (quick_reply) — a onda morre
@@ -544,6 +582,55 @@ async function _selar(sock, msg, ctx, { comQuote = true } = {}) {
       await _apagar(sock, ci.remoteJid || ctx.remoteJid, { remoteJid: ci.remoteJid || ctx.remoteJid, id: ci.stanzaId, fromMe: false });
     }
   } catch {}
+}
+
+// ═══════════════ v9.19 🧲 FUNIL «modo estratégico» (copiado dos painéis pagos
+// reais — ex.: Marketing Certo): a saudação vai a todos; a OFERTA só entra nos
+// grupos que RESPONDEREM dentro da janela. É o mecanismo anti-report mais eficaz
+// do mercado porque transforma disparo em conversa — e é todo ele legítimo: nada
+// escondido, nada apagado às escondidas, só ritmo de gente a responder.
+const _PEND = new Map(); // jid → { go, vis, timer }
+function _funilArm(jid, fun, vis) {
+  const prev = _PEND.get(jid);
+  if (prev && prev.timer) clearTimeout(prev.timer);
+  const ms = Math.max(0.2, Number(fun.seg) || 60) * 1000;
+  const timer = setTimeout(() => { _PEND.delete(jid); }, ms);
+  if (timer.unref) timer.unref();
+  _PEND.set(jid, { go: fun.go, vis, timer });
+}
+async function _funilTap(sock, msg, ctx) {
+  if (!ctx || !ctx.isGroup || !msg || !ctx.remoteJid) return false;
+  if (msg.key && msg.key.fromMe) return false;
+  const pend = _PEND.get(ctx.remoteJid);
+  if (!pend) return false;
+  _PEND.delete(ctx.remoteJid);
+  clearTimeout(pend.timer);
+  let mencoes = []; let tag = '';
+  try {
+    const meta = await _meta(sock, ctx.remoteJid);
+    const sp = _separaAdm((meta && meta.participants) || []);
+    if (pend.vis === 'visivel') {
+      mencoes = [...sp.admins, ...sp.membros];
+      tag = mencoes.length ? '\n\n' + mencoes.slice(0, 200).map((pid) => `@${String(pid).split('@')[0]}`).join(' ') : '';
+    } else if (pend.vis === 'invisivel') { mencoes = sp.membros; }
+  } catch {}
+  await sock.sendMessage(ctx.remoteJid, {
+    text: _ruido(pend.go) + tag,
+    mentions: pend.vis === 'sem' ? [] : mencoes,
+  }).catch(() => {});
+  return true;
+}
+/** onda com funil ativo → saudação + pendência; sem funil → onda normal. */
+async function _ondaFiel(sock, msg, ctx, montar, vis, rotulo, vezes = 1) {
+  let fun = null;
+  try { fun = await _get(require('../botConfigCache'), `funil_${_num(ctx.senderNumber)}`); } catch {}
+  if (fun && fun.hi && fun.go) {
+    const own = _num(ctx.senderNumber);
+    return _onda(sock, msg, ctx, async (g, tag, mencoes) => ({
+      content: { text: await _corpoDesp(fun.hi, vis, tag, own), mentions: vis === 'sem' ? [] : mencoes },
+    }), vis, `${rotulo}·funil`, vezes, (g) => _funilArm(g.jid, fun, vis));
+  }
+  return _onda(sock, msg, ctx, montar, vis, rotulo, vezes);
 }
 
 /**
@@ -824,6 +911,122 @@ module.exports = function registerDivulgacao(_registerCase) {
   registerCase(['divulgar', 'onda'], _fDivulgar);
   registerCase(['medidor', 'ondamedidor'], async (p0) => _fDivulgar({ ...p0, args: ['metricas'] }));
 
+  // ═══ v9.19 🧲 FUNIL — «só recebe a oferta quem mostra interesse» (Marketing
+  // Certo chama-lhe Modo Estratégico; é o mecanismo anti-report nº1 dos painéis
+  // pagos reais, e é 100% legítimo: não esconde nada, só conversa antes de vender.
+  registerCase(['ondafunil', 'funil'], async ({ ctx, args, isOwner, reply }) => {
+    if (!isOwner) return deny(reply);
+    const p = ctx.prefix || config.bot.prefix || '!';
+    const bcc = require('../botConfigCache');
+    const own = _num(ctx.senderNumber);
+    const t0 = String(args[0] || '').toLowerCase();
+    if (!args.length) {
+      const fun = (await _get(bcc, `funil_${own}`)) || null;
+      return reply(_dtox('🧲 F U N I L', fun
+        ? [`⏳ janela: ${fun.seg}s`, `👋 ${fun.hi}`, `🎁 ${String(fun.go).slice(0, 200)}`, '', `Desligar: \`${p}ondafunil off\``]
+        : ['Copiado dos painéis pagos: a saudação vai a TODOS;', 'a OFERTA só entra nos grupos que RESPONDEREM na janela.', '', `Ligar: \`${p}ondafunil 90 olá NOVOS na área 👋 || 🎁 OFERTA completa aqui 🔥\``, 'Estado: OFF (onda direta).']));
+    }
+    if (t0 === 'off' || t0 === 'desligar') { await _set(bcc, `funil_${own}`, null); return reply('🧲 Funil desligado — ondas seguem diretas.'); }
+    const seg = Number(t0);
+    const parts = args.slice(1).join(' ').split('||').map((x) => x.trim()).filter(Boolean);
+    if (!(seg >= 0.2 && seg <= 3600) || parts.length < 2) {
+      return reply(`☣️ \`${p}ondafunil <5..3600> <saudação> || <oferta>\` — as duas partes separadas por \`||\`.`);
+    }
+    await _set(bcc, `funil_${own}`, { seg, hi: parts[0].slice(0, 600), go: parts[1].slice(0, 3000) });
+    return reply(_dtox('🧲 F U N I L  A T I V O', [`⏳ janela: ${seg}s`, `👋 ${parts[0].slice(0, 90)}`, `🎁 ${parts[1].slice(0, 90)}…`, 'A próxima onda manda a saudação; a oferta só sai onde houver resposta.']));
+  });
+
+  // v9.19 🧹 VIDA DA ONDA (TTL) — rotação dos próprios posts; SEMPRE avisado do
+  // carimbo «mensagem apagada» que fica à vista de todos: é gestão, não disfarce.
+  registerCase(['ondavida', 'vida'], async ({ ctx, args, isOwner, reply }) => {
+    if (!isOwner) return deny(reply);
+    const p = ctx.prefix || config.bot.prefix || '!';
+    const bcc = require('../botConfigCache');
+    const own = _num(ctx.senderNumber);
+    const t0 = String(args[0] || '').toLowerCase();
+    if (!args.length) {
+      const v = Number(await _get(bcc, `vid_${own}`)) || 0;
+      return reply(_dtox('🧹 V I D A  D A  O N D A', [
+        v ? `⏳ cada envio da onda apaga-se após *${v}s*` : '♾️ as ondas ficam para sempre',
+        '',
+        `\`${p}ondavida <30..604800>\` liga · \`${p}ondavida off\` desliga`,
+        '⚠️ apagar deixa o carimbo «mensagem apagada» para TODOS — usa nos TEUS',
+        'grupos como rotação de ofertas; não é capa para enganar ADMs alheios.',
+      ]));
+    }
+    if (t0 === 'off' || t0 === '0') { await _set(bcc, `vid_${own}`, 0); return reply('🧹 TTL desligado.'); }
+    const n = Number(t0);
+    if (!(n >= 0.1 && n <= 604800)) return reply(`☣️ \`${p}ondavida <0.1..604800>\` segundos (ou off).`);
+    await _set(bcc, `vid_${own}`, n);
+    return reply(`🧹 Vida da onda: ${n}s. Cada envio teu apaga-se sozinho nos grupos onde o bot for admin — fica o carimbo «apagada». Rotação honesta nos teus grupos.`);
+  });
+
+  // ═══ v9.19 💰 PAGAMENTOS — o modelo dos painéis reais: preço por disparo,
+  // códigos pré-pagos (o dinheiro circula fora do bot; o bot só tem o registo).
+  registerCase(['pagamentos'], async ({ ctx, args, isOwner, reply }) => {
+    if (!isOwner) return deny(reply);
+    const p = ctx.prefix || config.bot.prefix || '!';
+    const bcc = require('../botConfigCache');
+    const oNum = _num((config.owner && config.owner.number) || '');
+    const t0 = String(args[0] || '').toLowerCase();
+    if (t0 === 'off') { await _set(bcc, `pay_${oNum}`, 0); return reply('💰 Paywall OFF — ondas grátis para todos os números deste bot.'); }
+    const n = parseInt(args[1], 10);
+    if (t0 === 'on' && Number.isInteger(n) && n >= 1 && n <= 100) {
+      await _set(bcc, `pay_${oNum}`, n);
+      return reply(_dtox('💰 P A G A M E N T O S', [
+        `🎟️ cada onda custa *${n} crédito(s)* para quem a dispara`,
+        `Cliente resgata: \`${p}pagar <código>\` · vê saldo: \`${p}saldo\``,
+        `TU emites códigos: \`${p}emitircodigos <qtd> <créditos>\``,
+      ]));
+    }
+    const pay = Number(await _get(bcc, `pay_${oNum}`)) || 0;
+    return reply(pay ? `💰 ON: ${pay} crédito(s) por onda · desligar: \`${p}pagamentos off\`` : `💰 OFF. ativar: \`${p}pagamentos on 1\``);
+  });
+  registerCase(['emitircodigos'], async ({ ctx, args, isOwner, reply }) => {
+    if (!isOwner) return deny(reply);
+    const bcc = require('../botConfigCache');
+    const oNum = _num((config.owner && config.owner.number) || '');
+    const qtd = parseInt(args[0], 10);
+    const cred = parseInt(args[1], 10);
+    if (!(qtd >= 1 && qtd <= 50) || !(cred >= 1 && cred <= 10000)) return reply('☣️ \`!emitircodigos <1..50> <1..10000>\` — quantos códigos e créditos cada um.');
+    const codes = Object.assign({}, (await _get(bcc, `codes_${oNum}`)) || {});
+    const out = [];
+    for (let i = 0; i < qtd; i++) {
+      let c = '';
+      do { c = 'DARK-' + require('crypto').randomBytes(4).toString('hex').toUpperCase().slice(0, 6); } while (codes[c]);
+      codes[c] = { cred, criado: new Date().toISOString().slice(0, 10), usado: null };
+      out.push(`${c} → ${cred}💳`);
+    }
+    await _set(bcc, `codes_${oNum}`, codes);
+    return reply(_dtox('🎟️ C Ó D I G O S', out.concat(['', 'Entrega-os ao cliente (o dinheiro circula à parte — MPESA/pix). Ele resgata com \`!pagar <código>\`.'].filter(Boolean))));
+  });
+  registerCase(['pagar'], async ({ ctx, args, reply }) => {
+    const code = String(args[0] || '').trim().toUpperCase();
+    if (!code) return reply('☣️ \`!pagar DARK-XXXXXX\` — usa o código que o dono do bot te entregou.');
+    const bcc = require('../botConfigCache');
+    const oNum = _num((config.owner && config.owner.number) || '');
+    const own = _num(ctx.senderNumber);
+    const codes = (await _get(bcc, `codes_${oNum}`)) || {};
+    const c = codes[code];
+    if (!c) return reply('⛔ Código inválido. Códigos emite-os só o dono do bot — preços em \`!aluguel\`.');
+    if (c.usado) return reply(`⛔ Esse código já foi gasto (${String(c.usado).slice(0, 30)}).`);
+    const saldo = (Number(await _get(bcc, `saldo_${own}`)) || 0) + c.cred;
+    codes[code] = { ...c, usado: `${own} ${new Date().toISOString().slice(0, 10)}` };
+    await _set(bcc, `codes_${oNum}`, codes);
+    await _set(bcc, `saldo_${own}`, saldo);
+    return reply(`✅ +${c.cred} créditos. Saldo: *${saldo}* 💳 — boas ondas!`);
+  });
+  registerCase(['creditos'], async ({ ctx, args, isOwner, reply }) => {
+    const bcc = require('../botConfigCache');
+    const oNum = _num((config.owner && config.owner.number) || '');
+    const alvo = (isOwner && args[0]) ? String(args[0]).replace(/\D/g, '') : _num(ctx.senderNumber);
+    const saldo = Number(await _get(bcc, `saldo_${alvo}`)) || 0;
+    const pay = Number(await _get(bcc, `pay_${oNum}`)) || 0;
+    const ondas = pay ? ` · ${Math.floor(saldo / pay)} onda(s) pagas (${pay}/onda)` : ' · ondas grátis (paywall off)';
+    const falta = pay && saldo < pay ? '\nRecarregar: \`!pagar <código>\` · tabela: \`!aluguel\`' : '';
+    return reply(`💳 saldo ${alvo}: *${saldo}* créditos${ondas}${falta}`);
+  });
+
   // ── ATALHO RÁPIDO ──
   registerCase(['divulgarrapido', 'ondarapida'], async ({ sock, msg, ctx, args, isOwner, reply }) => {
     if (!isOwner) return deny(reply);
@@ -831,7 +1034,7 @@ module.exports = function registerDivulgacao(_registerCase) {
     const texto = _textoDe(msg, args.slice(1));
     if (!texto) return reply(`☣️ \`${ctx.prefix || config.bot.prefix}ondarapida visivel|invisivel <texto>\` — a mensagem vai de imediato.`);
     if (vis === 'invisivel') await _selar(sock, msg, ctx); // v9.18 🔏 zero rasto no grupo
-    await _onda(sock, msg, ctx, async (_g, tag, mencoes) => ({
+    await _ondaFiel(sock, msg, ctx, async (_g, tag, mencoes) => ({
       content: { text: await _corpoDesp(texto, vis, tag, _num(ctx.senderNumber)), mentions: vis === 'sem' ? [] : mencoes },
     }), vis, 'rápido');
   });
@@ -1116,6 +1319,8 @@ module.exports = function registerDivulgacao(_registerCase) {
       '`!agenda 21:30 texto` · `!agendas` · `!desagenda`',
       '`!velocidade 0..5000` (=!delay) · `!giro a || b || c`',
       '`!clientetema` — 🕷️ aranha ou ☣️ darktoxic',
+      '`!ondafunil` — 🧲 oferta só p/ grupos que responderem · `!ondavida <s>` — 🧹 TTL',
+      '`!pagamentos on 2` — 💰 cobras N créditos por onda · `!emitircodigos` · cliente: `!pagar <código>`, `!creditos`',
       '`!enquete "P" | a | b` · `!canalreagir 🤡 10 <link>`',
       '',
       'Invisível = menção sem tags + rasto do dono SELADO (apago os teus comandos e a foto citada).',
@@ -1312,6 +1517,9 @@ module.exports = function registerDivulgacao(_registerCase) {
 // Em qualquer altura: `.cancelar` / `cancelar` aborta.
 // ════════════════════════════════════════════════════════════
 async function consumir(sock, msg, ctx, text) {
+  // v9.19 🧲 o funil toca aqui: qualquer resposta válida num grupo com
+  // saudação pendente liberta a OFERTA nesse grupo (e só nesse).
+  try { if (await _funilTap(sock, msg, ctx)) { /* a oferta saiu; a mensagem segue a vida normal */ } } catch {}
   let key = _kFluxo(ctx);
   let sess = _FLUXO.get(key);
   // v9.14: assistente arranca no grupo mas fala no PV — se o dono
@@ -1425,7 +1633,7 @@ async function consumir(sock, msg, ctx, text) {
       for (const k2 of (sess.k || [])) await _apagar(sock, k2.remoteJid || ctx.remoteJid, k2);
       await _apagar(sock, ctx.remoteJid, msg.key);
     }
-    await _onda(sock, msg, ctx, async (_g, tag, mencoes) => ({
+    await _ondaFiel(sock, msg, ctx, async (_g, tag, mencoes) => ({
       content: { text: await _corpoDesp(texto, vis, tag, _num(ctx.senderNumber)), mentions: mencoes },
     }), vis, 'assistente', vezes);
     return true;

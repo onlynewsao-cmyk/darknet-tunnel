@@ -223,7 +223,11 @@ const check = (nome, cond, extra = '') => {
   vontade.querResponder = () => ({ responde: false, motivo: 'humor simulado' });
   vontade.limpar();
   await enviar('aura acorda aqui', OWNER, G1);
-  const continuacao = await enviar('Escolhi a segunda opção', OWNER, G1);
+  let continuacao = await enviar('Escolhi a segunda opção', OWNER, G1);
+  if (!continuacao.length) { // sob carga, a resposta chega depois de handle resolver — espera-se, não se falsifica
+    for (let i = 0; i < 30 && !ENVIADAS.length; i++) await new Promise((r) => setTimeout(r, 50));
+    continuacao = ENVIADAS.map((m) => m.texto).join('\n---\n');
+  }
   check('Acordar abre conversa; humor/SILENCIO não calam continuação', continuacao.length > 0, continuacao);
   human.auraRespond = antigos.respond;
   vontade.querResponder = antigos.quer;

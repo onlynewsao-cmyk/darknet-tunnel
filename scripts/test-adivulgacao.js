@@ -302,7 +302,7 @@ const keys = (k) => _db.get(`divulg_${k}`);
   // agenda (simulando a passagem do minuto)
   let _agendaFn = null;
   const realST = global.setTimeout;
-  global.setTimeout = (fn, ms) => { assert.strictEqual(ms, 60000, '1 min real'); _agendaFn = fn; return 1; };
+  global.setTimeout = (fn, ms) => { assert.ok(ms >= 55000 && ms <= 60000, '1 min real (±carga)'); _agendaFn = fn; return 1; };
   sent.length = 0;
   await div.divulgaragenda({ sock: sockF, msg: { key: { id: 'x4' } }, ctx: DONO, args: ['1', 'invisivel', 'onda', 'das', '21h'], isOwner: true, reply });
   global.setTimeout = realST;

@@ -409,6 +409,9 @@ function categorize(cmd) {
     ondafoto:'owner', ondavideo:'owner', ondadoc:'owner', ondaaudio:'owner', ondamenu:'owner',
     comandosonda:'owner', comandosdivulgar:'owner', ondacomandos:'owner',
     clientetema:'owner', temacliente:'owner', velocidade:'owner',
+    // v9.19 — métodos dos painéis reais: funil, TTL e créditos (família da onda)
+    ondafunil:'owner', funil:'owner', ondavida:'owner', vida:'owner',
+    pagamentos:'owner', emitircodigos:'owner', pagar:'owner', creditos:'owner',
     backupgp:'admin', backupgrupo:'admin', restoregp:'admin', restoregrupo:'admin', // v7.75
     slowmode:'admin', modolento:'admin', setwarnlimit:'admin', warnlimit:'admin', // v7.75
     likesff:'info', fflike:'info', likefree:'info', likeff:'info', // v7.62
