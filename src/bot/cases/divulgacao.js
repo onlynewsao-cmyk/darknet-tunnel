@@ -111,7 +111,42 @@ async function _lista(sock, msg, ctx, { titulo, corpo, seccoes, rodape }) {
 
 const sleep = (ms) => new Promise(r => setTimeout(r, Math.max(1, ms)));
 
-/** v9.20 — limpa QUALQUER @menção acidental do texto invisível.
+// ═══════════════ v9.21 🧠 SIMULAÇÃO HUMANA DE TYPING ═══════════════
+// Inspirado no baileys-antiban (PresenceChoreographer): simula um humano
+// real a digitar antes de enviar cada mensagem. O WhatsApp vê "composing"
+// e depois a mensagem — exatamente como faz qualquer pessoa.
+// WPM modelo: 40-60 palavras/minuto (angolano médio no telemóvel).
+// Pausas de "pensamento" no meio (8% chance a cada 10 chars).
+const _TYPING_WPM_MIN = 35;
+const _TYPING_WPM_MAX = 65;
+const _THINK_PAUSE_PROB = 0.08;
+const _THINK_PAUSE_MIN = 600;
+const _THINK_PAUSE_MAX = 2500;
+/**
+ * Envia "composing" para o grupo, espera o tempo realista de digitação,
+ * e depois envia "paused". Se `texto` for dado, calcula o tempo com base
+ * no WPM (palavras por minuto). Se não, usa 1-3s aleatório.
+ */
+async function _humanoTyping(sock, jid, texto) {
+  try {
+    const chars = String(texto || '').length;
+    const wpm = _TYPING_WPM_MIN + Math.random() * (_TYPING_WPM_MAX - _TYPING_WPM_MIN);
+    const cps = (wpm * 5) / 60; // ~5 chars/palavra
+    const baseMs = chars > 0 ? Math.max(800, (chars / cps) * 1000) : 1000 + Math.random() * 2000;
+    // limita a 4s máximo (para não atrasar demais a onda)
+    const typingMs = Math.min(baseMs, 4000);
+    await sock.sendPresenceUpdate('composing', jid);
+    // simula "pensamento" no meio da digitação
+    const thinkPause = Math.random() < _THINK_PAUSE_PROB
+      ? _THINK_PAUSE_MIN + Math.random() * (_THINK_PAUSE_MAX - _THINK_PAUSE_MIN)
+      : 0;
+    await sleep(typingMs + thinkPause);
+    await sock.sendPresenceUpdate('paused', jid);
+  } catch { /* silencioso — presença é best-effort */ }
+}
+
+/**
+ * v9.20 — limpa QUALQUER @menção acidental do texto invisível.
  *  O modo invisível só funciona se o corpo da mensagem não tiver
  *  nenhum @numero visível — o `mentions` field trata das notificações.
  *  Sem isto, um @ acidental no texto invalida toda a invisibilidade.
@@ -322,6 +357,9 @@ async function _disparar(sock, msg, ctx, { vis, montar, vezes = 1, cb = null }) 
         }
       }
       const { content } = await montar(g, textoTag, mencoes, vez);
+      // v9.21 🧠 typing humano: simula "digitando..." antes de enviar
+      const _visivel = vis !== 'sem' && delay >= 300; // só se delay >= 300ms (anti-ban mode)
+      if (_visivel) await _humanoTyping(sock, g.jid, content.text || content.caption || '');
       const res0 = await sock.sendMessage(g.jid, content);
       feitos++;
       if (cb) { try { cb(g, res0); } catch {} }
@@ -1368,6 +1406,8 @@ module.exports = function registerDivulgacao(_registerCase) {
       '`!ondafunil` — 🧲 oferta só p/ grupos que responderem · `!ondavida <s>` — 🧹 TTL',
       '`!pagamentos on 2` — 💰 cobras N créditos por onda · `!emitircodigos` · cliente: `!pagar <código>`, `!creditos`',
       '`!enquete "P" | a | b` · `!canalreagir 🤡 10 <link>`',
+      '`!ondapoll` — 📊 recria enquete citada em TODOS os grupos (sorteio de votos)',
+      '`!ondavotar <opção>` — 🤡 vota na enquete citada (1 conta = 1 voto)',
       '',
       'Invisível = menção sem tags + rasto do dono SELADO (apago os teus comandos e a foto citada).',
       'DARK BOT 🕸️',
@@ -1375,7 +1415,7 @@ module.exports = function registerDivulgacao(_registerCase) {
   });
   registerCase(['delayultrarapido'], async (p0) => _delayCase({ ...p0, args: ['super'] }));
 
-  // ═══════════════ v9.20 🤡 CANAL REAGIR STANDALONE ═══════════════
+  // ═══════════════ v9.21 🤡 CANAL REAGIR STANDALONE ═══════════════
   // !canalreagir <emoji> [quantidade] [link/jid] — reage a posts do canal
   // Suporta múltiplos emojis: !canalreagir 🖤❤️🔥🕷️ 10 <link>
   // Roda entre emojis em cada post para inflação de engagement.
@@ -1400,6 +1440,134 @@ module.exports = function registerDivulgacao(_registerCase) {
       return reply(fmtResult(await C.reagirTudoCanal(sock, alvo, emojiList[0], quantas, { emojis: emojiList })));
     }
     return reply(fmtResult(await C.reagirTudoCanal(sock, alvo, emojiList[0], quantas)));
+  });
+
+  // ═══════════════ v9.21 📊 RELAY DE ENQUETES / POLLS ═══════════════
+  // O dono partilha uma enquete num grupo e responde com !ondapoll —
+  // o bot recria a MESMA enquete em TODOS os grupos da onda.
+  // Extração automática: pollCreationMessage ou pollCreationMessageV3.
+  registerCase(['ondapoll', 'relatarenquete', 'pollrelay', 'enqueterelay'], async ({ sock, msg, ctx, args, isOwner, reply }) => {
+    if (!isOwner) return deny(reply);
+    const p = ctx.prefix || config.bot.prefix || '!';
+    const own = _num(ctx.senderNumber);
+    // extrair enquete da mensagem citada
+    const q = msg?.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+    const pollRaw = q?.pollCreationMessage || q?.pollCreationMessageV3;
+    if (!pollRaw || !pollRaw.name) {
+      return reply(`☣️ Responde a uma *enquete* com \`${p}ondapoll\` para a recriar em todos os grupos.\nEx.: cria uma enquete num grupo, depois responde a ela com \`${p}ondapoll\``);
+    }
+    const pergunta = String(pollRaw.name || '').slice(0, 255);
+    const opcoes = (pollRaw.options || pollRaw.values || []).map(o => String(o.optionName || o.name || o).slice(0, 100)).filter(Boolean);
+    if (!opcoes.length) return reply('☣️ Não consegui extrair as opções da enquete.');
+    const selectable = Number(pollRaw.selectableOptionsCount || pollRaw.selectableCount) || 1;
+    const secret = msg?.message?.extendedTextMessage?.contextInfo?.messageSecret;
+    const bcc = require('../botConfigCache');
+    const grupos = (await _get(bcc, `grupos_${own}`)) || [];
+    if (!grupos.length) return reply(`☣️ Sem grupos registados. \`${p}divulgar add\` primeiro.`);
+    const delay = Number(await _get(bcc, `delay_${own}`)) || 0;
+    _STOP.delete(own);
+    let feitos = 0, erros = 0, falhas = [];
+    const stats = Object.assign({}, (await _get(bcc, `stats_${own}`)) || {});
+    // 🔀 ordem baralhada
+    const ordem = [...grupos].sort(() => Math.random() - 0.5);
+    await sock.sendMessage(_alvo(ctx), {
+      text: _dtox('E N Q U E T E  R E L A Y', [
+        `📊 *${pergunta}*`,
+        `📋 ${opcoes.length} opções · seleção: ${selectable}`,
+        `📦 ${grupos.length} grupos`,
+        `⏱️ ${delay ? delay + 'ms' : '0ms ⚡'}`,
+        '🛑 cancelar: `!divulgarstop`',
+      ]),
+    }, { quoted: msg }).catch(() => {});
+    for (let i = 0; i < ordem.length; i++) {
+      if (_STOP.has(own)) break;
+      const g = ordem[i];
+      try {
+        // v9.21 🧠 typing humano antes de criar a enquete
+        if (delay >= 300) await _humanoTyping(sock, g.jid, pergunta);
+        const pollSecret = require('crypto').randomBytes(32);
+        await sock.sendMessage(g.jid, {
+          poll: { name: pergunta, values: opcoes, selectableCount: selectable, messageSecret: pollSecret },
+        });
+        feitos++;
+        const st0 = stats[g.jid] || (stats[g.jid] = { ok: 0, fail: 0, consec: 0 });
+        st0.ok++; st0.consec = 0; st0.nome = g.nome || st0.nome || ''; st0.last = new Date().toISOString();
+      } catch (e) {
+        erros++;
+        falhas.push(`${g.nome || g.jid}: ${String(e.message).slice(0, 40)}`);
+        const st0 = stats[g.jid] || (stats[g.jid] = { ok: 0, fail: 0, consec: 0 });
+        st0.fail++; st0.consec++; st0.nome = g.nome || st0.nome || '';
+      }
+      if (i + 1 < ordem.length && delay > 0) await sleep(delay);
+    }
+    try { await _set(bcc, `stats_${own}`, stats); } catch {}
+    const parado = _STOP.has(own);
+    _STOP.delete(own);
+    return reply(_dtox('R E L A T Ó R I O  E N Q U E T E', [
+      `📊 ${pergunta}`,
+      `✅ Criada em: *${feitos}*`,
+      `❌ Falhou: *${erros}*${falhas.length ? ` (${falhas[0]})` : ''}`,
+      parado ? '🛑 PARADO por ti' : '',
+    ].filter(Boolean)));
+  });
+
+  // ═══ v9.21 🤡 INFLAÇÃO DE VOTOS — VOTAR EM ENQUETES ═══════════════
+  // O dono responde a uma enquete com !ondavotar <opção> — o bot vota
+  // nessa enquete. Para inflação de votos com múltiplas contas, cada
+  // conta separada vota uma vez (limite WhatsApp: 1 voto por conta).
+  registerCase(['ondavotar', 'votarpoll', 'pollvote'], async ({ sock, msg, ctx, args, isOwner, reply }) => {
+    if (!isOwner) return deny(reply);
+    const p = ctx.prefix || config.bot.prefix || '!';
+    const q = msg?.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+    const pollRaw = q?.pollCreationMessage || q?.pollCreationMessageV3;
+    if (!pollRaw || !pollRaw.name) {
+      return reply(`☣️ Responde a uma *enquete* com \`${p}ondavotar <opção>\` para votar.\nEx.: \`${p}ondavotar opção A\``);
+    }
+    const opcoes = (pollRaw.options || pollRaw.values || []).map(o => String(o.optionName || o.name || o).slice(0, 100)).filter(Boolean);
+    const voto = args.join(' ').trim();
+    if (!voto) {
+      return reply(`☣️ Diz qual opção: \`${p}ondavotar <opção>\`\nOpções: ${opcoes.map((o, i) => `${i + 1}. ${o}`).join(' | ')}`);
+    }
+    // encontra a opção (por nome parcial ou número)
+    const num = parseInt(voto, 10);
+    let opcaoEscolhida;
+    if (Number.isInteger(num) && num >= 1 && num <= opcoes.length) {
+      opcaoEscolhida = opcoes[num - 1];
+    } else {
+      opcaoEscolhida = opcoes.find(o => o.toLowerCase().includes(voto.toLowerCase()));
+    }
+    if (!opcaoEscolhida) return reply(`☣️ Opção não encontrada. Disponíveis:\n${opcoes.map((o, i) => `${i + 1}. ${o}`).join('\n')}`);
+    // votar usando sendMessage com pollUpdateMessage
+    try {
+      // a chave da enquete original
+      const pollKey = msg?.message?.extendedTextMessage?.contextInfo;
+      const stanzaId = pollKey?.stanzaId;
+      const pollJid = pollKey?.remoteJid || ctx.remoteJid;
+      const secret = pollKey?.messageSecret;
+      if (stanzaId && secret) {
+        // v9.21: votar com encryptPollVote se disponível
+        const { encryptPollVote } = require('@systemzero/baileys');
+        const vote = encryptPollVote({
+          selectedOptions: [opcaoEscolhida],
+        }, {
+          pollEncKey: Buffer.from(secret),
+          pollCreatorJid: sock.user?.id || '',
+          pollMsgId: stanzaId,
+          voterJid: sock.user?.id || '',
+        });
+        await sock.sendMessage(pollJid, {
+          pollUpdateMessage: {
+            pollCreationMessageKey: { remoteJid: pollJid, id: stanzaId, fromMe: false },
+            vote: vote,
+            senderTimestampMs: Date.now(),
+          },
+        });
+        return reply(`✅ Votei em *${opcaoEscolhida}* na enquete.`);
+      }
+      return reply('☣️ Não consegui extrair a chave da enquete (precisa de secret).');
+    } catch (e) {
+      return reply(`❌ Não consegui votar: ${String(e?.message || e).slice(0, 80)}\n(Nota: votos encriptados requerem a versão mais recente do Baileys)`);
+    }
   });
 
   // ── MÍDIA (foto/video/doc/audio via quote) ──────────────────
