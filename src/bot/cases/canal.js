@@ -80,6 +80,9 @@ module.exports = function registerCanalCases(registerCase) {
       `• \`${prefix}canal seguir <link>\` — segue um canal\n` +
       `• \`${prefix}canal deixar\` — deixa o canal adotado\n` +
       `• \`${prefix}canal apagar SIM\` — ⚠️ apaga o canal\n\n` +
+      `*Reacções (v9.20):*\n` +
+      `• \`${prefix}canal reagir <emoji>\` — reage a todos os posts recentes\n` +
+      `• \`${prefix}canal reagir 🖤❤️🔥\` — roda entre emojis (inflação)\n\n` +
       `*Multi-canal (SUPER):*\n` +
       `• \`${prefix}canal @<nº|nome> <comando>\` — age noutro canal sem trocar o ativo\n` +
       `• \`${prefix}super <texto>\` — publica em *todos* os canais (+ \`grupos\` avisa os grupos)`;
@@ -268,6 +271,26 @@ module.exports = function registerCanalCases(registerCase) {
       if (r?.ok !== false) { try { if (alvoRef) await C.esquecerCanal(alvo); else await C.guardarCanal(null); } catch {} }
       return reply(fmtResult(r));
     }
+
+    // ═══════════════════════════════════════════════════════════
+    // v9.20 — REACÇÕES DE CANAL (inflação de engagement)
+    // Suporta múltiplos emojis: !canal reagir 🖤❤️🔥🕷️
+    // Roda entre os emojis em cada post para variar as reacções.
+    // ═══════════════════════════════════════════════════════════
+    if (sub === 'reagir' || sub === 'react') {
+      if (!resto) return reply(`❓ Usa: \`${prefix}canal reagir <emoji>\` ou \`${prefix}canal reagir 🖤❤️🔥\`\nReage a todas as publicações recentes do canal.`);
+      const alvo = await escolherAlvo();
+      if (!alvo) return reply(`❌ Sem canal adotado. \`${prefix}canal adotar <link>\``);
+      // separa emojis unicode (suporta múltiplos colados ou separados por espaço)
+      const emojiInput = (resto || '').trim();
+      const emojiMatches = emojiInput.match(/\p{Emoji_Presentation}|\p{Emoji}\uFE0F/gu) || [emojiInput.split(/\s/)[0] || '🕸️'];
+      const emojiList = [...new Set(emojiMatches)];
+      if (emojiList.length > 1) {
+        return reply(fmtResult(await C.reagirTudoCanal(sock, alvo, emojiList[0], 30, { emojis: emojiList })));
+      }
+      return reply(fmtResult(await C.reagirTudoCanal(sock, alvo, emojiList[0], 30)));
+    }
+
     return reply(`❓ Subcomando desconhecido: \`${sub}\`\nVê: \`${prefix}canal\``);
   });
 };

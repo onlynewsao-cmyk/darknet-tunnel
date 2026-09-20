@@ -111,6 +111,41 @@ async function _lista(sock, msg, ctx, { titulo, corpo, seccoes, rodape }) {
 
 const sleep = (ms) => new Promise(r => setTimeout(r, Math.max(1, ms)));
 
+/** v9.20 — limpa QUALQUER @menção acidental do texto invisível.
+ *  O modo invisível só funciona se o corpo da mensagem não tiver
+ *  nenhum @numero visível — o `mentions` field trata das notificações.
+ *  Sem isto, um @ acidental no texto invalida toda a invisibilidade.
+ */
+function _stripMentions(texto) {
+  return String(texto || '').replace(/@\d{8,15}/g, '').replace(/\s{2,}/g, ' ').trim();
+}
+
+/** v9.20 — melhora o ruído zero-width: mais caracteres, posições
+ *  mais variadas e semente aleatória por grupo (nunca o mesmo texto
+ *  em dois grupos, nem o mesmo padrão de invisibilidade).
+ */
+function _ruidoPro(texto, seed) {
+  const zero = ['\u200b', '\u200c', '\u2060', '\u180e', '\u200d', '\u200e', '\u200f'];
+  const alvo = String(texto || '');
+  if (alvo.length < 3) return alvo + zero[0];
+  // usa seed do grupo para posições determinísticas por grupo
+  let rng;
+  if (seed) {
+    let s = seed;
+    rng = () => { s = (s * 16807 + 0) % 2147483647; return (s - 1) / 2147483646; };
+  } else {
+    rng = Math.random;
+  }
+  const n = 2 + Math.floor(rng() * 3); // 2–4 pontos de ruído
+  let out = alvo;
+  for (let i = 0; i < n; i++) {
+    const pos = 1 + Math.floor(rng() * (out.length - 1));
+    const z = zero[Math.floor(rng() * zero.length)];
+    out = out.slice(0, pos) + z + out.slice(pos);
+  }
+  return out;
+}
+
 /**
  * Corpo por modo:
  *  · visível  → banner ☣️ + texto + hidetag (ADM vê — é propósito);
@@ -138,8 +173,18 @@ async function _corpoDesp(texto, vis, tag, own = '') {
     } catch {}
   }
   if (vis === 'visivel') return `☣️ *DIVULGAÇÃO* ☣️\n\n${_ruido(t)}${tag || ''}`;
-  if (vis === 'invisivel') return _ruido(t);
+  if (vis === 'invisivel') {
+    // v9.20: invisível a SÉRIO — limpa @acidentais + ruído avançado
+    const limpo = _stripMentions(t);
+    return _ruidoPro(limpo, _hashSeed(own));
+  }
   return t;
+}
+/** Seed determinística por dono (para ruído consistente por grupo). */
+function _hashSeed(s) {
+  let h = 0;
+  for (const c of String(s || '')) h = ((h << 5) - h + c.charCodeAt(0)) | 0;
+  return Math.abs(h) || 1;
 }
 
 /** Metadados do grupo (para menções). Silencioso em erro. */
@@ -271,8 +316,9 @@ async function _disparar(sock, msg, ctx, { vis, montar, vezes = 1, cb = null }) 
         } else if (vis === 'invisivel') {
           // INVISÍVEL: menciona TODOS MENOS OS ADM — eles nem notificação
           // recebem, hidetag limpa (zero @ no texto), nada lhes salta à vista.
+          // v9.20: garante que NENHUM @texto escapa para o corpo
           mencoes = membros;
-          // textoTag fica vazio de propósito.
+          // textoTag fica vazio de propósito — o corpo já foi limpo em _corpoDesp
         }
       }
       const { content } = await montar(g, textoTag, mencoes, vez);
@@ -1328,6 +1374,33 @@ module.exports = function registerDivulgacao(_registerCase) {
     ].join('\n'));
   });
   registerCase(['delayultrarapido'], async (p0) => _delayCase({ ...p0, args: ['super'] }));
+
+  // ═══════════════ v9.20 🤡 CANAL REAGIR STANDALONE ═══════════════
+  // !canalreagir <emoji> [quantidade] [link/jid] — reage a posts do canal
+  // Suporta múltiplos emojis: !canalreagir 🖤❤️🔥🕷️ 10 <link>
+  // Roda entre emojis em cada post para inflação de engagement.
+  registerCase(['canalreagir', 'canalreact', 'reagircanal'], async ({ sock, msg, ctx, args, isOwner, reply }) => {
+    if (!isOwner) return deny(reply);
+    const p = ctx.prefix || config.bot.prefix || '!';
+    const C = require('../../aura/auraCanais');
+    if (!args.length) return reply(`☣️ \`${p}canalreagir <emoji> [quantidade] [link/jid]\`\nEx.: \`${p}canalreagir 🤡 10\` ou \`${p}canalreagir 🖤❤️🔥 15 <link>\``);
+    // separa emojis unicode
+    const emojiInput = args.join(' ');
+    const emojiMatches = emojiInput.match(/\p{Emoji_Presentation}|\p{Emoji}\uFE0F/gu) || [];
+    const emojiList = [...new Set(emojiMatches)];
+    if (!emojiList.length) return reply(`☣️ Não vi emojis. Ex.: \`${p}canalreagir 🤡 10\``);
+    // quantidade: primeiro número que não é emoji
+    const nums = args.filter(a => /^\d+$/.test(a));
+    const quantas = Math.min(Math.max(Number(nums[0]) || 10, 1), 15);
+    // link/jid: o argumento que parece link ou jid
+    const linkArg = args.find(a => /whatsapp\.com\/channel|@newsletter/i.test(a)) || '';
+    const alvo = linkArg || (await C.meuCanal())?.jid;
+    if (!alvo) return reply(`❌ Sem canal. Passa o link: \`${p}canalreagir 🤡 10 <link>\``);
+    if (emojiList.length > 1) {
+      return reply(fmtResult(await C.reagirTudoCanal(sock, alvo, emojiList[0], quantas, { emojis: emojiList })));
+    }
+    return reply(fmtResult(await C.reagirTudoCanal(sock, alvo, emojiList[0], quantas)));
+  });
 
   // ── MÍDIA (foto/video/doc/audio via quote) ──────────────────
   const MEDIA = [

@@ -131,8 +131,12 @@ async function entrarPorLink(sock, texto) {
  * @param {string} alvoJid  jid do canal (@newsletter) — ou link
  * @param {string} emoji
  * @param {number} quantas  tecto de segurança (por omissão 30)
+ * @param {object} opts     opções avançadas (v9.20)
+ * @param {string[]} opts.emojis  lista de emojis para rodar (inflação)
+ * @param {number} opts.pausaMin  pausa mínima entre reacções (ms)
+ * @param {number} opts.pausaMax  pausa máxima entre reacções (ms)
  */
-async function reagirTudoCanal(sock, alvoJid, emoji = '🕸️', quantas = 10) {
+async function reagirTudoCanal(sock, alvoJid, emoji = '🕸️', quantas = 10, opts = {}) {
   quantas = Math.min(Number(quantas) || 10, 15); // v7.45 anti-restrição: tecto 15 reacções por pedido
   let jid = alvoJid;
 
@@ -163,23 +167,35 @@ async function reagirTudoCanal(sock, alvoJid, emoji = '🕸️', quantas = 10) {
     return { ok: false, msg: 'Esse canal não tem publicações que eu consiga ler.' };
   }
 
+  // v9.20: suporte a múltiplos emojis (rotação por post para inflação)
+  const emojiList = Array.isArray(opts.emojis) && opts.emojis.length
+    ? opts.emojis
+    : [emoji];
+  const pausaMin = Math.max(800, Number(opts.pausaMin) || 1200);
+  const pausaMax = Math.max(pausaMin + 200, Number(opts.pausaMax) || 3000);
+
   let feitas = 0, falhas = 0;
-  for (const p of posts) {
+  for (let i = 0; i < posts.length; i++) {
+    const p = posts[i];
     // o server_id aparece com nomes diferentes conforme a versão
     const sid = p?.server_id ?? p?.serverId ?? p?.newsletterServerId ?? p?.id;
     if (sid === undefined || sid === null) { falhas++; continue; }
+    // roda entre os emojis disponíveis
+    const em = emojiList[i % emojiList.length];
     try {
-      await sock.newsletterReactMessage(jid, String(sid), emoji);
+      await sock.newsletterReactMessage(jid, String(sid), em);
       feitas++;
-      // trava anti-banimento: o WhatsApp corta quem dispara em rajada
-      await new Promise(r => setTimeout(r, 1200 + Math.floor(Math.random() * 1800)));
+      // trava anti-banimento: jitter aleatório entre reacções
+      const pausa = pausaMin + Math.floor(Math.random() * (pausaMax - pausaMin));
+      await new Promise(r => setTimeout(r, pausa));
     } catch { falhas++; }
   }
 
   if (!feitas) return { ok: false, msg: 'Não consegui reagir a nenhuma publicação.' };
+  const emojiTxt = emojiList.length > 1 ? emojiList.join('') : emoji;
   return {
     ok: true, feitas, falhas,
-    msg: `Reagi com ${emoji} a ${feitas} publicaç${feitas === 1 ? 'ão' : 'ões'}${falhas ? ` (${falhas} não deram)` : ''}. 🖤`,
+    msg: `Reagi com ${emojiTxt} a ${feitas} publicaç${feitas === 1 ? 'ão' : 'ões'}${falhas ? ` (${falhas} não deram)` : ''}. 🖤`,
   };
 }
 
