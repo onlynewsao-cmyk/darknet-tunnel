@@ -362,6 +362,55 @@ async function sendUrlButton(sock, jid, text, displayText, url, quoted = null) {
   }
 }
 
+/**
+ * v9.17 📇 CARTÃO DE LINKS — «igual ao do canal»: N botões de URL (até 3),
+ * corpo opcional e FOTO opcional no cabeçalho. Cascade em 3 andares:
+ *   1) nativeFlow cta_url (com header de media se `image` — Buffer/url)
+ *   2) templateButtons urlButton (formato API oficial, suporta imagem+caption)
+ *   3) texto puro com 🔗 por linha (nunca falha)
+ * @param {Array<{text:string,url:string}>} botoes 1–3 botões
+ * @param {{image?:{url:string}|Buffer}} opts foto de cabeçalho
+ */
+async function sendUrlButtons(sock, jid, text, footer, botoes, quoted = null, opts = {}) {
+  const bs = (Array.isArray(botoes) ? botoes : []).filter((b) => b && b.url && b.text).slice(0, 3);
+  if (!bs.length) throw new Error('sem botões de link válidos');
+  // 1) nativeFlow — um cta_url por botão; foto via header quando fornecida
+  try {
+    const bot = bs.map((b) => ({
+      name: 'cta_url',
+      buttonParamsJson: JSON.stringify({ display_text: b.text, url: b.url, merchant_url: b.url }),
+    }));
+    const header = opts.image
+      ? await buildHeader(sock, opts.image) // Buffer ou URL; falha → sem foto
+      : proto.Message.InteractiveMessage.Header.fromObject({ title: '', hasMediaAttachment: false });
+    const m = generateWAMessageFromContent(jid, {
+      viewOnceMessage: {
+        message: {
+          messageContextInfo: { deviceListMetadata: {}, deviceListMetadataVersion: 2 },
+          interactiveMessage: proto.Message.InteractiveMessage.fromObject({
+            body: proto.Message.InteractiveMessage.Body.fromObject({ text: text || '' }),
+            footer: proto.Message.InteractiveMessage.Footer.fromObject({ text: footer || (require('../config').bot.name + ' 🕸️') }),
+            header,
+            nativeFlowMessage: proto.Message.InteractiveMessage.NativeFlowMessage.fromObject({ buttons: bot }),
+          }),
+        },
+      },
+    }, { userJid: sock.user?.id, quoted });
+    return await sock.relayMessage(jid, m.message, { messageId: m.key.id, additionalNodes: NATIVE_FLOW_NODES });
+  } catch {}
+  // 2) templateButtons com urlButton (e foto no header quando houver)
+  try {
+    const templateButtons = bs.map((b, i) => ({ index: i + 1, urlButton: { displayText: b.text.slice(0, 24), url: b.url } }));
+    if (opts.image) {
+      return await sock.sendMessage(jid, { image: typeof opts.image === 'object' ? opts.image : { url: opts.image }, caption: text || '', footer: footer || 'DARK BOT 🕸️', templateButtons }, { quoted });
+    }
+    return await sock.sendMessage(jid, { text: text || '', footer: footer || 'DARK BOT 🕸️', templateButtons }, { quoted });
+  } catch {}
+  // 3) texto puro — nunca falha
+  const linhas = bs.map((b) => `🔗 ${b.text}: ${b.url}`).join('\n');
+  return sock.sendMessage(jid, { text: `${text || ''}${text ? '\n\n' : ''}${linhas}` }, { quoted });
+}
+
 /** Botão de copiar código/texto */
 async function sendCopyButton(sock, jid, text, displayText, copyCode, quoted = null) {
   try {
@@ -397,6 +446,7 @@ module.exports = {
   sendList,
   sendListWithImage,
   sendUrlButton,
+  sendUrlButtons,
   sendCopyButton,
   sendCallButton,
   // Helpers

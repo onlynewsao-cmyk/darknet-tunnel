@@ -241,6 +241,67 @@ function extractText(msg) {
   );
 }
 
+/**
+ * v9.17 👻 SUPERFÍCIE DE LINKS — o buraco que os bots de divulgação usam:
+ * o extractText lê o CORPO da mensagem, mas um cartão interativo/template
+ * esconde o URL nos BOTÕES (`cta_url`/`urlButton`) e nas listas — a moderação
+ * baseada em texto não vê nada. Esta função varre cirurgicamente os campos
+ * de texto+botão de TODOS os formatos ricos que entram num grupo:
+ *   • interactiveMessage: body/footer/header + nativeFlow (buttonParamsJson)
+ *   • templateMessage: título/corpo/rodapé + hydratedButtons[].url
+ *   • buttonsMessage/listMessage (herança) — títulos, descrições, secções
+ * NÃO inclui quotedMessage (responder a mensagem antiga com link não conta
+ * como enviar link — evita falsos positivos em replies).
+ * @returns {string} texto adicional para varrer (vazio se nada rico)
+ */
+function superficieLinks(msg) {
+  const partes = [];
+  const m = msg?.message || {};
+  const push = (v) => { if (typeof v === 'string' && v) partes.push(v); };
+  // ── interactiveMessage (flow/CTA — o formato dos canais e dos bots) ──
+  const ia = m.interactiveMessage || m.viewOnceMessage?.message?.interactiveMessage
+    || m.ephemeralMessage?.message?.interactiveMessage || null;
+  if (ia) {
+    push(ia.body?.text); push(ia.footer?.text); push(ia.header?.title);
+    for (const b of (ia.nativeFlowMessage?.buttons || [])) {
+      push(b.buttonParamsJson); // JSON cru: contém "url":"https://..." e textos
+    }
+    for (const b of (ia.buttons || [])) push(b.buttonParamsJson);
+  }
+  // ── templateMessage (API oficial — cartão com urlButton) ──
+  const tm = m.templateMessage || m.viewOnceMessage?.message?.templateMessage || null;
+  if (tm) {
+    const c = tm.hydratedContent || tm.localizedTemplateButtonMessage?.hydratedContent || {};
+    push(c.titleText?.text); push(c.text?.text); push(c.footerText?.text);
+    for (const b of (tm.hydratedButtons || c.hydratedButtons || tm.buttons || [])) {
+      push(b?.urlButton?.url); push(b?.urlButton?.displayText);
+      push(b?.quickReplyButton?.displayText); push(b?.quickReplyButton?.id);
+      push(b?.copyCodeButton?.code);
+      if (typeof b === 'string') push(b);
+    }
+  }
+  // ── herança: buttonsMessage / listMessage ──
+  const bm = m.buttonsMessage || m.viewOnceMessage?.message?.buttonsMessage || null;
+  if (bm) {
+    push(bm.contentText); push(bm.footerText);
+    for (const b of (bm.buttons || [])) push(b.displayText);
+  }
+  const lm = m.listMessage || m.viewOnceMessage?.message?.listMessage || null;
+  if (lm) {
+    push(lm.title); push(lm.text); push(lm.footerText); push(lm.buttonText);
+    for (const s of (lm.sections || [])) {
+      push(s.title);
+      for (const r of (s.rows || [])) { push(r.title); push(r.description); push(r.rowId); }
+    }
+  }
+  // ── legenda de foto/vídeo (header de media dos flows) ──
+  for (const k of ['imageMessage', 'videoMessage']) {
+    const mm = m[k] || m.viewOnceMessage?.message?.[k] || null;
+    if (mm) push(mm.caption);
+  }
+  return partes.join('\n');
+}
+
 async function bumpStats(groupJid, field) {
   try {
     await GroupSettings.updateOne(
@@ -278,7 +339,10 @@ async function check(sock, msg) {
     if (!ativo) return false;
 
     const text = extractText(msg);
-    if (!text) return false;
+    // v9.17 ⚠️ corpo VAZIO já não basta para fugir: cartão interativo sem
+    // texto mas com urlButton nos botões é varrido pela superfície abaixo.
+    const superficie0 = superficieLinks(msg);
+    if (!text && !superficie0) return false;
 
     // 🛡️ Comandos do bot são ignorados (ex: !ytd https://... | botão play)
     // Usa prefixEngine para respeitar prefixo por grupo
@@ -288,14 +352,25 @@ async function check(sock, msg) {
 
     const mode = gs.antilinkMode || 'smart';
     const strict = gs.antilinkStrict !== false;
+    // v9.17 👻 varre TAMBÉM a superfície rica (botões/flows/listas) — link
+    // escondido em urlButton de cartão deixa de ser buraco de moderação.
+    const superficie = superficieLinks(msg);
+    // ── bypass óbvio: body limpo + link só no botão → texto sozinho NÃO é
+    //    comando, mas se o corpo for um comando nosso a isenção acima já
+    //    travou; aqui a ordem é fixa: superfície só aumenta a deteção ──
     // v7.85: escudo à medida — redes aceites + grupos/canais do WhatsApp
     const redes = Array.isArray(gs.antilinkRedes) ? gs.antilinkRedes : null;
     const aceites = linkPolicy.rotuloPara(redes, { grupos: !!gs.antilinkGrupos, canais: !!gs.antilinkCanais });
-    const detection = detectLink(text, mode, strict, gs.antilinkWhitelist || [], {
+    const detectaEm = (amostra) => detectLink(amostra, mode, strict, gs.antilinkWhitelist || [], {
       base: linkPolicy.dominiosPara(redes),
       waGrupos: !!gs.antilinkGrupos,
       waCanais: !!gs.antilinkCanais,
     });
+    let detection = detectaEm(text);
+    if (!detection.hit && superficie) {
+      const d2 = detectaEm(superficie);
+      if (d2.hit) detection = d2;
+    }
     if (!detection.hit) return false;
 
     // Metadados do grupo
@@ -393,4 +468,4 @@ function clearWarnings(jid, groupJid) {
   }
 }
 
-module.exports = { check, clearWarnings, detectLink, deobfuscate, isWhitelisted };
+module.exports = { check, clearWarnings, detectLink, deobfuscate, isWhitelisted, superficieLinks };

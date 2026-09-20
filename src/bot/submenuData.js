@@ -398,6 +398,8 @@ function categorize(cmd) {
     giro:'owner', variacao:'owner', variacoes:'owner',
     tamanho:'texto', tamanhos:'texto',
     divgstat:'owner', divulgaragenda:'owner', divulgarprogramar:'owner',
+    // v9.17 — cartões de link «iguais aos do canal» (só dono, como a onda)
+    linkcartao:'owner', cartaolink:'owner', cartaodelinks:'owner', divulgarcartao:'owner',
     backupgp:'admin', backupgrupo:'admin', restoregp:'admin', restoregrupo:'admin', // v7.75
     slowmode:'admin', modolento:'admin', setwarnlimit:'admin', warnlimit:'admin', // v7.75
     likesff:'info', fflike:'info', likefree:'info', likeff:'info', // v7.62

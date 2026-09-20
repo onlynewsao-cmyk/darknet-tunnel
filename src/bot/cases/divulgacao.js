@@ -327,6 +327,8 @@ async function _painelCliente(sock, msg, ctx) {
       R('reativar morto', 'resuscita grupo excluído por 3 falhas', `${p}divulgar reativar 1`),
       R('enquete / votação', '📊 enquete real ou votação com botões', `${p}enquete`),
       R('canal reage', '🤡 reacções em massa nos posts (dono)', `${p}canalreagir 🤡`),
+      R('cartão de links', '📇 botões de link «iguais aos do canal», 1–3, foto opcional', `${p}linkcartao`),
+      R('onda em cartão', '📇🚀 cartão de links para TODOS os grupos (visível/invisível)', `${p}divulgarcartao`),
     ] },
     { title: '🎨 ESTILO & LETRAS', rows: [
       R('as 22 fontes', 'letras E números — negrito, 𝓼𝓬𝓻𝓲𝓹𝓽, 🄱🄰🄽🄳…', `${p}letras dark`),
@@ -387,6 +389,7 @@ async function _painelCliente(sock, msg, ctx) {
             cacheKey: 'dtox_enviar',
             botoes: [
               { texto: '🚀 Divulgar agora', id: `${p}divulgar` },
+              { texto: '📇 Onda em cartão', id: `${p}divulgarcartao` },
               { texto: '👁️ Teste visível', id: `${p}divulgarteste visivel` },
             ] },
           { corpo: '🎨 *ESTILO DO CLIENTE*\n22 fontes, gerador de nicks, molduras e 8 capas para o cartão. Tudo texto puro — abre em qualquer WhatsApp.', rodape: '☣️ TABULEIRO',
@@ -396,11 +399,12 @@ async function _painelCliente(sock, msg, ctx) {
               { texto: '🔠 As 22 fontes', id: `${p}letras dark bot` },
               { texto: '🎭 TEMAS', id: `${p}change` },
             ] },
-          { corpo: '🤖 *SEU BOT + PLANO*\nEstado do teu número, stats da onda e a tabela do aluguel.', rodape: '☣️ Oficina',
+          { corpo: '🤖 *SEU BOT + PLANO*\nEstado do teu número, stats da onda, cartão de links e a tabela do aluguel.', rodape: '☣️ Oficina',
             promptImg: 'dark robotic hand holding glowing toxic green phone, violet neon circuits, poster style, no text',
             cacheKey: 'dtox_bot',
             botoes: [
               { texto: '📊 Meu bot', id: `${p}meubot` },
+              { texto: '📇 Cartão de links', id: `${p}linkcartao` },
               { texto: '💵 Planos', id: `${p}aluguel` },
             ] },
         ],
@@ -487,6 +491,32 @@ async function _mediaDe(msg, tipo, caption) {
   return null;
 }
 
+
+/**
+ * v9.17 📇 parser do cartão: «TÍTULO | Nome=url ; Nome2=url2».
+ * Corpo antes do `|`; 1–3 links depois (separados por `;` ou quebra de linha
+ * — vírgula NÁO separa, URLs têm-as). Aceita link nu → rótulo «Abrir link».
+ * Segmento inválido = null (usage), nunca adivinhar.
+ */
+function _parseCartao(txt) {
+  const t = String(txt || '').trim();
+  if (!t || !t.includes('|')) return null;
+  const iPipe = t.indexOf('|');
+  const corpo = t.slice(0, iPipe).trim();
+  const resto = t.slice(iPipe + 1);
+  const links = [];
+  for (const seg of resto.split(/[;\n]+/)) {
+    const s2 = seg.trim();
+    if (!s2) continue;
+    const par = s2.match(/^([^=]{1,24}?)\s*=\s*(https?:\/\/\S+)$/);
+    const nu = s2.match(/^(https?:\/\/\S+)$/);
+    if (par) links.push({ text: par[1].trim(), url: par[2].trim() });
+    else if (nu) links.push({ text: 'Abrir link', url: nu[1].trim() });
+    else return null;
+  }
+  if (!corpo || !links.length || links.length > 3) return null;
+  return { titulo: corpo.slice(0, 300), links };
+}
 
 // ══════════════════ v9.15 — AGENDA PERSISTENTE + RE-ARM ══════════════════
 /** Próximo instante: HH:MM (hoje ou amanhã) ou daqui a N minutos. */
@@ -658,14 +688,24 @@ module.exports = function registerDivulgacao(_registerCase) {
         return `${i + 1}. ${g.nome || g.jid.split('@')[0]} — ✅${st0.ok} ❌${st0.fail} · 📶${taxa}%${st0.last ? ' · ' + new Date(st0.last).toLocaleString('pt-PT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : ''}`;
       });
       const cemit = noOnda.map((j, i) => `⚰️ ${i + 1}. ${(stats[j].nome || j.split('@')[0])} (${stats[j].fail}❌ seguidos) — \`${p}divulgar reativar ${i + 1}\``);
-      return reply(_dtox('M É T R I C A S  D A  O N D A', [
+      const textoM = _dtox('M É T R I C A S  D A  O N D A', [
         `📦 na onda: ${grupos.length} · ⚰️ excluídos: ${noOnda.length}`,
         '',
         ...(linhas.length ? ['🟢 activos:'].concat(linhas.slice(0, 15)) : []),
         ...(cemit.length ? ['', '🪦 fora (3 falhas seguidas):'].concat(cemit.slice(0, 8)) : []),
         '',
         '🔀 ordem baralhada em cada passe · 🌀 variação: `!giro`',
-      ]));
+      ]);
+      // v9.17 🔘 botões a FUNCIONAR em todo o lado — reativar sem escrever nada
+      const bt = require('../buttonHandler');
+      try {
+        await bt.sendButtons(sock, _alvo(ctx), textoM, '☣️ DARKTOXIC · métricas', [
+          { id: `${p}divulgar metricas`, text: '🔄 Actualizar' },
+          ...noOnda.slice(0, 2).map((j, i) => ({ id: `${p}divulgar reativar ${i + 1}`, text: `⚰️ Reativar ${i + 1}` })),
+          { id: `${p}cliente`, text: '🕸️ Menu cliente' },
+        ], msg);
+      } catch { return reply(textoM); }
+      return;
     }
     if (sub === 'reativar' || sub === 'reactivar') {
       const stats = (await _get(bcc, `stats_${own}`)) || {};
@@ -828,13 +868,25 @@ module.exports = function registerDivulgacao(_registerCase) {
     ]));
   });
 
-  registerCase(['divulgaragendas'], async ({ ctx, isOwner, reply }) => {
+  registerCase(['divulgaragendas'], async ({ sock, msg, ctx, prefix, isOwner, reply }) => {
     if (!isOwner) return deny(reply);
     const bcc = require('../botConfigCache');
     const ags = await _get(bcc, `agenda_${_num(ctx.senderNumber)}`);
     if (!ags) return reply('📭 Sem agenda gravada — cria uma: `' + (ctx.prefix || '!') + 'divulgaragenda 21:30 texto`.');
     const a = [].concat(ags || []);
-    return reply(_dtox('A G E N D A', a.map((x) => `⏰ ${new Date(x.at).toLocaleString('pt-PT', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: 'short' })} · ${x.diario ? '🔁 diário · ' : ''}${x.vis} · "${String(x.texto).slice(0, 60)}…"`).concat(['', '⛔ tudo: `!divulgarstop` · só agenda: `!divulgaragendaremove`'])));
+    const textoA = _dtox('A G E N D A', a.map((x) => `⏰ ${new Date(x.at).toLocaleString('pt-PT', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: 'short' })} · ${x.diario ? '🔁 diário · ' : ''}${x.vis} · "${String(x.texto).slice(0, 60)}…"`).concat(['', '⛔ tudo: `!divulgarstop` · só agenda: `!divulgaragendaremove`']));
+    // v9.17 🔘 botões da agenda — acções sem teclar
+    const pA = prefix || config.bot.prefix || '!';
+    const btA = require('../buttonHandler');
+    try {
+      await btA.sendButtons(sock, _alvo(ctx), textoA, '☣️ DARKTOXIC · agenda', [
+        { id: `${pA}divulgaragenda`, text: '⏰ Nova agenda' },
+        { id: `${pA}divulgarstop`, text: '🛑 Parar tudo' },
+        { id: `${pA}divulgaragendaremove`, text: '🗑️ Soltar agenda' },
+        { id: `${pA}cliente`, text: '🕸️ Menu cliente' },
+      ], msg);
+    } catch { return reply(textoA); }
+    return;
   });
 
   /**
@@ -966,6 +1018,72 @@ module.exports = function registerDivulgacao(_registerCase) {
       }), vis, tipo);
     });
   }
+
+  // ═══════════════ v9.17 📇 CARTÕES DE LINK «IGUAIS AOS DO CANAL» ═══════════════
+  // Os links vivem nos BOTÕES (urlButton/cta_url) — corpo limpo, foto opcional
+  // (responder a uma foto). O anti-link deste mesmo bot (v9.17) varre esta
+  // superfície: um cartão destes SÓ engana moderadores que leem texto.
+  registerCase(['divulgarcartao'], async ({ sock, msg, ctx, args, isOwner, reply }) => {
+    if (!isOwner) return deny(reply);
+    const p = ctx.prefix || config.bot.prefix || '!';
+    const t0 = String(args[0] || '').toLowerCase();
+    const vis = /^invis/i.test(t0) ? 'invisivel' : /^vis/i.test(t0) ? 'visivel' : 'sem';
+    const parsed = _parseCartao(_textoDe(msg, vis !== 'sem' ? args.slice(1) : args));
+    if (!parsed) return reply(
+      `☣️ \`${p}divulgarcartao [visivel|invisivel] TÍTULO | Nome=https://link ; Nome2=https://link2\`\n` +
+      '1 a 3 botões de link por cartão · foto: responde a uma foto com o comando.\n' +
+      `Testar só para ti: \`${p}linkcartao …\``);
+    const midia = await _mediaDe(msg, 'foto', parsed.titulo);
+    const mkBtns = () => parsed.links.map((l, i) => ({ index: i + 1, urlButton: { displayText: l.text.slice(0, 20), url: l.url } }));
+    // PROBE real: um envio no PV do dono valida o formato ANTES da onda — se
+    // o cliente não aceitar templateButtons (ou foto+botões), o cartão degrada
+    // para links no corpo e a onda NÃO morre grupo a grupo.
+    let comBotoes = true, comFoto = !!midia;
+    try {
+      const base = comFoto ? { image: midia.image, caption: parsed.titulo } : { text: parsed.titulo };
+      await sock.sendMessage(_alvo(ctx), { ...base, footer: '☣️ DARKTOXIC · pré-visual', templateButtons: mkBtns() });
+    } catch {
+      if (comFoto) {
+        try { await sock.sendMessage(_alvo(ctx), { text: parsed.titulo, footer: '☣️ DARKTOXIC · pré-visual', templateButtons: mkBtns() }); comFoto = false; }
+        catch { comBotoes = false; comFoto = !!midia; }
+      } else comBotoes = false;
+    }
+    if (!comBotoes) {
+      await reply('⚠️ Este cliente não aceitou o cartão com botões — a onda vai seguir com os links no corpo da mensagem.');
+    }
+    await _onda(sock, msg, ctx, async (_g, tag, mencoes) => {
+      const corpoTxt = [
+        vis === 'visivel' && tag ? `☣️ ${tag.trim()}` : '',
+        parsed.titulo,
+        !comBotoes ? parsed.links.map((l) => `🔗 ${l.text}: ${l.url}`).join('\n') : '',
+      ].filter(Boolean).join('\n\n');
+      const content = comFoto
+        ? { image: midia.image, caption: corpoTxt }
+        : { text: corpoTxt };
+      content.footer = '☣️ DARKTOXIC';
+      if (comBotoes) content.templateButtons = mkBtns();
+      if (vis === 'invisivel' && mencoes.length) content.mentions = mencoes;
+      return { content };
+    }, vis, 'cartão');
+  });
+
+  registerCase(['linkcartao', 'cartaolink', 'cartaodelinks'], async ({ sock, msg, ctx, args, isOwner, reply }) => {
+    if (!isOwner) return deny(reply);
+    const p = ctx.prefix || config.bot.prefix || '!';
+    const parsed = _parseCartao(_textoDe(msg, args));
+    if (!parsed) return reply(
+      `☣️ \`${p}linkcartao TÍTULO | Nome=https://link ; Nome2=https://link2\`\n` +
+      '1 a 3 botões de link, iguais aos dos posts de canal · foto opcional (responde a uma foto).\n' +
+      `Para a onda inteira: \`${p}divulgarcartao [invisivel] …\``);
+    const midia = await _mediaDe(msg, 'foto', '');
+    try {
+      const { sendUrlButtons } = require('../buttonHandler');
+      await sendUrlButtons(sock, _alvo(ctx), parsed.titulo, '☣️ DARKTOXIC', parsed.links, null, midia ? { image: midia.image } : {});
+    } catch {
+      const linhas = parsed.links.map((l) => `🔗 ${l.text}: ${l.url}`).join('\n');
+      await sock.sendMessage(_alvo(ctx), { text: `${parsed.titulo}\n\n${linhas}` }).catch(() => {});
+    }
+  });
 
   // contato (vcard pelo número) + localização (lat,lon)
   registerCase(['divulgarcontato'], async ({ sock, msg, ctx, args, isOwner, reply }) => {
@@ -1163,4 +1281,4 @@ async function consumir(sock, msg, ctx, text) {
 
 module.exports.consumir = consumir;
 // v9.15 — ganchos de teste (giro/agenda), sem expor nada ao runtime
-module.exports.__test = { _corpoDesp, _msProximaHora, _armar, _AGENDADOS, _GIRO_IDX };
+module.exports.__test = { _corpoDesp, _msProximaHora, _armar, _AGENDADOS, _GIRO_IDX, _parseCartao };

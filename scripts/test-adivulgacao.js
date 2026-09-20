@@ -382,7 +382,7 @@ const keys = (k) => _db.get(`divulg_${k}`);
     _db.set('divulg_grupos_2449', []);
     sent.length = 0;
     await div.divulgar({ sock: sockF, msg: { key: { id: 'm1' } }, ctx: DONO, args: ['metricas'], prefix: '!', isOwner: true, reply });
-    const relMetricas = sent.map((x) => x.text).join('\n');
+    const relMetricas = sent.map((x) => x.text).join('\n') + JSON.stringify(_relays.map((r) => r.m));
     assert.ok(/M É T R I C A S/.test(relMetricas) && /Covil Morto/.test(relMetricas) && /reativar 1/.test(relMetricas), 'metricas mostra activos + cemitério com reativar N');
     await div.divulgar({ sock: sockF, msg: { key: { id: 'm2' } }, ctx: DONO, args: ['reativar', '1'], prefix: '!', isOwner: true, reply });
     const rej = _db.get('divulg_grupos_2449');
