@@ -599,35 +599,7 @@ module.exports = function registerAudioAdmin2(registerCase) {
     } catch (e) { return tReply(sock, msg, ctx, '📋 WHITELIST', [`❌ ${e.message}`]); }
   }, true);
 
-  // ═══ ADMIN: MISC (v6.39 — com verificação de permissão) ═══
-  // v9.24: boasvindas/bv/legendabv/legendasaiu/fotobv/fotosaiu saíram daqui —
-  // eram STUBS mortos que ganhavam a grupos.js (ordem alfabética audioAdmin2 < grupos).
-  // Implementação real está em cases/grupos.js + groupEvents.js + welcm.js.
-  const miscAdmin = ['aprovar', 'recusarsolic', 'aceitatodos', 'addblacklist', 'delblacklist',
-    'blockuser', 'unblockuser', 'blockcmd', 'unblockcmd', 'addmod', 'delmod',
-    'grantmodcmd', 'revokemodcmd', 'rmadv', 'adv', 'listaddd', 'listaddi',
-    'addautoadm', 'addautoadmidia', 'delautoadm', 'autorepo', 'addparceria',
-    'delparceria', 'captura', 'x9', 'captcha', 'antitoxic', 'resetrank', 'limparrank',
-    'setbammsg', 'emprego', 'convite', 'linkgp', 'admin', 'proibir', 'em',
-    'groupprefix', 'prefixgrupo', 'grouptheme', 'temagrupo', 'settheme',
-    'multiprefixo', 'aviso', 'avisos', 'citar', 'copiar', 'copymsg', 'marcar',
-    'editarmsg', 'fakeedit', 'fakemsg', 'invisible', 'invite',
-  ];
-  for (const cmd of miscAdmin) {
-    registerCase([cmd], async ({ sock, msg, ctx, args, isOwner }) => {
-      if (!isOwner && !ctx.isGroup) return tReply(sock, msg, ctx, `🛡️ ${cmd.toUpperCase()}`, ['❌ Só em grupos ou para o dono']);
-      // Comandos de admin precisam de permissão
-      const adminCmds = ['aprovar', 'recusarsolic', 'aceitatodos', 'addblacklist', 'delblacklist',
-        'blockcmd', 'unblockcmd', 'addmod', 'delmod', 'grantmodcmd', 'revokemodcmd',
-        'addautoadm', 'addautoadmidia', 'delautoadm', 'resetrank', 'limparrank',
-        'setbammsg', 'proibir', 'groupprefix', 'prefixgrupo',
-        'grouptheme', 'temagrupo', 'settheme', 'multiprefixo', 'invisible'];
-      if (adminCmds.includes(cmd) && !await _admGuard(sock, msg, ctx, isOwner, `🛡️ ${cmd.toUpperCase()}`)) return;
-      return tReply(sock, msg, ctx, `🛡️ ${cmd.toUpperCase()}`, [
-        `🛡️ Comando *${cmd}* registado`,
-        args.length ? `📝 Args: ${args.join(' ')}` : '',
-        `> Funcionalidade activa`,
-      ].filter(Boolean));
-    }, true);
-  }
+  // ═══ ADMIN MISC ═══
+  // v11.2.2: loop de STUBS REMOVIDO.
+  // Implementação real em cases/adminExtra.js (+ grupos.js / welcm.js / extras.js / cap.js).
 };

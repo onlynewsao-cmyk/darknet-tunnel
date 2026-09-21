@@ -1009,6 +1009,12 @@ async function _handleInner(sock, msg) {
       ctx.groupMeta = _metaG;
 
       ctx.blockedCommands = groupConfig.blockedCommands || [];
+      // v11.2.2: blacklist POR GRUPO — silencia o membro listado
+      if (!isOwner) {
+        const gbl = [...(groupConfig.blacklist || []), ...(groupConfig.blockedUsers || [])]
+          .map(x => String(x).replace(/\D/g, ''));
+        if (gbl.includes(String(ctx.senderNumber || '').replace(/\D/g, ''))) return false;
+      }
       ctx.blockedSubmenus = groupConfig.blockedSubmenus || [];
       if (groupConfig.customBotName) {
         ctx.botName = groupConfig.customBotName;

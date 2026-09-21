@@ -203,6 +203,23 @@ const GroupSettingsSchema = new mongoose.Schema({
   autoapresentar: { type: Boolean, default: false },   // novo membro tem 5 min para falar
   aberturaHora:   { type: String, default: '' },       // 'HH:MM' Africa/Luanda — abrir grupo
   fechamentoHora: { type: String, default: '' },       // 'HH:MM' Africa/Luanda — fechar grupo
+  // ── v11.2.2 Admin extra (ex-stubs audioAdmin2) ──────────────
+  blacklist:       [{ type: String }],   // números bloqueados neste grupo
+  blockedUsers:    [{ type: String }],   // alias operacional de blacklist
+  mods:            [{ type: String }],   // moderadores do bot (não precisam ser WA-admin)
+  modCommands:     [{ type: String }],   // cmds extra concedidos a mods
+  autoAdmins:      [{ type: String }],   // promovidos a admin WA ao entrar
+  autoAdmMedia:    { type: Boolean, default: false }, // auto-adm também em midia/status
+  parcerias:       [{ type: String }],   // links/JIDs de grupos parceiros (whitelist antilink)
+  x9:              { type: Boolean, default: false }, // avisa promote/demote/add/remove
+  captcha:         { type: Boolean, default: false }, // exige resposta simples a novos
+  multiprefixo:    { type: Boolean, default: false }, // aceita prefixos globais + do grupo
+  groupEmoji:      { type: String, default: '' },
+  empregoNome:     { type: String, default: '' },
+  banMsg:          { type: String, default: '' },     // msg custom ao banir (!setbammsg)
+  autorepo:        { type: Boolean, default: false }, // repor regras/aviso periódico
+  captchaPending:  { type: Map, of: String, default: undefined }, // runtime-ish (opcional)
+
   horariosExecuted: {                                   // último dia executado (evita repetir)
     abertura:   { type: String, default: '' },
     fechamento: { type: String, default: '' },

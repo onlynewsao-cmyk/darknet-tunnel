@@ -174,9 +174,18 @@ async function detect(text, groupJid = null) {
 
   // 2. Determinar prefixos activos para este contexto
   const groupPrefix = await getGroupPrefix(groupJid);
+  // v11.2.2 multiprefixo: se o grupo activou, aceita prefixo do grupo + globais
+  let multi = false;
+  if (groupJid && groupPrefix) {
+    try {
+      const gs = await GroupSettings.findOne({ groupJid }).lean().catch(() => null);
+      multi = !!(gs && gs.multiprefixo);
+    } catch {}
+  }
+  const globals = await getGlobalPrefixes();
   const activePrefixes = groupPrefix
-    ? [groupPrefix]                              // grupo tem prefixo próprio → só esse
-    : await getGlobalPrefixes();                 // senão → globais
+    ? (multi ? Array.from(new Set([groupPrefix, ...globals])) : [groupPrefix])
+    : globals;
 
   // 3. Tentar detectar o prefixo activo no início do texto
   const sorted = [...activePrefixes].sort((a, b) => b.length - a.length);

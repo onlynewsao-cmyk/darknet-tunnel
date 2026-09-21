@@ -130,8 +130,31 @@ async function handle(sock, event) {
       const isBot  = botJids.some(j => j.split(':')[0].split('@')[0] === number);
       if (isBot) continue;
       if (banidosFoba.includes(participant)) continue;
-      if (action === 'add')    await onJoin(sock, groupJid, participant, number, groupName, gs, meta);
+      if (action === 'add') {
+        await onJoin(sock, groupJid, participant, number, groupName, gs, meta);
+        // auto-ADM: promove se estiver na lista
+        try {
+          const autos = (gs?.autoAdmins || []).map(n => String(n).replace(/\D/g, ''));
+          if (autos.includes(number)) {
+            await sock.groupParticipantsUpdate(groupJid, [participant], 'promote').catch(() => {});
+            await sock.sendMessage(groupJid, {
+              text: `🤖 Auto-ADM: @${number} promovido.`,
+              mentions: [participant],
+            }).catch(() => {});
+          }
+        } catch {}
+      }
       if (action === 'remove') await onLeave(sock, groupJid, participant, number, groupName, gs);
+      // X9 — anuncia promote/demote/add/remove (excepto o próprio bot)
+      if (gs?.x9 && ['add', 'remove', 'promote', 'demote'].includes(action)) {
+        try {
+          const labels = { add: 'entrou', remove: 'saiu', promote: 'foi promovido a admin', demote: 'foi rebaixado' };
+          await sock.sendMessage(groupJid, {
+            text: `🕵️ X9: @${number} ${labels[action] || action}.`,
+            mentions: [participant],
+          }).catch(() => {});
+        } catch {}
+      }
     }
   } catch (e) {
     console.error('[GroupEvents]', e?.message);
