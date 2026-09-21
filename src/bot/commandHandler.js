@@ -451,6 +451,14 @@ async function _handleInner(sock, msg) {
     } catch (e) { console.warn('[RPG create]', e.message?.slice(0, 60)); }
   }
 
+  // ── v10.0: STORY MODE — botões de história (STORY_/STORYC_/STORYN_) ──
+  if (/^STORY[C]?_[a-z0-9_]+$/i.test(text.split(/\s+/)[0] || '')) {
+    try {
+      const storyMode = require('./rpg/storyMode');
+      if (await storyMode.resolverClique(sock, msg, ctx, text.split(/\s+/)[0])) return true;
+    } catch (e) { console.warn('[RPG story]', e.message?.slice(0, 60)); }
+  }
+
   // ── v7.96: AURA VIGILANTE — decisões dos cartões (AURASEL_) ────────
   if (/^AURASEL_[a-z0-9]+_\d+$/i.test(text.split(/\s+/)[0] || '')) {
     try {

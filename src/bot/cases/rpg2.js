@@ -191,6 +191,21 @@ module.exports = function registerRPG2(registerCase) {
     return tReply(sock, msg, ctx, quest.titulo, linhas);
   }, true);
 
+  // ═══ MODO HISTÓRIA ÉPICO (v10.0) ═══
+  registerCase(['historia', 'story', 'mundo', 'worlds', 'mundos'], async ({ sock, msg, ctx, args }) => {
+    const storyMode = require('../rpg/storyMode');
+    const p = await rpg.getPlayer(ctx.senderNumber);
+
+    // Sem argumentos → listar mundos
+    if (!args[0]) {
+      return storyMode.listarMundos(sock, msg, ctx);
+    }
+
+    // Com argumento → entrar num mundo específico
+    const worldId = args[0].toLowerCase();
+    return storyMode.jogarMundo(sock, msg, ctx, worldId);
+  }, true);
+
   // ═══ COMBATE INTERACTIVO (v9.23 — com botões!) ═══
   registerCase(['lutar', 'fight', 'combate'], async ({ sock, msg, ctx, args }) => {
     const combat = require('../rpg/combat');

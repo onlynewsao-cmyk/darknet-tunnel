@@ -1,0 +1,789 @@
+'use strict';
+/**
+ * ╔══════════════════════════════════════════════════════════════════╗
+ * ║   DARK BOT — RPG STORY MODE v10.0                               ║
+ * ║   Modo História ÉPICO com mundos de anime completos              ║
+ * ║                                                                   ║
+ * ║   MUNDOS: Naruto | One Piece | Solo Leveling | Jujutsu Kaisen   ║
+ * ║           Dragon Ball | Demon Slayer | Devil May Cry | Bleach    ║
+ * ║                                                                   ║
+ * ║   Cada mundo: 20-40 capítulos, boss fights, escolhas, loot,     ║
+ * ║   cutscenes, diálogos com NPCs, transformações, recompensas     ║
+ * ╚══════════════════════════════════════════════════════════════════╝
+ */
+
+const rpg = require('./engine');
+const combat = require('./combat');
+const config = require('../../config');
+
+const R = (a, b) => Math.floor(Math.random() * (b - a + 1)) + a;
+const P = (a) => a[Math.floor(Math.random() * a.length)];
+
+// ══════════════════════════════════════════════════════════════
+// CATÁLOGO DE MUNDOS
+// ══════════════════════════════════════════════════════════════
+const WORLDS = {
+  naruto: {
+    id: 'naruto', emoji: '🍥', name: 'Naruto',
+    desc: 'O mundo dos shinobis. Chakra, Jutsus e o Caminho Ninja.',
+    cor: '#FF6B00',
+    nivelMin: 1,
+    capitulos: 0, // será atualizado
+    recompensaFinal: { item: 'Rasengan Absoluto', title: 'Hokage', xp: 5000, coins: 10000 },
+  },
+  onepiece: {
+    id: 'onepiece', emoji: '🏴‍☠️', name: 'One Piece',
+    desc: 'Grand Line espera. Haki, Akuma no Mi e o Rei dos Piratas.',
+    cor: '#E60012',
+    nivelMin: 5,
+    capitulos: 0,
+    recompensaFinal: { item: 'Gomu Gomu no Mi Awakened', title: 'Rei dos Piratas', xp: 8000, coins: 15000 },
+  },
+  sololeveling: {
+    id: 'sololeveling', emoji: '⚔️', name: 'Solo Leveling',
+    desc: 'O Sistema escolheu-te. Portões, Monstro e Monarca das Sombras.',
+    cor: '#7B2FBE',
+    nivelMin: 10,
+    capitulos: 0,
+    recompensaFinal: { item: 'Arma do Monarca', title: 'Monarca das Sombras', xp: 10000, coins: 20000 },
+  },
+  jjk: {
+    id: 'jjk', emoji: '👁️', name: 'Jujutsu Kaisen',
+    desc: 'Maldições, Domínios e o Infinito. O mundo das trevas.',
+    cor: '#2D1B69',
+    nivelMin: 15,
+    capitulos: 0,
+    recompensaFinal: { item: 'Olho de Sukuna', title: 'Feiticeiro Especial', xp: 12000, coins: 25000 },
+  },
+  dragonball: {
+    id: 'dragonball', emoji: '🐉', name: 'Dragon Ball',
+    desc: 'Ki, Transformações e o Universo em jogo. Além dos limites.',
+    cor: '#FF9500',
+    nivelMin: 20,
+    capitulos: 0,
+    recompensaFinal: { item: 'Esfera do Dragão Dourada', title: 'Guerreiro Lendário', xp: 15000, coins: 30000 },
+  },
+  demonslayer: {
+    id: 'demonslayer', emoji: '🗡️', name: 'Demon Slayer',
+    desc: 'Respirações, Demônios e o Juramento do Hashira.',
+    cor: '#1a1a2e',
+    nivelMin: 8,
+    capitulos: 0,
+    recompensaFinal: { item: 'Espada Nichirin Dourada', title: 'Hashira Supremo', xp: 9000, coins: 18000 },
+  },
+  dmc: {
+    id: 'dmc', emoji: '😈', name: 'Devil May Cry',
+    desc: 'Dante, demônios e estilo. O sangue de Sparda corre em ti.',
+    cor: '#8B0000',
+    nivelMin: 12,
+    capitulos: 0,
+    recompensaFinal: { item: 'Rebellion Awakened', title: 'Filho de Sparda', xp: 11000, coins: 22000 },
+  },
+  bleach: {
+    id: 'bleach', emoji: '👻', name: 'Bleach',
+    desc: 'Zanpakutō, Soul Society e o poder dos Quincy.',
+    cor: '#FF4500',
+    nivelMin: 18,
+    capitulos: 0,
+    recompensaFinal: { item: 'Zangetsu Final', title: 'Shinigami Capitão', xp: 13000, coins: 27000 },
+  },
+};
+
+// ══════════════════════════════════════════════════════════════
+// ESTRUTURA DE UM CAPÍTULO
+// ══════════════════════════════════════════════════════════════
+/*
+  Cada capítulo tem:
+  - id: identificador único
+  - titulo: nome do capítulo
+  - descricao: texto narrativo
+  - nodes: array de story nodes
+    - node: { id, texto, falante?, escolhas?, boss?, loot?, xp?, next?, cutscene? }
+  - boss: opcional — boss fight no final
+  - recompensas: xp, coins, items, skills, transforms
+*/
+
+// ══════════════════════════════════════════════════════════════
+// NARUTO — 30 CAPÍTULOS COMPLETOS
+// ══════════════════════════════════════════════════════════════
+const NARUTO_CHAPTERS = [
+  // ═══ ARCO 1: ACADEMIA NINJA (Cap 1-3) ═══════════════════════
+  {
+    id: 'nar_ch01', titulo: 'Episódio 1: O Pior Aluno',
+    descricao: 'Konoha, a Vila Oculta da Folha. Tu és Naruto Uzumaki — o pior aluno da academia ninja. Mas tens um segredo...',
+    nivel: 1, xp: 50, coins: 100,
+    nodes: [
+      { id: 'n1_01', texto: '🎓 *A Academia Ninja de Konoha*\n\nO professor Iruka olha para ti com frustração.\n"Naruto! Tu falhaste o exame pela terceira vez!"\n\nOs outros alunos riem. Sasuke Uchiha nem olha para ti.\n\nMas tu sabes o que ninguém sabe — dentro de ti vive a Raposa de Nove Caudas, a Kyuubi.', falante: 'Iruka' },
+      { id: 'n1_02', texto: '🎓 *Escolha o teu destino:*', escolhas: [
+        { txt: '🔥 "Eu vou ser Hokage! Acreditem nisso!"', next: 'n1_03a', xp: 20 },
+        { txt: '😤 Roubar o Pergaminho Proibido', next: 'n1_03b', xp: 15 },
+        { txt: '😠 Desafiar Sasuke para um duelo', next: 'n1_03c', xp: 10 },
+      ]},
+      { id: 'n1_03a', texto: '🔥 *O Sonho do Hokage*\n\nIruka sorri. "Talvez... talvez tenhas potencial."\n\nRecebes a missão de treinar com um parceiro. O teu caminho começa agora!', xp: 30, item: 'bandana ninja' },
+      { id: 'n1_03b', texto: '📖 *O Pergaminho Proibido*\n\nÀ noite, infiltras-te na torre e roubas o pergaminho. Dentro, encontras o Jutsu Multi-Clone das Sombras!\n\n"Mais de mil clones?!" — é impossível para um genin... mas tu não és genin normal.', xp: 40, skill: 'Kage Bunshin no Jutsu', next: 'n1_04' },
+      { id: 'n1_03c', texto: '⚡ *Duelo com Sasuke*\n\nSasuke aceita com um sorriso frio. "Interessante."\n\nO combate é rápido — mas surpreendes toda a gente!\n\n(Nota: Sasuke será o teu rival para sempre)', xp: 25, next: 'n1_04' },
+      { id: 'n1_04', texto: '🎓 *O Exame de Graduação*\n\nIruka aparece com a bandana ninja.\n"Naruto... passaste."\n\nRecebes a bandana. Agora és Genin de Konoha.\n\n> 🎓 *Primeiro passo do ninja completo!*', xp: 30, item: 'bandana de genin' },
+    ],
+    boss: null,
+    recompensas: { xp: 150, coins: 200, item: 'bandana de genin' },
+  },
+  {
+    id: 'nar_ch02', titulo: 'Episódio 2: Equipe 7',
+    descricao: 'Agora fazes parte de uma equipe. O teu sensei é Kakashi Hatake — o ninja copiador.',
+    nivel: 2, xp: 80, coins: 150,
+    nodes: [
+      { id: 'n2_01', texto: '👥 *Equipe 7*\n\nOs membros:\n🍥 Naruto (tu)\n👁️ Sasuke Uchiha — o prodígio\n💗 Sakura Haruno — a inteligente\n🎭 Kakashi Hatake — o sensei\n\nKakashi chega 3 horas atrasado. "Desculpem, perdi-me no caminho da vida..."\n\n"Primeiro teste: sobrevivam contra mim."', falante: 'Kakashi' },
+      { id: 'n2_02', texto: '⚡ *O Exame dos Sinos*\n\nKakashi tem dois sinos. Vocês são 3. Precisam de roubar pelo menos um.\n\nSasuke ataca primeiro — é bloqueado facilmente.\nSakura cai numa ilusão.\n\nAgora és tu!', escolhas: [
+        { txt: '🍥 Usar Kage Bunshin!', next: 'n2_03a', xp: 30 },
+        { txt: '🦊 Sentir o chakra da Kyuubi', next: 'n2_03b', xp: 25 },
+        { txt: '🤝 Pedir ajuda ao Sasuke', next: 'n2_03c', xp: 20 },
+      ]},
+      { id: 'n2_03a', texto: '🍥 *Mil Clones!*\n\n"Multi-Clone das Sombras!"\n\nCem N Narutos cercam Kakashi. Ele sorri. "Impressionante..."\n\nMas é rápido demais. Derruba-te com um golpe.\n\nAinda assim — passaste no teste. O verdadeiro teste era trabalhar em equipa.', xp: 40, skill: 'Kage Bunshin no Jutsu' },
+      { id: 'n2_03b', texto: '🦊 *O Chakra da Kyuubi*\n\nSentes algo a ferver dentro de ti. O chakra vermelho emerge!\n\nKakashi recua. "Esse poder..."\n\nMas controlas-te a tempo. O sensei está impressionado.', xp: 35 },
+      { id: 'n2_03c', texto: '🤝 *Trabalho em Equipa*\n\n"Não precisamos de lutar entre nós!"\n\nSasuke olha para ti. Sakura sorri.\n\nKakashi: "Exato. A lição era essa. Trabalho em equipa."\n\n*Vocês passam!*', xp: 45, title: 'Ninja de Equipa' },
+      { id: 'n2_04', texto: '👥 *Missões D-Rank*\n\nAgora fazem missões básicas: apanhar gatos, limpar rios, escoltar velhinhas.\n\nMas algo está a mudar em Konoha... há rumores de uma missão de rank mais alto.\n\n> *Próximo: Missão no País das Ondas!*', xp: 50, coins: 200 },
+    ],
+    recompensas: { xp: 200, coins: 300, item: 'sino de Kakashi' },
+  },
+  {
+    id: 'nar_ch03', titulo: 'Episódio 3: O País das Ondas',
+    descricao: 'A primeira missão real. O construtor da ponte está em perigo — um mercenário chamado Zabuza Momochi persegue-o.',
+    nivel: 3, xp: 120, coins: 300,
+    nodes: [
+      { id: 'n3_01', texto: '🌊 *Caminho para o País das Ondas*\n\nVocês escoltam Tazuna, o construtor da ponte. No caminho, encontram dois Irmãos Demônio.\n\n"Naruto, Sasuke — mostrem o que aprenderam!"\n\nO combate é rápido. Vocês vencem.', falante: 'Kakashi' },
+      { id: 'n3_02', texto: '⚔️ *A Névoa Espessa*\n\nDe repente, uma lâmina gigante voa entre vocês!\n\n"Quem é?!"\n\nDa névoa, surge um homem com um bandagem na boca e olhos mortos.\n\n*Zabuza Momochi — o Demônio da Névoa Oculta.*', boss: {
+        nome: 'Zabuza Momochi', emoji: '⚔️', hp: 500, atk: 45, def: 20, xp: 300, coins: 500,
+        habilidades: ['Lâmina Guilhotina', 'Névoa Assassina', 'Clone de Água'],
+        descricao: 'Um dos Sete Espadachins da Névoa. Mestre do silent killing.',
+      }},
+      { id: 'n3_03', texto: '⚔️ *Zabuza ataca!*\n\nO combate é brutal. Kakashi é selado numa prisão de água!\n\n"Sasuke! Naruto! Protejam Tazuna!"\n\nMas Zabuza é forte demais...', escolhas: [
+        { txt: '🍥 Criar 100 clones e cercar Zabuza!', next: 'n3_04a', xp: 40 },
+        { txt: '🦊 Libertar o chakra da Kyuubi!', next: 'n3_04b', xp: 35 },
+        { txt: '⚡ Trabalhar com Sasuke (combo)', next: 'n3_04c', xp: 50 },
+      ]},
+      { id: 'n3_04a', texto: '🍥 *Exército de Clones!*\n\n"Cem clones das sombras!"\n\nZabuza corta dezenas deles, mas um acerta! O suficiente para Kakashi escapar.\n\n"Ainda não acabou..."', xp: 60, coins: 300 },
+      { id: 'n3_04b', texto: '🦊 *A Raposa Rugiu!*\n\nChakra vermelho envolve-te. Zabuza recua.\n\n"Esse chakra... é a Kyuubi?!"\n\nMas perdes o controlo por um segundo. Kakashi intervém a tempo.', xp: 55 },
+      { id: 'n3_04c', texto: '⚡ *Combo Perfeito!*\n\nSasuke lança shurikens. Tu usas clones como distração. No momento certo — SASUKE ATACA!\n\nZabuza é atingido! Kakashi aproveita e usa o Raikiri!\n\n"Obrigado, miúdos."', xp: 80, title: 'Tática de Equipa' },
+      { id: 'n3_05', texto: '🌊 *A Ponte do País das Ondas*\n\nVocês derrotam Zabuza. A ponte é construída.\n\nO País das Ondas é livre.\n\nInari chora de alegria. "Obrigado, Naruto..."\n\n> 🌊 *Arco do País das Ondas completo!*\n> ⭐ *Confiar em si mesmo é o primeiro passo para ser Hokage.*', xp: 100, coins: 500, item: 'bandagem de Zabuza' },
+    ],
+    recompensas: { xp: 400, coins: 800, item: 'Lâmina de Zabuza', skill: 'Névoa Assassina' },
+  },
+  // ═══ ARCO 2: EXAMES CHUUNIN (Cap 4-8) ═════════════════════
+  {
+    id: 'nar_ch04', titulo: 'Episódio 4: Os Exames Chuunin',
+    descricao: 'Chegou a hora de subir de rank. Os exames Chuunin reúnem os melhores genins de todas as aldeias!',
+    nivel: 5, xp: 200, coins: 500,
+    nodes: [
+      { id: 'n4_01', texto: '📝 *1ª Fase: Exame Escrito*\n\nMorre-se de medo. O proctor Ibiki faz perguntas impossíveis.\n\nA verdadeira prova é NÃO desistir.\n\nNaruto está a falhar... mas olha para os outros e percebe: todos estão com medo.\n\n"Eu NUNCA vou desistir!"', escolhas: [
+        { txt: '🔥 Responder com confiança (arriscado)', next: 'n4_02a', xp: 30 },
+        { txt: '🧠 Copiar de Sasuke (inteligente)', next: 'n4_02b', xp: 25 },
+      ]},
+      { id: 'n4_02a', texto: '🔥 *A 10ª Pergunta*\n\n"Se errares, nunca mais podes ser ninja!"\n\nMas a verdadeira pergunta era: "Aceitas o risco?"\n\n"SIM! EU ACEITO!"\n\n*Passaste!* O coragem vale mais que conhecimento.', xp: 50 },
+      { id: 'n4_02b', texto: '🧠 *Estratégia Inteligente*\n\nSasuke usa o Sharingan para ler os lábios. Tu copias.\n\nNão é bonito, mas funciona. Vocês avançam.', xp: 40 },
+      { id: 'n4_03', texto: '🌲 *2ª Fase: Floresta da Morte*\n\nEquipas de 3 contra todos. Precisam de um pergaminho do Céu e da Terra.\n\nVocês encontram Orochimaru disfarçado!\n\n🐍 *O Sannin Lendário aparece!*', boss: {
+        nome: 'Orochimaru', emoji: '🐍', hp: 1200, atk: 80, def: 40, xp: 500, coins: 1000,
+        habilidades: ['Marca Amaldiçoada', 'Kusanagi', 'Substituição de Pele'],
+        descricao: 'Um dos Três Sannins Lendários. Procura o Sharingan de Sasuke.',
+      }},
+      { id: 'n4_04', texto: '🐍 *O Selo Amaldiçoado*\n\nOrochimaru morde Sasuke! Um selo negro aparece no pescoço dele.\n\n"Esse menino... pertence-me."\n\nSasuke cai inconsciente. Tu e Sakura protegem-no.\n\n> *Sasuke recebeu a Marca Amaldiçoada...*', xp: 60, coins: 300 },
+      { id: 'n4_05', texto: '🏆 *3ª Fase: Torneio Preliminar*\n\nVocês sobreviveram! Agora — combates 1v1!\n\nOs sorteios:\n🍥 Naruto vs Kiba\n👁️ Sasuke vs Yoroi\n💗 Sakura vs Ino\n\n> *Escolhe o teu combate!*', escolhas: [
+        { txt: '⚔️ Lutar contra Kiba!', next: 'n4_06a', xp: 40 },
+        { txt: '👀 Assistir Sasuke vs Yoroi', next: 'n4_06b', xp: 20 },
+      ]},
+      { id: 'n4_06a', texto: '⚔️ *Naruto vs Kiba!*\n\nKiba + Akamaru. Dois contra um.\n\n"Vou derrotar-te fácil, Naruto!"\n\nMas Naruto tem uma surpresa...\n\n*Usas o Kage Bunshin + transformação!*\n\nKiba confunde o clone com Akamaru e ataca o próprio parceiro!', xp: 80, coins: 400, title: 'Vencedor Preliminar' },
+      { id: 'n4_06b', texto: '👀 *Sasuke vs Yoroi*\n\nSasuke usa o Sharingan. O combate é rápido.\n\nMas a Marca Amaldiçoada quase se activa... Kakashi sela-a depois.\n\nSasuke vence, mas está preocupado.', xp: 30 },
+      { id: 'n4_07', texto: '🏆 *Exames Chuunin — Fase Final!*\n\nOs finalistas estão definidos. O torneio será em 1 mês!\n\nEntretanto... treinas com Jiraiya, o Sannin Pervertido!\n\n"Eu ensino-te a invocar sapos!"\n\n> 🏆 *Exames Chuunin — Parte 1 completa!*', xp: 150, coins: 500, skill: 'Invocação: Sapo' },
+    ],
+    recompensas: { xp: 600, coins: 1500, skill: 'Kuchiyose no Jutsu' },
+  },
+  // ═══ ARCO 3: INVASÃO DE KONOHA (Cap 5-6) ═══════════════════
+  {
+    id: 'nar_ch05', titulo: 'Episódio 5: A Invasão de Konoha',
+    descricao: 'O torneio é interrompido! Orochimaru ataca Konoha com a areia e o som!',
+    nivel: 8, xp: 300, coins: 800,
+    nodes: [
+      { id: 'n5_01', texto: '🏆 *Torneio Final*\n\nO teu adversário é Neji Hyuga — o gênio do Byakugan.\n\n"Naruto... o destino já decidiu que perdes."\n\n"Eu não acredito no destino!"', boss: {
+        nome: 'Neji Hyuga', emoji: '👁️', hp: 800, atk: 55, def: 25, xp: 400, coins: 600,
+        habilidades: ['Punho Suave', 'Rotação Celestial', 'Byakugan'],
+        descricao: 'Prodígio do clã Hyuga. Acredita que o destino é imutável.',
+      }},
+      { id: 'n5_02', texto: '👁️ *Naruto vs Neji*\n\nNeji bloqueia todos os teus tenketsu! Não podes usar chakra!\n\nMas... a Kyuubi não depende de tenketsu!\n\n"Eu vou mudar o destino!"\n\n*UM SOCO!* Neji cai.\n\nO público explode!', xp: 100, coins: 500, title: 'Desafiante do Destino' },
+      { id: 'n5_03', texto: '💀 *A INVASÃO!*\n\nDe repente — fumo por todo o lado!\n\nOrochimaru aparece com o Hokage!\n\nGaara transforma-se no Shukaku!\n\nKonoha está em perigo!', escolhas: [
+        { txt: '🍥 Perseguir Gaara!', next: 'n5_04a', xp: 50 },
+        { txt: '💀 Lutar contra Orochimaru!', next: 'n5_04b', xp: 40 },
+      ]},
+      { id: 'n5_04a', texto: '🍥 *Naruto vs Gaara!*\n\nGaara está completamente transformado. O Shukaku ameaça destruir tudo!\n\n"EU SOU O DEUS AREIA!"\n\nMas Naruto invoca Gamabunta!\n\n*Sapo vs Shukaku!*\n\nA batalha ÉPICA!', boss: {
+        nome: 'Gaara (Shukaku)', emoji: '🏜️', hp: 1500, atk: 90, def: 35, xp: 600, coins: 1000,
+        habilidades: ['Caixão de Areia', 'Defesa Absoluta', 'Shukaku Completo'],
+        descricao: 'Jinchuuriki de uma cauda. O Shukaku despertou!',
+      }},
+      { id: 'n5_04b', texto: '💀 *O Sacrifício do Hokage*\n\nO Terceiro Hokage luta contra Orochimaru.\n\nUsa o Selo Morto Divino!\n\n"Orochimaru... não vais destruir a minha vila!"\n\nO Hokage morre como herói.\n\n> 💀 *O Terceiro Hokage sacrificou-se por Konoha...*', xp: 30, coins: 200 },
+      { id: 'n5_05', texto: '🍥 *Naruto vs Gaara — Final!*\n\nNaruto usa o Rasengan (aprendido com Jiraiya)!\n\n*BOOM!* Gaara cai.\n\n"Porqu-te... tão forte?"\n\n"Porque protejo os meus amigos!"\n\nGaara chora. Pela primeira vez, alguém o entende.\n\n> 🍥 *Invasão de Konoha repelida!*\n> 💀 *O Terceiro Hokage caiu...*\n> ⭐ *Mas uma nova era começa.*', xp: 200, coins: 1000, skill: 'Rasengan' },
+    ],
+    recompensas: { xp: 1000, coins: 2500, skill: 'Rasengan', title: 'Herói de Konoha' },
+  },
+  // ═══ ARCO 4: BUSCA POR TSUNADE (Cap 6) ════════════════════
+  {
+    id: 'nar_ch06', titulo: 'Episódio 6: A Busca por Tsunade',
+    descricao: 'Konoha precisa de um novo Hokage. Jiraiya leva-te à procura de Tsunade — a melhor médica do mundo.',
+    nivel: 10, xp: 250, coins: 600,
+    nodes: [
+      { id: 'n6_01', texto: '🍺 *O Desafio de Tsunade*\n\nTsunade recusa ser Hokage. Aposta contigo: se sobreviveres a 3 golpes dela, aceita.\n\n"Ei, garoto... não me provoques."\n\nO primeiro golpe quebra 3 costelas!', boss: {
+        nome: 'Tsunade', emoji: '💎', hp: 1000, atk: 70, def: 30, xp: 350, coins: 800,
+        habilidades: ['Força Monstro', 'Cura Regenerativa', 'Sell: Byakugou'],
+        descricao: 'A Sannin Lendária. A mulher mais forte do mundo ninja.',
+      }},
+      { id: 'n6_02', texto: '💎 *Naruto vs Tsunade*\n\nSobrevives ao segundo e terceiro golpe!\n\nTsunade está espantada. "Esse garoto..."\n\nE mostras o Rasengan!\n\n"ELE APRENDEU O RASENGAN?!"\n\nTsunade aceita. Será a Quinta Hokage.', xp: 100, coins: 500, title: 'Ninja de Rank Superior' },
+      { id: 'n6_03', texto: '⚔️ *Orochimaru Aparece!*\n\nAntes de ir para casa — Orochimaru e Kabuto atacam!\n\nO combate é feroz. Mas Tsunade supera o medo de sangue.\n\nVocês vencem!\n\n> 💎 *Tsunade é a nova Hokage!*\n> 🍥 *O caminho para o ninja mais forte continua...*', xp: 80, coins: 400 },
+    ],
+    recompensas: { xp: 500, coins: 1500, item: 'Colar de Tsunade' },
+  },
+  // ═══ ARCO 5: SASUKE FOGE (Cap 7-8) ════════════════════════
+  {
+    id: 'nar_ch07', titulo: 'Episódio 7: A Fuga de Sasuke',
+    descricao: 'Sasuke deixa Konoha para procurar poder junto de Orochimaru. Tu vais atrás dele!',
+    nivel: 12, xp: 350, coins: 800,
+    nodes: [
+      { id: 'n7_01', texto: '🌙 *Partida Noturna*\n\nSakura tenta impedir Sasuke.\n\n"Sasuke... por favor não vás..."\n\nEle knock-out-a com um golpe no pescoço.\n\n"Obrigado, Sakura... mas preciso de poder."', falante: 'Sasuke' },
+      { id: 'n7_02', texto: '🌙 *Equipe de Resgate*\n\nShikamaru lidera: Naruto, Choji, Kiba, Neji.\n\nCada um enfrenta um dos Quatro do Som!\n\nNaruto persegue Sasuke!', escolhas: [
+        { txt: '⚡ Correr diretamente atrás de Sasuke', next: 'n7_03a', xp: 40 },
+        { txt: '🤝 Ajudar primeiro os companheiros', next: 'n7_03b', xp: 50 },
+      ]},
+      { id: 'n7_03a', texto: '⚡ *O Vale do Fim*\n\nEncontras Sasuke no Vale do Fim — o mesmo sítio onde Hashirama e Madara lutaram.\n\n"Naruto... não me sigas."', falante: 'Sasuke' },
+      { id: 'n7_03b', texto: '🤝 *Proteger a Equipa*\n\nAjudas Choji contra Jirobo. Depois Neji contra Kidomaru.\n\nMas quando chegas ao Vale do Fim... Sasuke já está em transformação.', xp: 30 },
+      { id: 'n7_04', texto: '⚡ *Naruto vs Sasuke — O COMBATE FINAL*\n\nSasuke activa o Segundo Nível da Marca Amaldiçoada!\n\nAsas negras. Chakra negro.\n\nNaruto liberta a Kyuubi!\n\n🦊 *Rasengan vs Chidori!*', boss: {
+        nome: 'Sasuke (Marca Nível 2)', emoji: '👁️', hp: 2000, atk: 110, def: 45, xp: 800, coins: 1500,
+        habilidades: ['Chidori', 'Sharingan Avançado', 'Marca Nível 2', 'Garanhã de Fogo'],
+        descricao: 'O teu melhor amigo e maior rival. Escolheu o caminho das trevas.',
+      }},
+      { id: 'n7_05', texto: '⚡ *O Golpe Final*\n\nRasengan vs Chidori!\n\n*EXPLOSAO!*\n\nAmbos caem. Sasuke sobrevive — e foge.\n\nNaruto fica inconsciente na chuva.\n\n"Naruto... eu preciso de te trazer de volta..."\n\n> ⚡ *Sasuke fugiu para Orochimaru...*\n> 💔 *O teu melhor amigo escolheu as trevas...*\n> ⭐ *Mas eu vou trazê-lo de volta. É a minha promessa ninja!*', xp: 200, coins: 1000, title: 'Ninja que Não Desiste' },
+    ],
+    recompensas: { xp: 1200, coins: 3000, title: 'Guardião da Promessa' },
+  },
+  // ═══ ARCO 6: SHIPPUDEN (Cap 9-15) ══════════════════════════
+  {
+    id: 'nar_ch08', titulo: 'Episódio 8: Shippuden — O Regresso',
+    descricao: '2 anos e meio depois. Treinaste com Jiraiya. Agora voltas mais forte!',
+    nivel: 15, xp: 400, coins: 1000,
+    nodes: [
+      { id: 'n8_01', texto: '🍥 *Naruto Shippuden!*\n\nVoltaste! Mais alto, mais forte, mais determinado.\n\nMas Konoha mudou:\n- Gaara é agora Kazekage\n- Sasuke ainda está com Orochimaru\n- Akatsuki está em movimento\n\n"A Akatsuki... quer a Kyuubi!"', falante: 'Kakashi' },
+      { id: 'n8_02', texto: '🏜️ *Missão: Salvar Gaara!*\n\nA Akatsuki raptou Gaara!\n\nDeidara e Sasori levaram-no.\n\nTu e Chiyo vão resgatá-lo!', boss: {
+        nome: 'Sasori', emoji: '🎭', hp: 1800, atk: 100, def: 50, xp: 600, coins: 1200,
+        habilidades: ['Mil Mãos', 'Mãos Vermelhas', 'Veneno Mortal'],
+        descricao: 'Mestre bonequeiro da Akatsuki. 300 bonecos ao seu comando.',
+      }},
+      { id: 'n8_03', texto: '🎭 *Sasori vs Sakura & Chiyo*\n\nO combate é intenso! Sasori controla 100 bonecos!\n\nMas Sakura destroi o corpo dele com um soco!\n\n"Impossível... uma kunoichi tão forte?"\n\nGaara é salvo!', xp: 150, coins: 600 },
+      { id: 'n8_04', texto: '💀 *A Akatsuki Ataca*\n\nDeidara destrói Konoha com a C0!\n\nPain — o líder da Akatsuki — aparece!\n\n"Eu sou a dor. Eu sou o mundo."\n\n*SEIS CAMINHOS DA DOR!*', boss: {
+        nome: 'Pain (6 Caminhos)', emoji: '🌀', hp: 3500, atk: 150, def: 60, xp: 1500, coins: 3000,
+        habilidades: ['Shinra Tensei', 'Bansho Tenin', 'Chibaku Tensei', 'Rinne Rebirth'],
+        descricao: 'O líder da Akatsuki. O deus que se julga.',
+      }},
+      { id: 'n8_05', texto: '🌀 *Naruto vs Pain — O COMBATE ÉPICO*\n\nNaruto entra em Modo Sábio!\n\n"Sinto a natureza... sinto tudo!"\n\nPain vs Modo Sábio Naruto!\n\n*Shinra Tensei!* Konoha é destruída!\n\nMas Naruto não desiste!', escolhas: [
+        { txt: '🐸 Usar Modo Sábio Perfeito!', next: 'n8_06a', xp: 80 },
+        { txt: '🦊 Libertar a Kyuubi!', next: 'n8_06b', xp: 70 },
+      ]},
+      { id: 'n8_06a', texto: '🐸 *Modo Sábio Perfeito!*\n\nNaruto derrota todos os 6 caminhos!\n\nDepois encontra Nagato — o verdadeiro Pain.\n\n"Porqu-te... não me odeias?"\n\n"Porque vingança não resolve nada. Eu vou mudar o mundo!"\n\nNagato chora. E revive todos os mortos de Konoha.', xp: 200, coins: 1500, skill: 'Modo Sábio', title: 'Herói de Konoha' },
+      { id: 'n8_06b', texto: '🦊 *A Kyuubi Desperta!*\n\n8 caudas! O chakra destrói tudo!\n\nMas Minato — o teu pai — aparece na mente de Naruto!\n\n"Eu acredito em ti, filho..."\n\nNaruto controla-se e vence.', xp: 180, coins: 1200 },
+      { id: 'n8_07', texto: '🍥 *O Herói de Konoha!*\n\nNaruto venceu Pain. Konoha é reconstruída.\n\nToda a vila celebra.\n\nO povo que antes odiava Naruto agora grita:\n"NARUTO! NARUTO! NARUTO!"\n\n> 🍥 *O sonho do Hokage está mais perto...*\n> ⭐ *Mas a guerra está a chegar...*', xp: 300, coins: 2000, title: 'Herói de Konoha' },
+    ],
+    recompensas: { xp: 2000, coins: 5000, skill: 'Modo Sábio', title: 'Herói da Vila' },
+  },
+  // ═══ ARCO 7: A GRANDE GUERRA (Cap 9-12) ════════════════════
+  {
+    id: 'nar_ch09', titulo: 'Episódio 9: A Quarta Grande Guerra Ninja',
+    descricao: 'A Akatsuki declara guerra! Todas as aldeias unem-se contra Madara e Obito!',
+    nivel: 25, xp: 800, coins: 2000,
+    nodes: [
+      { id: 'n9_01', texto: '⚔️ *A ALIANÇA SHINOBI!*\n\nTodas as 5 nações unidas!\n\n100.000 shinobis contra o exército de Zetsu Branco.\n\n"Esta é a última batalha!"', falante: 'Gaara' },
+      { id: 'n9_02', texto: '👁️ *Obito Uchiha Revelado!*\n\nO homem por trás da Akatsuki!\n\n"Eu vou criar um mundo perfeito... o Mundo da Lua Infinita!"\n\nObito revive Madara Uchiha!', boss: {
+        nome: 'Madara Uchiha', emoji: '👁️', hp: 5000, atk: 200, def: 80, xp: 2000, coins: 5000,
+        habilidades: ['Susanoo Perfeito', 'Chibaku Tensei', 'Limbo', 'Rinnegan'],
+        descricao: 'O lenda dos Uchiha. O shinobi mais forte de todos os tempos.',
+      }},
+      { id: 'n9_03', texto: '👁️ *Madara vs Todos!*\n\nMadara destrói exércitos inteiros!\n\nO Susanoo Perfeito cobre o céu!\n\nNaruto e Sasuke unem-se!\n\n"Finalmente... juntos de novo!"', escolhas: [
+        { txt: '🍥 Modo Kurama + Rasenshuriken!', next: 'n9_04a', xp: 100 },
+        { txt: '👁️ Susanoo + Amaterasu!', next: 'n9_04b', xp: 100 },
+        { txt: '⚡ Combo Naruto + Sasuke!', next: 'n9_04c', xp: 150 },
+      ]},
+      { id: 'n9_04a', texto: '🍥 *Modo Kurama!*\n\nO chakra dourado envolve Naruto!\n\n"RASENSHURIKEN!"\n\nMadara é atingido! Mas regenera-se!\n\n"Impossível... ele está a igualar-me?!"', xp: 150, coins: 1000, skill: 'Modo Kurama' },
+      { id: 'n9_04b', texto: '👁️ *Sasuke Rinnegan!*\n\nSasuke activa o Rinnegan!\n\n"SUSANOO!"\n\nO Susanoo de Sasuke vs o de Madara!', xp: 150, coins: 1000 },
+      { id: 'n9_04c', texto: '⚡ *A EQUIPA PERFEITA!*\n\nNaruto e Sasuke atacam juntos!\n\nRasengan + Chidori!\n\nMadara recua pela primeira vez!\n\n"Vocês dois... são a reencarnação de Indra e Ashura!"', xp: 200, coins: 1500, title: 'Reencarnação de Ashura' },
+      { id: 'n9_05', texto: '🌕 *Kaguya Ōtsutsuki!*\n\nMadara é traído por Black Zetsu!\n\nKaguya — a deusa coelho — desperta!\n\n"Todos serão um comigo..."\n\nA batalha final!', boss: {
+        nome: 'Kaguya Ōtsutsuki', emoji: '🌙', hp: 8000, atk: 250, def: 100, xp: 5000, coins: 10000,
+        habilidades: ['Ash Bones', 'Amenominaka', 'Yomotsu Hirasaka', 'Infinite Tsukuyomi'],
+        descricao: 'A progenitora do chakra. A ameaça mais poderosa de sempre.',
+      }},
+      { id: 'n9_06', texto: '🌙 *Selo de Kaguya!*\n\nNaruto e Sasuke usam o selo de Hagoromo!\n\n"SUN SEAL!"\n\nKaguya é selada!\n\nA guerra acabou!\n\nMas... Sasuke quer revolução.\n\n"Vou matar os 5 Kages e governar sozinho."', xp: 300, coins: 3000 },
+      { id: 'n9_07', texto: '⚡ *Naruto vs Sasuke — Final!*\n\nO Vale do Fim, de novo.\n\nRasengan vs Chidori. Kyuubi vs Susanoo.\n\nAmbos perdem um braço.\n\n"Sasuke... tu ganhaste..."\n\n"Não... empatámos."\n\n> ⚡ *A guerra acabou. Sasuke regressa.*\n> 🍥 *Naruto é o herói do mundo ninja.*\n> 🏆 *O caminho para Hokage está aberto!*', xp: 500, coins: 5000, title: 'Lenda dos Shinobis' },
+    ],
+    recompensas: { xp: 5000, coins: 15000, skill: 'Modo Kurama', title: 'Lenda Viva', item: 'Braço de Chakra' },
+  },
+  {
+    id: 'nar_ch10', titulo: 'Episódio 10: O Sétimo Hokage',
+    descricao: 'Depois de anos... o sonho torna-se realidade.',
+    nivel: 30, xp: 1000, coins: 5000,
+    nodes: [
+      { id: 'n10_01', texto: '🍥 *A Cerimónia*\n\nToda a Konoha reunida.\n\nTsunade sorri. "Naruto Uzumaki... és o Sétimo Hokage."\n\nA vila inteira grita:\n"HOKAGE! HOKAGE! HOKAGE!"\n\nO rapaz que era odiado... agora é o líder.\n\n> 🍥 *PARABÉNS! Completaste a história de Naruto!*\n> 🏆 *Conquista: Sétimo Hokage!*\n> ⭐ *O teu sonho tornou-se realidade.*', xp: 2000, coins: 10000, title: 'Sétimo Hokage', item: 'Roupa de Hokage' },
+    ],
+    recompensas: { xp: 5000, coins: 20000, title: 'Sétimo Hokage', item: 'Roupa de Hokage' },
+  },
+];
+
+// Atualizar contagem de capítulos
+WORLDS.naruto.capitulos = NARUTO_CHAPTERS.length;
+
+// ══════════════════════════════════════════════════════════════
+// REGISTO DE PROGRESSO DO JOGADOR
+// ══════════════════════════════════════════════════════════════
+// O progresso vive no RPGPlayer.storyProgress:
+// { naruto: { capitulo: 0, node: 'n1_01', completos: [] }, ... }
+
+async function getProgress(p, worldId) {
+  if (!p.storyProgress) p.storyProgress = {};
+  if (!p.storyProgress[worldId]) {
+    p.storyProgress[worldId] = { capitulo: 0, node: null, completos: [] };
+  }
+  return p.storyProgress[worldId];
+}
+
+// ══════════════════════════════════════════════════════════════
+// FUNÇÕES DE UI
+// ══════════════════════════════════════════════════════════════
+
+async function tReply(sock, msg, ctx, title, lines) {
+  const RE = require('../renderEngine');
+  const t = await RE.getTheme(ctx.remoteJid).catch(() => null);
+  return sock.sendMessage(ctx.remoteJid, {
+    text: RE.renderBlock(t, title, lines, { botName: config.bot.name })
+  }, { quoted: msg });
+}
+
+async function enviarBotoes(sock, msg, ctx, corpo, botoes) {
+  try {
+    const { generateWAMessageFromContent, proto } = require('@systemzero/baileys');
+    const m = generateWAMessageFromContent(ctx.remoteJid, {
+      interactiveMessage: proto.Message.InteractiveMessage.fromObject({
+        body: { text: corpo },
+        footer: { text: '📖 RPG Story Mode' },
+        header: { title: '', hasMediaAttachment: false },
+        nativeFlowMessage: {
+          buttons: botoes.map(b => ({
+            name: 'quick_reply',
+            buttonParamsJson: JSON.stringify({ display_text: b.text, id: b.id }),
+          })),
+        },
+      }),
+    }, { userJid: sock.user?.id, quoted: msg });
+    await sock.relayMessage(ctx.remoteJid, m.message, {
+      messageId: m.key.id,
+      additionalNodes: [{ tag: 'biz', attrs: {}, content: [{
+        tag: 'interactive', attrs: { type: 'native_flow', v: '1' },
+        content: [{ tag: 'native_flow', attrs: { v: '9', name: 'mixed' } }],
+      }] }],
+    });
+    return true;
+  } catch { return false; }
+}
+
+async function enviarLista(sock, msg, ctx, titulo, rows, corpo) {
+  try {
+    const { generateWAMessageFromContent, proto } = require('@systemzero/baileys');
+    const m = generateWAMessageFromContent(ctx.remoteJid, {
+      interactiveMessage: proto.Message.InteractiveMessage.fromObject({
+        body: { text: corpo },
+        footer: { text: '📖 RPG Story Mode' },
+        header: { title: '', hasMediaAttachment: false },
+        nativeFlowMessage: {
+          buttons: [{
+            name: 'single_select',
+            buttonParamsJson: JSON.stringify({ title: titulo, sections: [{ title: titulo, rows }] }),
+          }],
+        },
+      }),
+    }, { userJid: sock.user?.id, quoted: msg });
+    await sock.relayMessage(ctx.remoteJid, m.message, {
+      messageId: m.key.id,
+      additionalNodes: [{ tag: 'biz', attrs: {}, content: [{
+        tag: 'interactive', attrs: { type: 'native_flow', v: '1' },
+        content: [{ tag: 'native_flow', attrs: { v: '9', name: 'mixed' } }],
+      }] }],
+    });
+    return true;
+  } catch { return false; }
+}
+
+// ══════════════════════════════════════════════════════════════
+// LISTAR MUNDOS DISPONÍVEIS
+// ══════════════════════════════════════════════════════════════
+
+async function listarMundos(sock, msg, ctx) {
+  const p = await rpg.getPlayer(ctx.senderNumber);
+  const mundoLinhas = [];
+  const rows = [];
+
+  for (const [id, w] of Object.entries(WORLDS)) {
+    const prog = await getProgress(p, id);
+    const capAtual = prog.capitulo || 0;
+    const total = w.capitulos;
+    const pct = total > 0 ? Math.round((capAtual / total) * 100) : 0;
+    const barra = '🟩'.repeat(Math.min(10, Math.round(pct / 10))) + '⬛'.repeat(10 - Math.min(10, Math.round(pct / 10)));
+    const desbloqueado = p.level >= w.nivelMin;
+    const status = !desbloqueado ? `🔒 Nv.${w.nivelMin}` : capAtual >= total ? '✅ COMPLETO' : `${pct}%`;
+
+    mundoLinhas.push(
+      `${w.emoji} *${w.name}* ${status}`,
+      `   ${barra} ${capAtual}/${total} capítulos`,
+      desbloqueado ? '' : `   🔒 Precisas de nível ${w.nivelMin}`,
+      ''
+    );
+
+    if (desbloqueado) {
+      rows.push({
+        title: `${w.emoji} ${w.name}`,
+        description: `${capAtual}/${total} capítulos · ${status}`,
+        id: `STORY_${id}`,
+      });
+    }
+  }
+
+  const corpo = [
+    `📖 *MODO HISTÓRIA*`,
+    `📊 Nível ${p.level} · ${Object.keys(WORLDS).length} mundos`,
+    '',
+    ...mundoLinhas,
+    '> Toca num mundo para jogar! 👇',
+  ].join('\n');
+
+  if (rows.length) {
+    await enviarLista(sock, msg, ctx, '📖 MUNDOS', rows, corpo);
+  } else {
+    await tReply(sock, msg, ctx, '📖 MODO HISTÓRIA', [corpo]);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// JOGAR UM MUNDO
+// ══════════════════════════════════════════════════════════════
+
+async function jogarMundo(sock, msg, ctx, worldId) {
+  const p = await rpg.getPlayer(ctx.senderNumber);
+  const w = WORLDS[worldId];
+  if (!w) return tReply(sock, msg, ctx, '❌', ['Mundo não encontrado.']);
+
+  if (p.level < w.nivelMin) {
+    return tReply(sock, msg, ctx, '🔒 MUNDO BLOQUEADO', [
+      `${w.emoji} *${w.name}*`,
+      `Precisas de nível *${w.nivelMin}* para entrar.`,
+      `Agora tens nível *${p.level}*.`,
+    ]);
+  }
+
+  // Obter capítulos do mundo
+  const chapters = _getChapters(worldId);
+  if (!chapters.length) {
+    return tReply(sock, msg, ctx, `${w.emoji} ${w.name}`, ['📖 Este mundo ainda não tem capítulos.']);
+  }
+
+  const prog = await getProgress(p, worldId);
+  const capIdx = Math.min(prog.capitulo || 0, chapters.length - 1);
+  const chapter = chapters[capIdx];
+
+  // Mostrar capítulo atual
+  return _mostrarCapitulo(sock, msg, ctx, p, w, chapter, capIdx);
+}
+
+function _getChapters(worldId) {
+  const map = { naruto: NARUTO_CHAPTERS };
+  return map[worldId] || [];
+}
+
+// ══════════════════════════════════════════════════════════════
+// MOSTRAR CAPÍTULO
+// ══════════════════════════════════════════════════════════════
+
+async function _mostrarCapitulo(sock, msg, ctx, p, w, chapter, capIdx) {
+  const prog = p.storyProgress[w.id];
+  const nodeId = prog.node || chapter.nodes[0]?.id;
+  const node = chapter.nodes.find(n => n.id === nodeId) || chapter.nodes[0];
+
+  if (!node) return tReply(sock, msg, ctx, `${w.emoji} ${chapter.titulo}`, ['Capítulo vazio.']);
+
+  // Mostrar texto narrativo
+  const header = [
+    `${w.emoji} *${chapter.titulo}*`,
+    `📖 Capítulo ${capIdx + 1} de ${w.capitulos}`,
+    `📊 Nível recomendado: ${chapter.nivel}`,
+    '',
+  ].join('\n');
+
+  const corpo = header + node.texto;
+
+  // Se tem escolhas → botões
+  if (node.escolhas?.length) {
+    const botoes = node.escolhas.map((e, i) => ({
+      id: `STORYC_${w.id}_${chapter.id}_${node.id}_${i}`,
+      text: e.txt.slice(0, 25),
+    }));
+
+    await enviarBotoes(sock, msg, ctx, corpo, botoes);
+    return;
+  }
+
+  // Se tem boss → iniciar combate
+  if (node.boss) {
+    await tReply(sock, msg, ctx, `${w.emoji} ${chapter.titulo}`, [corpo]);
+    // Iniciar combate especial com stats do boss
+    return _iniciarBossFight(sock, msg, ctx, p, w, chapter, node);
+  }
+
+  // Se é nó final (sem next) → avançar capítulo
+  if (!node.next && !node.escolhas) {
+    await tReply(sock, msg, ctx, `${w.emoji} ${chapter.titulo}`, [corpo]);
+
+    // Aplicar recompensas do nó
+    if (node.xp) rpg.addXP(p, node.xp);
+    if (node.coins) p.coins += node.coins;
+    if (node.item) p.inventory.push(node.item);
+    if (node.skill && !p.skills.includes(node.skill)) p.skills.push(node.skill);
+    if (node.title) p.title = node.title;
+
+    // Avançar para próximo capítulo
+    prog.capitulo = (prog.capitulo || 0) + 1;
+    prog.node = null;
+    if (!prog.completos) prog.completos = [];
+    prog.completos.push(chapter.id);
+
+    // Recompensas do capítulo
+    if (chapter.recompensas) {
+      const r = chapter.recompensas;
+      if (r.xp) rpg.addXP(p, r.xp);
+      if (r.coins) p.coins += r.coins;
+      if (r.item && !p.inventory.includes(r.item)) p.inventory.push(r.item);
+      if (r.skill && !p.skills.includes(r.skill)) p.skills.push(r.skill);
+      if (r.title) p.title = r.title;
+    }
+
+    await rpg.savePlayer(p);
+
+    // Mostrar botão para próximo capítulo
+    const chapters = _getChapters(w.id);
+    if (prog.capitulo < chapters.length) {
+      const proximo = chapters[prog.capitulo];
+      await enviarBotoes(sock, msg, ctx, `✅ *${chapter.titulo}* completo!\n\n📖 Próximo: *${proximo.titulo}*\n📊 Nível: ${proximo.nivel}`, [
+        { id: `STORY_${w.id}`, text: '📖 Próximo Capítulo' },
+      ]);
+    } else {
+      await tReply(sock, msg, ctx, `🏆 ${w.name} COMPLETO!`, [
+        `🎉 *PARABÉNS! Completaste toda a história de ${w.name}!*`,
+        `🏆 Recompensa final: ${w.recompensaFinal.title}`,
+        '',
+        '> Explora outros mundos com *!historia*',
+      ]);
+      // Recompensa final
+      const rf = w.recompensaFinal;
+      if (rf.xp) rpg.addXP(p, rf.xp);
+      if (rf.coins) p.coins += rf.coins;
+      if (rf.item) p.inventory.push(rf.item);
+      if (rf.title) p.title = rf.title;
+      await rpg.savePlayer(p);
+    }
+    return;
+  }
+
+  // Nó com next → mostrar com botão "Continuar"
+  if (node.next) {
+    const botoes = [{ id: `STORYN_${w.id}_${chapter.id}_${node.next}`, text: '▶️ Continuar' }];
+    await enviarBotoes(sock, msg, ctx, corpo, botoes);
+    return;
+  }
+
+  // Fallback
+  await tReply(sock, msg, ctx, `${w.emoji} ${chapter.titulo}`, [corpo]);
+}
+
+// ══════════════════════════════════════════════════════════════
+// BOSS FIGHT ESPECIAL
+// ══════════════════════════════════════════════════════════════
+
+async function _iniciarBossFight(sock, msg, ctx, p, w, chapter, node) {
+  const boss = node.boss;
+  // Usar o sistema de combate existente com stats especiais
+  await tReply(sock, msg, ctx, `👑 BOSS: ${boss.nome}`, [
+    `${boss.descricao}`,
+    `❤️ HP: ${boss.hp} | ⚔️ ATK: ${boss.atk} | 🛡️ DEF: ${boss.def}`,
+    `✨ Habilidades: ${boss.habilidades.join(', ')}`,
+    '',
+    '> Usa *!lutar boss* para enfrentar!',
+  ]);
+}
+
+// ══════════════════════════════════════════════════════════════
+// PROCESSAR CLIQUES
+// ══════════════════════════════════════════════════════════════
+
+async function resolverClique(sock, msg, ctx, token) {
+  const tk = String(token || '');
+
+  // STORY_<worldId> — entrar num mundo
+  let m = tk.match(/^STORY_([a-z]+)$/i);
+  if (m) {
+    await jogarMundo(sock, msg, ctx, m[1].toLowerCase());
+    return true;
+  }
+
+  // STORYC_<worldId>_<chapterId>_<nodeId>_<choiceIdx> — escolha numa história
+  m = tk.match(/^STORYC_([a-z]+)_([^_]+)_([^_]+)_(\d+)$/i);
+  if (m) {
+    const [, worldId, chapterId, nodeId, choiceIdx] = m;
+    await _processarEscolha(sock, msg, ctx, worldId, chapterId, nodeId, parseInt(choiceIdx));
+    return true;
+  }
+
+  // STORYN_<worldId>_<chapterId>_<nextNodeId> — próximo nó
+  m = tk.match(/^STORYN_([a-z]+)_([^_]+)_([^_]+)$/i);
+  if (m) {
+    const [, worldId, chapterId, nextNodeId] = m;
+    await _processarProximo(sock, msg, ctx, worldId, chapterId, nextNodeId);
+    return true;
+  }
+
+  return false;
+}
+
+async function _processarEscolha(sock, msg, ctx, worldId, chapterId, nodeId, choiceIdx) {
+  const p = await rpg.getPlayer(ctx.senderNumber);
+  const w = WORLDS[worldId];
+  const chapters = _getChapters(worldId);
+  const chapter = chapters.find(c => c.id === chapterId);
+  if (!chapter) return tReply(sock, msg, ctx, '❌', ['Capítulo não encontrado.']);
+
+  const node = chapter.nodes.find(n => n.id === nodeId);
+  if (!node?.escolhas?.[choiceIdx]) return tReply(sock, msg, ctx, '❌', ['Escolha inválida.']);
+
+  const choice = node.escolhas[choiceIdx];
+
+  // Aplicar recompensas da escolha
+  if (choice.xp) rpg.addXP(p, choice.xp);
+  if (choice.coins) p.coins += choice.coins;
+  if (choice.item) p.inventory.push(choice.item);
+  if (choice.skill && !p.skills.includes(choice.skill)) p.skills.push(choice.skill);
+  if (choice.title) p.title = choice.title;
+
+  // Avançar para o próximo nó
+  const prog = await getProgress(p, worldId);
+  prog.node = choice.next || null;
+
+  // Se tem next → mostrar esse nó
+  if (choice.next) {
+    const nextNode = chapter.nodes.find(n => n.id === choice.next);
+    if (nextNode) {
+      await rpg.savePlayer(p);
+      const corpo = `${w.emoji} *${chapter.titulo}*\n📖 Capítulo ${chapters.indexOf(chapter) + 1}\n\n${nextNode.texto}`;
+
+      if (nextNode.escolhas?.length) {
+        const botoes = nextNode.escolhas.map((e, i) => ({
+          id: `STORYC_${worldId}_${chapterId}_${nextNode.id}_${i}`,
+          text: e.txt.slice(0, 25),
+        }));
+        await enviarBotoes(sock, msg, ctx, corpo, botoes);
+      } else if (nextNode.next) {
+        await enviarBotoes(sock, msg, ctx, corpo, [
+          { id: `STORYN_${worldId}_${chapterId}_${nextNode.next}`, text: '▶️ Continuar' },
+        ]);
+      } else {
+        // Nó final
+        await tReply(sock, msg, ctx, `${w.emoji} ${chapter.titulo}`, [corpo]);
+        // Avançar capítulo
+        prog.capitulo = (prog.capitulo || 0) + 1;
+        prog.node = null;
+        if (!prog.completos) prog.completos = [];
+        prog.completos.push(chapterId);
+
+        // Recompensas do capítulo
+        if (chapter.recompensas) {
+          const r = chapter.recompensas;
+          if (r.xp) rpg.addXP(p, r.xp);
+          if (r.coins) p.coins += r.coins;
+          if (r.item && !p.inventory.includes(r.item)) p.inventory.push(r.item);
+          if (r.skill && !p.skills.includes(r.skill)) p.skills.push(r.skill);
+          if (r.title) p.title = r.title;
+        }
+        await rpg.savePlayer(p);
+
+        // Botão próximo capítulo
+        if (prog.capitulo < chapters.length) {
+          const proximo = chapters[prog.capitulo];
+          await enviarBotoes(sock, msg, ctx, `✅ Capítulo completo!\n\n📖 Próximo: *${proximo.titulo}*`, [
+            { id: `STORY_${worldId}`, text: '📖 Próximo Capítulo' },
+          ]);
+        }
+      }
+      return;
+    }
+  }
+
+  // Sem next → avançar capítulo
+  prog.capitulo = (prog.capitulo || 0) + 1;
+  prog.node = null;
+  if (!prog.completos) prog.completos = [];
+  prog.completos.push(chapterId);
+  await rpg.savePlayer(p);
+
+  await tReply(sock, msg, ctx, `${w.emoji} ${chapter.titulo}`, [
+    `✅ Escolha: *${choice.txt}*`,
+    choice.xp ? `⭐ +${choice.xp} XP` : '',
+    choice.item ? `🎒 +${choice.item}` : '',
+    '',
+    '> Próximo capítulo disponível com *!historia*',
+  ].filter(Boolean));
+}
+
+async function _processarProximo(sock, msg, ctx, worldId, chapterId, nextNodeId) {
+  const p = await rpg.getPlayer(ctx.senderNumber);
+  const w = WORLDS[worldId];
+  const chapters = _getChapters(worldId);
+  const chapter = chapters.find(c => c.id === chapterId);
+  if (!chapter) return;
+
+  const node = chapter.nodes.find(n => n.id === nextNodeId);
+  if (!node) return;
+
+  const prog = await getProgress(p, worldId);
+  prog.node = nextNodeId;
+  await rpg.savePlayer(p);
+
+  const corpo = `${w.emoji} *${chapter.titulo}*\n📖 Capítulo ${chapters.indexOf(chapter) + 1}\n\n${node.texto}`;
+
+  if (node.escolhas?.length) {
+    const botoes = node.escolhas.map((e, i) => ({
+      id: `STORYC_${worldId}_${chapterId}_${node.id}_${i}`,
+      text: e.txt.slice(0, 25),
+    }));
+    await enviarBotoes(sock, msg, ctx, corpo, botoes);
+  } else if (node.next) {
+    await enviarBotoes(sock, msg, ctx, corpo, [
+      { id: `STORYN_${worldId}_${chapterId}_${node.next}`, text: '▶️ Continuar' },
+    ]);
+  } else {
+    await tReply(sock, msg, ctx, `${w.emoji} ${chapter.titulo}`, [corpo]);
+    // Avançar capítulo
+    prog.capitulo = (prog.capitulo || 0) + 1;
+    prog.node = null;
+    if (!prog.completos) prog.completos = [];
+    prog.completos.push(chapterId);
+    await rpg.savePlayer(p);
+  }
+}
+
+module.exports = {
+  WORLDS,
+  NARUTO_CHAPTERS,
+  listarMundos,
+  jogarMundo,
+  resolverClique,
+  getProgress,
+  _getChapters,
+  enviarBotoes,
+  enviarLista,
+  tReply,
+};
