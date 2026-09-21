@@ -1704,6 +1704,10 @@ async function mostrarStatus(sock, msg, ctx) {
     if (prog.capitulo >= w.capitulos && w.capitulos > 0) totalCompletos++;
   }
   const gEmoji = p.gender === 'feminino' ? '\u{1f469}' : p.gender === 'masculino' ? '\u{1f468}' : '\u{1f9d1}';
+  const catalog = require('./catalog');
+  const ab = catalog.allyBonus(p);
+  const tb = catalog.techBonus(p);
+  const strats = rpg.STRATEGIES ? rpg.getStrategy(p.strategy) : null;
   return tReply(sock, msg, ctx, race.emoji + ' ' + p.name.toUpperCase() + ' \u2014 STATUS', [
     gEmoji + ' *' + p.name + '* \u2014 ' + p.race + ' ' + cls.emoji + ' ' + p.class,
     p.title ? '\u{1f3c5} ' + p.title : '',
@@ -1721,7 +1725,10 @@ async function mostrarStatus(sock, msg, ctx) {
     '', '\u2694\uFE0F *COMBATE*',
     '\u{1f480} ' + p.kills + ' kills | \u2620\uFE0F ' + p.deaths + ' mortes | \u{1f451} ' + p.bossKills + ' bosses',
     '\u{1f525} Streak: ' + p.streak + ' | Melhor: ' + p.bestStreak,
-    '\u{1f9e0} Estrategia: ' + (rpg.getStrategy ? rpg.getStrategy(p.strategy).name : p.strategy || 'Equilibrada'),
+    '\u{1f9e0} Estrategia: ' + (strats ? strats.name : (p.strategy || 'Equilibrada')),
+    '', '\u{1f310} *MULTIVERSO*',
+    '\u{1f465} Aliados: ' + ab.n + ' | +\u2694\uFE0F ' + ab.atk + ' ATK +\u2764\uFE0F ' + ab.hp + ' HP',
+    '\u2728 Tecnicas: ' + tb.n + '/40 | +\u2694\uFE0F ' + Math.round(tb.atk * 100) + '% +\u{1f6e1}\uFE0F ' + Math.round(tb.def * 100) + '% +\u{1f3af} ' + Math.round(tb.crit * 100) + '% crit',
   ].filter(Boolean));
 }
 

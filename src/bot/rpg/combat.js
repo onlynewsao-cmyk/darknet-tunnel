@@ -11,6 +11,7 @@ const rpg = require('./engine');
 const ui = require('./ui');
 const config = require('../../config');
 const rpgTheme = require('./rpgTheme');
+const catalog = require('./catalog');
 
 const R = (a, b) => Math.floor(Math.random() * (b - a + 1)) + a;
 const P = (a) => a[Math.floor(Math.random() * a.length)];
@@ -37,18 +38,32 @@ function getEffectiveStats(p) {
   const atkMult = strat?.atkMult ?? 1;
   const defMult = strat?.defMult ?? 1;
 
+  // v11.2: bónus passivos de aliados recrutados + técnicas aprendidas
+  const ab = catalog.allyBonus(p);
+  const tb = catalog.techBonus(p);
+  const allyAtk = ab.atk || 0;
+  const allyHp = ab.hp || 0;
+  const techAtkPct = tb.atk || 0;
+  const techDefPct = tb.def || 0;
+  const techCrit = tb.crit || 0;
+  const techDodge = tb.dodge || 0;
+
+  const baseAtk = 8 + (p.level || 1) * 2 + (base.str || 6) * 1.5 + bonusAtk + allyAtk;
+  const baseDef = 3 + (p.level || 1) + (base.vit || 6) * 0.5 + bonusDef;
+
   return {
     str: base.str || 6,
     dex: base.dex || 6,
     int: base.int || 6,
     vit: base.vit || 6,
     luk: base.luk || 6,
-    atkBonus: bonusAtk,
+    atkBonus: bonusAtk + allyAtk,
     defBonus: bonusDef,
-    totalAtk: (8 + (p.level || 1) * 2 + (base.str || 6) * 1.5 + bonusAtk) * atkMult,
-    totalDef: (3 + (p.level || 1) + (base.vit || 6) * 0.5 + bonusDef) * defMult,
-    critChance: 0.08 + (base.luk || 6) * 0.01 + (base.dex || 6) * 0.005 + (strat?.critBonus || 0),
-    dodgeChance: Math.min(0.6, 0.05 + (base.dex || 6) * 0.01 + (strat?.dodgeBonus || 0)),
+    totalAtk: baseAtk * atkMult * (1 + techAtkPct),
+    totalDef: baseDef * defMult * (1 + techDefPct),
+    critChance: Math.min(0.6, 0.08 + (base.luk || 6) * 0.01 + (base.dex || 6) * 0.005 + (strat?.critBonus || 0) + techCrit),
+    dodgeChance: Math.min(0.65, 0.05 + (base.dex || 6) * 0.01 + (strat?.dodgeBonus || 0) + techDodge),
+    allyHp: allyHp, // exibido na ficha
   };
 }
 

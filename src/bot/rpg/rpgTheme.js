@@ -88,6 +88,13 @@ async function rpgBotoes(sock, msg, ctx, corpo, botoes) {
 
 async function rpgLista(sock, msg, ctx, titulo, rows, corpo) {
   try {
+    // v11.2: suporta UMA secção (rows = [{title,description,id}])
+    // ou VÁRIAS secções (rows = [{title, rows: [...]}]) — listas de
+    // personagens/técnicas agrupadas por mundo.
+    const isSections = Array.isArray(rows) && rows.length && rows.every(r => r && Array.isArray(r.rows));
+    const sections = isSections
+      ? rows
+      : [{ title: titulo, rows }];
     const { generateWAMessageFromContent, proto } = require('@systemzero/baileys');
     const corpoRPG = rpgRender('', [corpo]);
     const m = generateWAMessageFromContent(ctx.remoteJid, {
@@ -98,7 +105,7 @@ async function rpgLista(sock, msg, ctx, titulo, rows, corpo) {
         nativeFlowMessage: {
           buttons: [{
             name: 'single_select',
-            buttonParamsJson: JSON.stringify({ title: titulo, sections: [{ title: titulo, rows }] }),
+            buttonParamsJson: JSON.stringify({ title: titulo, sections }),
           }],
         },
       }),

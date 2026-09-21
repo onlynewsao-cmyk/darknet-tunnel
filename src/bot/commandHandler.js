@@ -490,6 +490,14 @@ async function _handleInner(sock, msg) {
     } catch (e) { console.warn('[RPG team]', e.message?.slice(0, 60)); }
   }
 
+  // ── v11.2: MULTIVERSO — personagens/técnicas/treino/gacha ──────
+  if (/^(RPGCHAR_[a-z0-9_]+|RPGTEC_[a-z0-9_]+|RPGTRN_[a-z]+|RPGGACHA|RPGALIA)$/i.test(text.split(/\s+/)[0] || '')) {
+    try {
+      const multiverse = require('./rpg/multiverse');
+      if (await multiverse.resolverToken(sock, msg, ctx, text.split(/\s+/)[0])) return true;
+    } catch (e) { console.warn('[RPG multiverse]', e.message?.slice(0, 60)); }
+  }
+
   // ── v7.96: AURA VIGILANTE — decisões dos cartões (AURASEL_) ────────
   if (/^AURASEL_[a-z0-9]+_\d+$/i.test(text.split(/\s+/)[0] || '')) {
     try {

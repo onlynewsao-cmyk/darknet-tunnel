@@ -137,6 +137,14 @@ async function _stepNome(sock, msg, ctx, args) {
   const corpo = [
     `🎭 *CRIAÇÃO DE PERSONAGEM*`,
     ``,
+    `🌌 *O Multiverso RPG*`,
+    `Aqui não copias nenhum herói de anime —`,
+    `tu és *ALGUÉM NOVO*. O teu nome, o teu rosto,`,
+    `a tua história. Os Naruto, Luffy, Gojo e Goku`,
+    `deste universo vão cruzar o teu caminho…`,
+    `e o QUÊ que tu ficas depende só de ti:`,
+    `treina, luta, aprende técnicas, segue o teu rumo.`,
+    ``,
     `📝 Nome: *${name}*`,
     ``,
     `Escolhe o teu género:`,
@@ -424,9 +432,12 @@ async function _stepFinalizar(sock, msg, ctx) {
     '',
     `💰 ${p.coins} coins`,
     '',
-    '> 🎮 Personagem criado! Usa *.rg* para ver a ficha.',
-    '> ⚔️ Usa *!lutar* para combater!',
-    '> 🗺️ Usa *!viajar floresta* para explorar!',
+    '> 🎮 Usa *!status* para veres tudo.',
+    '> ⚔️ *!lutar* — combate! | 🗺️ *!viajar floresta* — explora!',
+    '> 🏋️ *!treinar* — fica mais forte',
+    '> 🌌 *!personagens* — os heróis do multiverso',
+    '> ✨ *!tecnicas* — aprende os poderes deles',
+    '> 📖 *!historia* — 8 mundos para viveres',
   ];
 
   await rpgTheme.rpgReply(sock, msg, ctx, '🎭 PERSONAGEM CRIADO', linhas);

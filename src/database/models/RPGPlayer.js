@@ -105,6 +105,11 @@ const RPGPlayerSchema = new mongoose.Schema({
   // (agressiva | defensiva | equilibrada | evasiva | sorrateira)
   strategy: { type: String, default: 'equilibrada' },
 
+  // ── v11.2: Multiverso — personagens, técnicas e treino ──
+  characters: [{ type: String }],   // personagens famosos recrutados (aliados)
+  techniques: [{ type: String }],   // técnicas/poderes aprendidos
+  training: { type: mongoose.Schema.Types.Mixed, default: {} }, // { str: { last, sessions }, ... }
+
   // Cooldowns
   lastDaily:   { type: Date, default: null },
   lastWork:    { type: Date, default: null },

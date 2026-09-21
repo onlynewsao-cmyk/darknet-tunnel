@@ -31,6 +31,9 @@ const LIVRE_CHAR = new Set([
   'rankrpg', 'toprpg', 'rankglobal', 'ranking', 'leaderboard',
   'mundial', 'rankmundial', 'worldrank', 'rankingmundial',
   'world', 'mapa', 'biomas', 'mundomap',
+  // v11.2: a vitrine do multiverso abre sem personagem
+  'personagens', 'personagem', 'heroes', 'heroi',
+  'tecnicas', 'poderes', 'skills',
 ]);
 
 const RPG_CMDS = new Set([
@@ -40,6 +43,16 @@ const RPG_CMDS = new Set([
   'guilda', 'guild', 'criarguilda', 'inventario', 'inv', 'bau', 'npc', 'falar', 'talk',
   'vidas', 'lives', 'nome', 'rename', 'viajar', 'travel', 'irpara',
   'criaclan', 'criaclã', 'newclan',
+  // v11.0/v11.1: story mode, status, raids e estratégia
+  'story', 'mundo', 'worlds', 'mundos',
+  'status', 'stats', 'mystatus', 'estat',
+  'raid', 'raids', 'team',
+  'estrategia', 'strategy',
+  // v11.2: multiverso — recrutar, aprender, treinar, aliados
+  'recrutar', 'gacha', 'invocar',
+  'aliados', 'equipepersonagens', 'coleccion',
+  'aprender', 'learn',
+  'treinar', 'treino', 'ginasio',
 ]);
 
 // I/O com tecto: DB lenta/caída não pode pendurar o bot — falha ABERTA.

@@ -200,14 +200,16 @@ module.exports = function registerRPG2(registerCase) {
     return storyMode.jogarMundo(sock, msg, ctx, worldId);
   }, true);
 
-  // ═══ STATUS RPG COMPLETO (v11) ═══
-  registerCase(['status', 'stats', 'mystatus'], async ({ sock, msg, ctx }) => {
+  // ═══ STATUS RPG COMPLETO (v11.2) ═══
+  // Sem onlyIfNew: o !status/!stats É o status do jogador agora.
+  // O diagnóstico do bot fica em !diagnostico / !diag.
+  registerCase(['status', 'stats', 'mystatus', 'estat'], async ({ sock, msg, ctx }) => {
     const storyMode = require('../rpg/storyMode');
     return storyMode.mostrarStatus(sock, msg, ctx);
-  }, true);
+  });
 
   // ═══ MISSOES DE EQUIPA / RAIDS (v11) ═══
-  registerCase(['raid', 'raids', 'equipe', 'team'], async ({ sock, msg, ctx, args }) => {
+  registerCase(['raid', 'raids', 'team'], async ({ sock, msg, ctx, args }) => {
     const storyMode = require('../rpg/storyMode');
     if (!args[0]) return storyMode.listarMissoesEquipa(sock, msg, ctx);
     if (args[0] === 'entrar' && args[1]) return storyMode.entrarEquipeRaid(sock, msg, ctx, args[1]);
@@ -217,7 +219,7 @@ module.exports = function registerRPG2(registerCase) {
   }, true);
 
   // ═══ ESTRATÉGIA DE COMBATE (v11.1) ═══
-  registerCase(['estrategia', 'strategy', 'estilo'], async ({ sock, msg, ctx, args }) => {
+  registerCase(['estrategia', 'strategy'], async ({ sock, msg, ctx, args }) => {
     const rpg = require('../rpg/engine');
     const rpgTheme = require('../rpg/rpgTheme');
     const p = await rpg.getPlayer(ctx.senderNumber);
@@ -260,6 +262,51 @@ module.exports = function registerRPG2(registerCase) {
       '> Toca numa estratégia para activá-la!',
     ].join('\n');
     await rpgTheme.rpgBotoes(sock, msg, ctx, corpo, botoes);
+  }, true);
+
+  // ═══ MULTIVERSO — PERSONAGENS FAMOSOS (v11.2) ═══
+  registerCase(['personagens', 'personagem', 'heroes', 'heroi'], async ({ sock, msg, ctx, args }) => {
+    const mv = require('../rpg/multiverse');
+    if (args[0]) return mv.verPersonagem(sock, msg, ctx, args[0].toLowerCase());
+    return mv.listarPersonagens(sock, msg, ctx);
+  }, true);
+
+  // ═══ RECRUTAR — GACHA DE PERSONAGENS (v11.2) ═══
+  registerCase(['recrutar', 'gacha', 'invocar'], async ({ sock, msg, ctx }) => {
+    const mv = require('../rpg/multiverse');
+    return mv.recrutar(sock, msg, ctx);
+  }, true);
+
+  // ═══ ALIADOS — COLECÇÃO (v11.2) ═══
+  registerCase(['aliados', 'equipepersonagens', 'coleccion'], async ({ sock, msg, ctx }) => {
+    const mv = require('../rpg/multiverse');
+    return mv.mostrarAliados(sock, msg, ctx);
+  }, true);
+
+  // ═══ TÉCNICAS & PODERES (v11.2) ═══
+  registerCase(['tecnicas', 'poderes', 'skills'], async ({ sock, msg, ctx, args }) => {
+    const mv = require('../rpg/multiverse');
+    if (args[0]) {
+      if (args[0].toLowerCase() === 'aprender' && args[1]) return mv.aprenderTecnica(sock, msg, ctx, args[1].toLowerCase());
+      return mv.verTecnica(sock, msg, ctx, args[0].toLowerCase());
+    }
+    return mv.listarTecnicas(sock, msg, ctx);
+  }, true);
+
+  // ═══ APRENDER TÉCNICA (v11.2) ═══
+  registerCase(['aprender', 'learn'], async ({ sock, msg, ctx, args }) => {
+    const mv = require('../rpg/multiverse');
+    if (args[0]) return mv.aprenderTecnica(sock, msg, ctx, args[0].toLowerCase());
+    return mv.listarTecnicas(sock, msg, ctx);
+  }, true);
+
+  // ═══ TREINO — FICAR MAIS FORTE (v11.2) ═══
+  registerCase(['treinar', 'treino', 'ginasio'], async ({ sock, msg, ctx, args }) => {
+    const mv = require('../rpg/multiverse');
+    if (args[0] && ['str', 'dex', 'int', 'vit', 'luk'].includes(args[0].toLowerCase())) {
+      return mv.treinar(sock, msg, ctx, args[0].toLowerCase());
+    }
+    return mv.menuTreino(sock, msg, ctx);
   }, true);
 
   // ═══ COMBATE INTERACTIVO (v9.23 — com botões!) ═══
