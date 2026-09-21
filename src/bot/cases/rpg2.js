@@ -59,6 +59,16 @@ module.exports = function registerRPG2(registerCase) {
     return createFlow.start({ sock, msg, ctx, args });
   }, true);
 
+  // ═══ POINT-BUY STATS (v9.23) ═══
+  registerCase(['rpgcr', 'rpgpoint', 'pointbuy'], async ({ sock, msg, ctx, args }) => {
+    const createFlow = require('../rpg/createFlow');
+    if (args[0] && /^[+-](str|dex|int|vit|luk)$/i.test(args[0])) {
+      return createFlow.ajustarStat(sock, msg, ctx, args);
+    }
+    await sock.sendMessage(ctx.remoteJid, {
+      text: '❓ Usa: *!rpgcr +str* / *!rpgcr -dex* para distribuir pontos.\nOu toca nos botões na tela de stats.',
+    }, { quoted: msg }).catch(() => {});
+  }, true);
   // ═══ PERFIL RPG COMPLETO ═══
   registerCase(['rg', 'ficha', 'perfilrpg'], async ({ sock, msg, ctx }) => {
     const p = await rpg.getPlayer(ctx.senderNumber);
@@ -77,10 +87,15 @@ module.exports = function registerRPG2(registerCase) {
     await rpg.savePlayer(p);
 
 
+    const gEmoji = p.gender === 'feminino' ? '👩' : p.gender === 'masculino' ? '👨' : '🧑';
+    const gLabel = p.gender ? p.gender.charAt(0).toUpperCase() + p.gender.slice(1) : '';
+
     return tReply(sock, msg, ctx, `${race.emoji} ${p.name.toUpperCase()}`, [
       `${race.emoji} *${p.name}* — ${p.race} ${cls.emoji} ${p.class}`,
-      `${p.title ? `🏅 ${p.title}` : ''}`,
-      `📊 Nível *${p.level}* | XP: ${p.xp}/${p.xpNext} (${xpPct}%)`,
+      p.gender || p.age ? `${gEmoji} ${gLabel}${p.age ? ' · ' + p.age + ' anos' : ''}` : '',
+      p.title ? `🏅 ${p.title}` : '',
+      p.bio ? `📖 ${p.bio}` : '',
+      `📊 Nível *${p.level}* | Rank ${rpg.getRank(p.level).emoji} ${rpg.getRank(p.level).name} | XP: ${p.xp}/${p.xpNext} (${xpPct}%)`,
       '',
       `${hpBar} HP: ${p.hp}/${p.maxHp}`,
       `${mpBar} MP: ${p.mp}/${p.maxMp}`,
@@ -88,6 +103,7 @@ module.exports = function registerRPG2(registerCase) {
       `⚔️ STR: ${p.stats.str} | 🏃 DEX: ${p.stats.dex}`,
       `🔮 INT: ${p.stats.int} | 🛡️ VIT: ${p.stats.vit}`,
       `🍀 LUK: ${p.stats.luk}`,
+      p.statPoints > 0 ? `💎 *${p.statPoints} pontos livres!* Usa \`!rpgcr +str\`` : '',
       '',
       `💰 ${p.coins} coins | 🏦 ${p.bank} no banco`,
       `🎒 ${p.inventory.length} itens | 💀 ${p.deaths} mortes`,
@@ -95,6 +111,8 @@ module.exports = function registerRPG2(registerCase) {
       `❤️ Vidas: ${'♥️'.repeat(p.lives)}${'🖤'.repeat(Math.max(0, 3 - p.lives))}`,
       p.guild ? `🏰 Guilda: *${p.guild}*` : '',
       p.quest?.current ? `📜 Quest: *${p.quest.current}*` : '',
+      p.skills?.length ? `✨ Skills: ${p.skills.slice(0, 3).join(', ')}` : '',
+      p.equipment?.weapon ? `⚔️ Arma: ${p.equipment.weapon}` : '',
     ].filter(Boolean));
   }, true);
 

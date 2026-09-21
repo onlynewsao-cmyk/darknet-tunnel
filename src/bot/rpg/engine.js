@@ -494,20 +494,141 @@ const ITEMS = {
 
 // QUESTS — histórias curtas com escolhas
 const QUESTS = [
+  // ══ CAPÍTULO 1: O CHAMADO ═══════════════════════════════════
   {
     id: 'inicio', titulo: 'O Chamado',
-    texto: 'Um mensageiro encapuzado estende-te um pergaminho selado. "Só tu podes ler isto."',
+    texto: 'Um mensageiro encapuzado estende-te um pergaminho selado. "Só tu podes ler isto." O papel arde ao toque.',
     escolhas: [
       { txt: 'Abrir o pergaminho', next: 'pergaminho', xp: 20 },
-      { txt: 'Recusar e ir embora', next: null, xp: 5 },
+      { txt: 'Recusar e seguir caminho', next: 'estrada', xp: 5 },
+      { txt: 'Atacar o mensageiro', next: 'combate_mensageiro', xp: 10 },
     ],
   },
   {
     id: 'pergaminho', titulo: 'O Selo Quebrado',
-    texto: 'O papel arde ao toque. Uma marca fica-te na palma da mão.',
+    texto: 'Uma marca fica-te na palma da mão. O pergaminho mostra um mapa — uma caverna a norte. "Lá encontrarás o que procuras."',
     escolhas: [
-      { txt: 'Seguir a marca', next: null, xp: 50, item: 'marca antiga' },
-      { txt: 'Tentar apagá-la', next: null, xp: 15 },
+      { txt: 'Seguir o mapa para a caverna', next: 'caverna_entrada', xp: 30, item: 'marca antiga' },
+      { txt: 'Perguntar ao mercador sobre a marca', next: 'mercador', xp: 15 },
+      { txt: 'Ignorar e ir à taverna', next: 'taverna', xp: 10 },
+    ],
+  },
+  {
+    id: 'estrada', titulo: 'A Estrada Solitária',
+    texto: 'Segues sem rumo. O vento sopra frio. De repente, ouves gritos vindos da floresta.',
+    escolhas: [
+      { txt: 'Correr para ajudar', next: 'resgate', xp: 25 },
+      { txt: 'Continuar andar', next: 'taverna', xp: 5 },
+    ],
+  },
+  {
+    id: 'combate_mensageiro', titulo: 'O Mensageiro Revelado',
+    texto: 'O encapuzado ri-se. "Sabia que eras diferente." Revela-se — é um treinador de guerreiros. "Vem, treinar-te-ei."',
+    escolhas: [
+      { txt: 'Aceitar o treino', next: 'treino', xp: 40, coins: 50 },
+      { txt: 'Roubar o pergaminho e fugir', next: 'pergaminho', xp: 15, item: 'pergaminho roubado' },
+    ],
+  },
+  // ══ CAPÍTULO 2: A CAVERNA ═══════════════════════════════════
+  {
+    id: 'caverna_entrada', titulo: 'A Caverna Sombria',
+    texto: 'A entrada cheira a morte. Há ossos no chão. Duas passagens: uma iluminada por cristais, outra escura e estreita.',
+    escolhas: [
+      { txt: 'Caminho iluminado (cristais)', next: 'cristais', xp: 20, item: 'cristal' },
+      { txt: 'Caminho escuro (perigoso)', next: 'escuridao', xp: 30 },
+      { txt: 'Voltar atrás', next: null, xp: 5 },
+    ],
+  },
+  {
+    id: 'cristais', titulo: 'O Salão dos Cristais',
+    texto: 'Cristais brilham em todas as cores. No centro, um altar com uma espada antiga cravada na pedra.',
+    escolhas: [
+      { txt: 'Tentar puxar a espada', next: 'espada', xp: 40 },
+      { txt: 'Colher cristais e sair', next: null, xp: 25, item: 'cristal', coins: 100 },
+    ],
+  },
+  {
+    id: 'escuridao', titulo: 'Na Escuridão',
+    texto: 'Não vês nada. Passos ecoam atrás de ti. Algo respira pesado.',
+    escolhas: [
+      { txt: 'Lutar!', next: 'combate_guardiao', xp: 35 },
+      { txt: 'Fugir!', next: null, xp: 10 },
+      { txt: 'Gritar "quem está aí?"', next: 'npc_caverna', xp: 15 },
+    ],
+  },
+  {
+    id: 'espada', titulo: 'A Espada Lendária',
+    texto: 'A espada cede! Uma luz invade a caverna. A marca na tua mão brilha em harmonia com a lâmina.',
+    escolhas: [
+      { txt: 'Empunhar a espada', next: null, xp: 80, item: 'lâmina sombria', title: 'Portador da Lâmina' },
+      { txt: 'Deixar no altar', next: null, xp: 20 },
+    ],
+  },
+  {
+    id: 'combate_guardiao', titulo: 'O Guardião',
+    texto: 'Um ogro de 3 metros bloqueia o caminho. Os olhos brilham vermelho.',
+    escolhas: [
+      { txt: 'Atacar com tudo!', next: null, xp: 60, coins: 200 },
+      { txt: 'Tentar passar por ele', next: null, xp: 30 },
+    ],
+  },
+  {
+    id: 'npc_caverna', titulo: 'O Eremita',
+    texto: '"Sou Aldric, guardião desta caverna há 200 anos. Procuras poder? Ou sabedoria?"',
+    escolhas: [
+      { txt: '"Poder!"', next: null, xp: 30, item: 'poção de mana' },
+      { txt: '"Sabedoria!"', next: null, xp: 50, title: 'Sábio da Caverna' },
+      { txt: '"Nada, obrigado."', next: null, xp: 10 },
+    ],
+  },
+  // ══ CAPÍTULO 3: A TAVERNA ══════════════════════════════════
+  {
+    id: 'taverna', titulo: 'A Taverna do Lobo',
+    texto: 'Mara, a taverneira, serve-te uma cerveja. "Ouvi rumores — há um tesouro na floresta proibida."',
+    escolhas: [
+      { txt: 'Perguntar mais sobre o tesouro', next: 'tesouro_info', xp: 15 },
+      { txt: 'Jogar cartas com os mercenários', next: 'jogo_cartas', xp: 10 },
+      { txt: 'Descansar e seguir viagem', next: null, xp: 5, hp_restore: 50 },
+    ],
+  },
+  {
+    id: 'tesouro_info', titulo: 'O Mapa do Tesouro',
+    texto: 'Mara mostra um mapa rasgado. "A outra metade está com o ferreiro. Ele quer 3 ferros em troca."',
+    escolhas: [
+      { txt: 'Aceitar o negócio', next: null, xp: 20, item: 'mapa rasgado' },
+      { txt: 'Roubar o mapa', next: null, xp: 10 },
+    ],
+  },
+  {
+    id: 'jogo_cartas', titulo: 'O Jogo',
+    texto: 'Um mercenário aposta a espada dele contra 200 coins. As cartas são dadas.',
+    escolhas: [
+      { txt: 'Jogar!', next: null, xp: 15, coins: 200 },
+      { txt: 'Desistir', next: null, xp: 5 },
+    ],
+  },
+  {
+    id: 'resgate', titulo: 'O Resgate',
+    texto: 'Uma jovem é atacada por goblins! Ela grita por ajuda.',
+    escolhas: [
+      { txt: 'Lutar contra os goblins!', next: null, xp: 40, coins: 50, title: 'Herói' },
+      { txt: 'Assustá-los com fogo', next: null, xp: 25 },
+    ],
+  },
+  {
+    id: 'mercador', titulo: 'O Mercador Zeno',
+    texto: '"Essa marca... conheço-a. É o selo do Monarca das Sombras. Cuidado, jovem."',
+    escolhas: [
+      { txt: '"O que sabes?"', next: 'caverna_entrada', xp: 25 },
+      { txt: '"Vende-me armas!"', next: null, xp: 10 },
+    ],
+  },
+  {
+    id: 'treino', titulo: 'O Treino',
+    texto: 'O treinador ensina-te técnicas básicas. "Lembra: a força vem de dentro."',
+    escolhas: [
+      { txt: 'Treinar mais', next: null, xp: 30, coins: 30 },
+      { txt: 'Pedir para ir embora', next: null, xp: 10 },
     ],
   },
 ];

@@ -10,20 +10,18 @@ const RPGPlayerSchema = new mongoose.Schema({
   title:     { type: String, default: '' },
 
   // ── v6.87: raça e classe ────────────────────────────────────
-  // O !rpgstart e a ficha (.rg) liam p.race/p.class desde sempre, mas
-  // estes campos NÃO existiam no schema — com o `strict: true` do
-  // Mongoose a atribuição era ignorada em silêncio e NENHUM jogador
-  // chegou a ter raça ou classe guardada (a ficha caía sempre no
-  // fallback "humano guerreiro"). Sem isto o gerador por selecção não
-  // tem onde guardar a escolha.
   race:      { type: String, default: 'humano' },
   class:     { type: String, default: 'guerreiro' },
-  // O bónus da raça aplica-se UMA vez, na criação — sem esta marca,
-  // cada !rpgstart somava outra vez os mesmos pontos aos stats.
   raceBonusApplied: { type: Boolean, default: false },
-  started:    { type: Boolean, default: false }, // v7.87: criou personagem de verdade
+  started:    { type: Boolean, default: false },
   faction:   { type: String, default: null },
   guild:     { type: String, default: null },
+
+  // ── v9.23: Criação expandida (género, idade, bio, aparência) ──
+  gender:    { type: String, default: null },  // masculino, feminino, outro
+  age:       { type: Number, default: null },
+  bio:       { type: String, default: '' },    // backstory do personagem
+  appearance:{ type: String, default: '' },    // descrição física
 
   // Nível e XP
   level:  { type: Number, default: 1 },
@@ -46,6 +44,9 @@ const RPGPlayerSchema = new mongoose.Schema({
     luk: { type: Number, default: 6 },
   },
 
+  // ── v9.23: Pontos de stats livres (point-buy) ──
+  statPoints: { type: Number, default: 0 },
+
   // Economia
   coins: { type: Number, default: 100 },
   bank:  { type: Number, default: 0 },
@@ -67,15 +68,12 @@ const RPGPlayerSchema = new mongoose.Schema({
     completed: [{ type: String }],
   },
 
-  // ── v6.90: MUNDO ────────────────────────────────────────────
-  // O que o jogador já viu do mapa. Sem isto o !world era uma lista
-  // estática de biomas — igual para quem acabou de começar e para quem
-  // já tinha andado por todo o lado.
+  // Mundo
   world: {
-    visited:     [{ type: String }],          // biomas já percorridos
-    discoveries: { type: Number, default: 0 }, // 1ª visita a cada bioma
+    visited:     [{ type: String }],
+    discoveries: { type: Number, default: 0 },
     lastTravel:  { type: Date, default: null },
-    bossDefeated: [{ type: String }],         // bosses de mundo abatidos
+    bossDefeated: [{ type: String }],
   },
 
   // Skills desbloqueadas
@@ -93,11 +91,7 @@ const RPGPlayerSchema = new mongoose.Schema({
   karma:      { type: Number, default: 0 },
   reputation: { type: Number, default: 0 },
 
-  // ── v7.47: o código já lia/escrevia estes campos, mas com o `strict`
-  // do Mongoose eram deitados fora ao gravar (só viviam em RAM até ao
-  // restart). Sem isto o !prestige "esquecia-se" do prestige, o streak
-  // de vitórias da masmorra misturava-se com o daily e o nível de
-  // crafting/ receitas do !forge perdiam-se.
+  // v7.47
   prestige:       { type: Number, default: 0 },
   winStreak:      { type: Number, default: 0 },
   craftingLevel:  { type: Number, default: 1 },
