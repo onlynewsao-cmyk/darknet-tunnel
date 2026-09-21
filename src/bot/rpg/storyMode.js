@@ -1114,3 +1114,188 @@ function _getChaptersNew(worldId) {
 // Sobrescrever a função
 module.exports._getChapters = _getChaptersNew;
 
+
+// ══════════════════════════════════════════════════════════════
+// SOLO LEVELING — 25 CAPÍTULOS ÉPICOS
+// ══════════════════════════════════════════════════════════════
+const SOLOLEVELING_CHAPTERS = [
+  // ═══ ARCO 1: O CAÇADOR MAIS FRACO (Cap 1) ══════════════════
+  {
+    id: 'sl_ch01', titulo: 'O Caçador Mais Fraco do Mundo',
+    descricao: 'Portões se abrem. Monstros saem. Caçadores combatem. Tu és o mais fraco de todos.',
+    nivel: 10, xp: 150, coins: 400,
+    nodes: [
+      { id: 's1_01', texto: '🏥 *Hospital de Caçadores — Coreia*\n\nSung Jin-Woo. Rank E. O caçador mais fraco da Coreia.\n\nOs outros riem dele. "Esse gajo vai morrer num portão D."\n\nMas Jin-Woo não desiste. A mãe está doente. A irmã precisa de pagar a faculdade.\n\nEle caça para sobreviver.', falante: 'Sung Jin-Woo' },
+      { id: 's1_02', texto: '🚪 *Portão Duplo — Rank C*\n\nUma missão simples. Rank C. Rotina.\n\nMas dentro do portão... outro portão se abre!\n\n"O QUE É ISTO?!"\n\nO Double Dungeon. Um calabouço dentro de um calabouço.\n\nTodos entram. Ninguém sabe que é uma armadilha.', xp: 50, coins: 200 },
+      { id: 's1_03', texto: '🗿 *As Estátuas de Pedra*\n\nEstátuas gigantes com olhos vermelhos!\n\n"ADORE AO DEUS OU MORRA!"\n\nAs estátuas começam a matar!\n\nJin-Woo vê os outros a morrerem um a um.\n\n"Eu preciso de sobreviver... pela minha família!"', xp: 30 },
+      { id: 's1_04', texto: '💀 *O Sacrifício*\n\nJin-Woo decide ficar para trás.\n\n"Vão! Eu distraio-as!"\n\nAs estátuas destroem-no. O corpo está em pedaços.\n\nMas no momento da morte...\n\n> *Você se tornou o "Player"*\n> *O Sistema foi activado.*', xp: 100, title: 'Player' },
+      { id: 's1_05', texto: '📱 *O Sistema*\n\nJin-Woo acorda num hospital.\n\nMas algo mudou. Há uma interface flutuante à sua frente!\n\n┌─────────────────────┐\n│ STATUS               │\n│ Level: 1             │\n│ HP: 100/100          │\n│ STR: 10  DEX: 10    │\n│ INT: 10  VIT: 10    │\n│ Percepção: 10        │\n└─────────────────────┘\n\n"Que... que é isto?"\n\n> 📱 *O Sistema escolheu Jin-Woo!*\n> ⭐ *A partir de agora... tudo muda.*', xp: 150, coins: 500, skill: 'O Sistema' },
+    ],
+    recompensas: { xp: 500, coins: 1200, title: 'Player', skill: 'O Sistema' },
+  },
+  // ═══ ARCO 2: TREINO E PRIMEIRO PORTÃO (Cap 2-3) ═══════════
+  {
+    id: 'sl_ch02', titulo: 'A Missão Diária — Treino ou Morte',
+    descricao: 'O Sistema exige treino diário. Falhar = morte. Jin-Woo transforma-se.',
+    nivel: 11, xp: 200, coins: 500,
+    nodes: [
+      { id: 's2_01', texto: '🏋️ *Missão Diária*\n\n┌─────────────────────────┐\n│ MISSÃO DIÁRIA           │\n│ Flexões: 100            │\n│ Abdominais: 100         │\n│ Agachamentos: 100       │\n│ Correr: 10km            │\n│                         │\n│ Prazo: 24 horas         │\n│ Penalidade: MORTE       │\n└─────────────────────────┘\n\n"SE EU FALHAR... MORRO?!"\n\nJin-Woo treina até desmaiar.', xp: 80, coins: 200 },
+      { id: 's2_02', texto: '🏋️ *O Corpo Muda*\n\nDepois de semanas de treino brutal...\n\nO corpo de Jin-Woo transforma-se!\n\nMúsculos. Velocidade. Força.\n\n"Eu sou... mais forte?"\n\nO E-Rank agora é mais forte que um C-Rank!', xp: 120, coins: 300 },
+      { id: 's2_03', texto: '🚪 *Primeiro Portão Solo — Rank E*\n\nJin-Woo entra num portão sozinho!\n\nGoblins. Aranhas. Lobos.\n\nMas agora... ele é diferente!\n\n"EU VOU MATAR TODOS!"\n\n*SLASH SLASH SLASH!*\n\nNível subiu! 1 → 5!', xp: 150, coins: 400, title: 'Caçador Solo' },
+      { id: 's2_04', texto: '⬆️ *Level Up!*\n\n┌─────────────────────┐\n│ LEVEL UP! 1 → 5     │\n│ HP: 250/250          │\n│ STR: 25  DEX: 25    │\n│ INT: 25  VIT: 25    │\n│ Percepção: 25        │\n└─────────────────────┘\n\nO poder cresce exponencialmente!\n\nCada monstro morto = mais força!\n\n> ⬆️ *O treino mais brutal do mundo está a dar frutos!*', xp: 100, coins: 300 },
+    ],
+    recompensas: { xp: 600, coins: 1500, title: 'Caçador Solo', skill: 'Level Up' },
+  },
+  // ═══ ARCO 3: BLUE VENOM FANG TIGER (Cap 3) ════════════════
+  {
+    id: 'sl_ch03', titulo: 'O Tigre de Veneno Azul',
+    descricao: 'Um portão C. Um boss que devoraria qualquer E-Rank. Mas Jin-Woo já não é E-Rank.',
+    nivel: 13, xp: 300, coins: 800,
+    nodes: [
+      { id: 's3_01', texto: '🐯 *Portão Rank C — Floresta*\n\nJin-Woo entra num portão C para testar o seu poder.\n\nMonstros Rank C caem com um golpe!\n\n"Estes monstros... são fáceis?"\n\nMas no fundo da floresta... algo se move.', xp: 100, coins: 250 },
+      { id: 's3_02', texto: '🐯 *Blue Venom Fang Tiger!*\n\nUm tigre gigante com presas azuis venenosas!\n\nRank B! O boss do portão!\n\n"GRAAAWWWW!"\n\nJin-Woo: "Eu nunca lutei contra um B..."\n\nMas o Sistema mostra: [Vitória: 67%]', boss: {
+        nome: 'Blue Venom Fang Tiger', emoji: '🐯', hp: 2000, atk: 90, def: 40, xp: 400, coins: 800,
+        habilidades: ['Veneno Azul', 'Garra Mortal', 'Rugido Paralisante'],
+        descricao: 'Um boss Rank B. O veneno azul mata em minutos.',
+      }},
+      { id: 's3_03', texto: '🐯 *Jin-Woo vs Blue Venom Tiger!*\n\nO tigre é rápido! O veneno queima!\n\nMas Jin-Woo usa a Adaga de Pedra!\n\n*SLASH!*\n\nO tigre cai!\n\n"Eu... derrotei um boss Rank B?!"\n\n> 🐯 *Primeiro boss Rank B derrotado!*\n> ⬆️ *Level: 15*', xp: 200, coins: 500, item: 'Presa de Veneno Azul' },
+    ],
+    recompensas: { xp: 800, coins: 2000, item: 'Presa de Veneno Azul', title: 'Caçador de Bosses' },
+  },
+  // ═══ ARCO 4: RED GATE (Cap 4) ═════════════════════════════
+  {
+    id: 'sl_ch04', titulo: 'O Portão Vermelho — Elfos do Gelo',
+    descricao: 'Um portão que não fecha. Jin-Woo é preso com um grupo de caçadores fracos.',
+    nivel: 15, xp: 400, coins: 1000,
+    nodes: [
+      { id: 's4_01', texto: '🔴 *Red Gate!*\n\nO portão fica vermelho! Não fecha!\n\n"Estamos presos dentro!"\n\nElfos do gelo atacam! São Rank B!\n\nOs caçadores fracos entram em pânico!\n\nMas Jin-Woo mantém a calma.', xp: 100, coins: 300 },
+      { id: 's4_02', texto: '❄️ *Os Elfos do Gelo*\n\nOs elfos são guerreiros ancestrais!\n\nA sua líder é uma elfa com poderes de gelo!\n\n"Humanos... invadiram o nosso mundo..."\n\nJin-Woo: "Eu não quero lutar. Mas preciso de sair."', xp: 100, coins: 250 },
+      { id: 's4_03', texto: '❄️ *O Líder dos Elfos*\n\nO General dos Elfos aparece!\n\nRank A! O mais forte do portão!\n\n"NINGUÉM sai daqui!"', boss: {
+        nome: 'General dos Elfos do Gelo', emoji: '❄️', hp: 3000, atk: 120, def: 50, xp: 600, coins: 1200,
+        habilidades: ['Lança de Gelo', 'Muralha Glacial', 'Grito do Inverno'],
+        descricao: 'O General dos Elfos do Gelo. Rank A. Controla o gelo.',
+      }},
+      { id: 's4_04', texto: '❄️ *Jin-Woo vs General Elfo!*\n\nO gelo congela tudo!\n\nMas Jin-Woo é mais rápido!\n\n*SLASH! SLASH!*\n\nO General cai!\n\nOs elfos rendem-se!\n\nO portão abre!', xp: 300, coins: 700 },
+      { id: 's4_05', texto: '⬆️ *O Poder Cresce!*\n\nJin-Woo sai do portão. Os outros caçadores olham para ele.\n\n"Quem... é aquele gajo?"\n\nO Sistema mostra:\n┌─────────────────────┐\n│ Level: 25            │\n│ Rank estimado: A     │\n│ Habilidade desbloq:  │\n│ Summon Shadow        │\n└─────────────────────┘\n\n> ⬆️ *Jin-Woo agora é Rank A!*\n> 👤 *Habilidade desbloqueada: Invocar Sombra!*', xp: 200, coins: 500, skill: 'Invocar Sombra' },
+    ],
+    recompensas: { xp: 1000, coins: 2500, skill: 'Invocar Sombra', title: 'Caçador Rank A' },
+  },
+  // ═══ ARCO 5: O CASTELO DEMONÍACO (Cap 5-6) ════════════════
+  {
+    id: 'sl_ch05', titulo: 'O Castelo Demoníaco — Baran',
+    descricao: 'O Sistema revela um calabouço secreto. O Rei Demônio Baran espera no topo.',
+    nivel: 18, xp: 600, coins: 1500,
+    nodes: [
+      { id: 's5_01', texto: '🏰 *O Castelo Demoníaco*\n\nO Sistema revela um calabouço secreto!\n\n"Calabouço Especial desbloqueado!"\n\n100 andares de demónios!\n\nCada andar é mais difícil que o anterior!', xp: 100, coins: 300 },
+      { id: 's5_02', texto: '👹 *Os Demónios*\n\nAndar 1 a 50: demónios Rank C a B.\n\nJin-Woo limpa tudo!\n\nAs suas sombras crescem:\n- Igris (Cavaleiro Sombrio)\n- Tank (Urso Sombrio)\n- Iron (Guerreiro Sombrio)\n\nO exército das sombras começa!', xp: 200, coins: 500 },
+      { id: 's5_03', texto: '⚔️ *Igris — O Cavaleiro Vermelho!*\n\nNo andar 50, um cavaleiro vermelho bloqueia o caminho!\n\nRank S! O guarda-costas de Baran!\n\n"NINGUÉM PASSA!"', boss: {
+        nome: 'Igris, o Cavaleiro Vermelho', emoji: '⚔️', hp: 5000, atk: 180, def: 80, xp: 1000, coins: 2000,
+        habilidades: ['Espada Vermelha', 'Corte Sombrio', 'Carga do Cavaleiro'],
+        descricao: 'O guarda-costas de Baran. Um cavaleiro das trevas.',
+      }},
+      { id: 's5_04', texto: '⚔️ *Jin-Woo vs Igris!*\n\nIgris é incrivelmente rápido!\n\nA espada vermelha corta o ar!\n\nMas Jin-Woo usa as sombras!\n\n"SOMBRA: ARISE!"\n\nIgris é derrotado... e ressuscita como sombra!\n\n"Eu... vou servir-te, Mestre."', xp: 400, coins: 1000, skill: 'Igris (Sombra)' },
+      { id: 's5_05', texto: '👑 *Baran — O Rei Demônio Branco!*\n\nAndar 100. O trono.\n\nBaran. O Rei Demônio.\n\n"Tu... és o novo Monarca?"\n\n"Eu sou Sung Jin-Woo. E eu vou derrotar-te!"', boss: {
+        nome: 'Baran, Rei Demônio', emoji: '👑', hp: 8000, atk: 220, def: 100, xp: 2000, coins: 5000,
+        habilidades: ['Lança de Baran', 'Tempestade de Relâmpagos', 'Exército Demoníaco', 'Dragon Fear'],
+        descricao: 'O Rei Demônio Branco. O chefe final do Castelo Demoníaco.',
+      }},
+      { id: 's5_06', texto: '👑 *Jin-Woo vs Baran — Batalha Final!*\n\nBaran convoca o seu exército!\n\nMas Jin-Woo tem o seu próprio exército!\n\n"SOMBRA: ARISE! ARISE! ARISE!"\n\nDezenas de sombras vs demónios!\n\nJin-Woo avança. Corta Baran ao meio!\n\n"O Rei Demônio... caiu!"', xp: 600, coins: 2000, skill: 'Dragon Fear', title: 'Matador de Reis Demônios' },
+    ],
+    recompensas: { xp: 2500, coins: 6000, skill: 'Exército das Sombras', title: 'Matador de Reis Demônios' },
+  },
+  // ═══ ARCO 6: JEJU ISLAND (Cap 7-8) ════════════════════════
+  {
+    id: 'sl_ch06', titulo: 'A Ilha de Jeju — A Raid Mais Mortal',
+    descricao: 'Formigas gigantes evoluíram. A Coreia, o Japão e os EUA unem-se para a raid.',
+    nivel: 22, xp: 800, coins: 2000,
+    nodes: [
+      { id: 's6_01', texto: '🐜 *A Ameaça das Formigas*\n\nNa Ilha de Jeju, formigas gigantes evoluíram!\n\nSão Rank A a S! Milhares delas!\n\nA Coreia convoca os melhores caçadores!\n\nJin-Woo é convidado... mas os outros não confiam nele.', xp: 150, coins: 400 },
+      { id: 's6_02', texto: '🐜 *A Raid Começa!*\n\nEquipes entram na ilha!\n\nFormigas por todo o lado!\n\nMas Jin-Woo limpa tudo sozinho!\n\n"As formigas... são fáceis para mim?"\n\nOs outros caçadores ficam em choque!', xp: 200, coins: 500 },
+      { id: 's6_03', texto: '👑 *A Rainha das Formigas!*\n\nA Rainha aparece! Rank S!\n\nEla controla todas as formigas!\n\n"Humanos... são a minha comida!"', boss: {
+        nome: 'Rainha das Formigas', emoji: '👑', hp: 6000, atk: 200, def: 90, xp: 1500, coins: 3000,
+        habilidades: ['Controle de Formigas', 'Rainha Hive Mind', 'Evolução Rápida'],
+        descricao: 'A Rainha das Formigas de Jeju. Controla milhares de formigas.',
+      }},
+      { id: 's6_04', texto: '👑 *O Rei das Formigas!*\n\nA Rainha é derrotada... mas o Rei aparece!\n\nRank SSS! O monstro mais forte já visto!\n\n"Eu sou o Rei... e este mundo é meu!"', boss: {
+        nome: 'Rei das Formigas', emoji: '🐜', hp: 12000, atk: 300, def: 120, xp: 3000, coins: 8000,
+        habilidades: ['Telepatia', 'Destruição Massiva', 'Exército de Formigas', 'Evolução Final'],
+        descricao: 'O Rei das Formigas. Rank SSS. Quase invencível.',
+      }},
+      { id: 's6_05', texto: '🐜 *Jin-Woo vs Rei das Formigas!*\n\nA batalha mais difícil até agora!\n\nO Rei é rápido demais!\n\nMas Jin-Woo usa Igris + o exército das sombras!\n\n"SOMBRA: ARISE!"\n\nO Rei cai! E torna-se sombra!\n\n> 🐜 *Jeju Island salva!*\n> ⭐ *Jin-Woo é o caçador mais forte da Coreia!*\n> 👤 *Exército: 130 sombras!*', xp: 800, coins: 3000, skill: 'Rei das Sombras', title: 'Caçador Nacional' },
+    ],
+    recompensas: { xp: 3500, coins: 10000, skill: 'Rei das Sombras', title: 'Caçador Nacional' },
+  },
+  // ═══ ARCO 7: THOMAS ANDRE (Cap 9-10) ═══════════════════════
+  {
+    id: 'sl_ch07', titulo: 'O Caçador Nacional dos EUA — Thomas Andre',
+    descricao: 'O caçador mais forte dos EUA desafia Jin-Woo. A rivalidade explode.',
+    nivel: 26, xp: 1000, coins: 2500,
+    nodes: [
+      { id: 's7_01', texto: '🇺🇸 *Thomas Andre — O Gigante dos EUA!*\n\n"Tu és o famoso coreano? Mostre-me o que tens!"\n\nThomas Andre. Rank Nacional. O mais forte dos EUA.\n\nEle não respeita ninguém.\n\nJin-Woo: "Tu não me provoques."', falante: 'Thomas Andre' },
+      { id: 's7_02', texto: '💪 *Jin-Woo vs Thomas Andre!*\n\nO combate destrói um edifício inteiro!\n\nThomas é forte... mas Jin-Woo é mais!\n\n"SOMBRA: ARISE!"\n\nThomas é derrotado!\n\n"Impossível... eu sou o mais forte...!"', boss: {
+        nome: 'Thomas Andre', emoji: '💪', hp: 10000, atk: 280, def: 110, xp: 2500, coins: 6000,
+        habilidades: ['Super Strength', 'Titan Mode', 'Regeneração', 'National Level'],
+        descricao: 'O caçador mais forte dos EUA. National Level Hunter.',
+      }},
+      { id: 's7_03', texto: '🏆 *O Mais Forte do Mundo!*\n\nA notícia espalha-se:\n\n"Um coreano derrotou Thomas Andre!"\n\nO mundo inteiro conhece o nome:\n\nSUNG JIN-WOO.\n\n> 🏆 *Jin-Woo é reconhecido mundialmente!*\n> ⭐ *Mas a verdadeira ameaça está a chegar...*', xp: 500, coins: 1500, title: 'Caçador de Classe Nacional' },
+    ],
+    recompensas: { xp: 3000, coins: 8000, title: 'Caçador de Classe Nacional' },
+  },
+  // ═══ ARCO 8: OS MONARCAS (Cap 11-13) ═══════════════════════
+  {
+    id: 'sl_ch08', titulo: 'Os Monarcas — A Guerra Dimensional',
+    descricao: 'Os Monarcas de outras dimensões invadem a Terra. Jin-Woo descobre o seu destino.',
+    nivel: 30, xp: 1500, coins: 4000,
+    nodes: [
+      { id: 's8_01', texto: '🌀 *A Invasão Começa!*\n\nPortões se abrem por todo o mundo!\n\nMonarcas de outras dimensões invadem!\n\n- Monarca das Bestas\n- Monarca do Gelo\n- Monarca das Chamas\n\n"Este mundo... vai ser nosso!"', xp: 200, coins: 500 },
+      { id: 's8_02', texto: '👤 *O Arquiteto Revela a Verdade!*\n\nO Arquiteto do Sistema aparece!\n\n"Jin-Woo... tu és o sucessor do Monarca das Sombras!"\n\n"O teu pai... era o Monarca anterior!"\n\n"O Sistema foi criado para te preparar!"', falante: 'Arquiteto' },
+      { id: 's8_03', texto: '⚔️ *O Monarca das Bestas!*\n\nO primeiro Monarca ataca!\n\nRank Nacional x 10! Poder incompreensível!\n\n"Humanos são insetos para mim!"', boss: {
+        nome: 'Monarca das Bestas', emoji: '🦁', hp: 15000, atk: 350, def: 150, xp: 4000, coins: 10000,
+        habilidades: ['Controle de Bestas', 'Fúria Primitiva', 'Exército Animal', 'Roar Dimensional'],
+        descricao: 'O Monarca das Bestas. Controla criaturas de 100 dimensões.',
+      }},
+      { id: 's8_04', texto: '🦁 *Jin-Woo vs Monarca das Bestas!*\n\nO exército das sombras vs o exército animal!\n\nMilhares de soldados de cada lado!\n\nJin-Woo avança. Corta o Monarca!\n\n"SOMBRA: ARISE!"\n\nO Monarca... torna-se sombra!', xp: 800, coins: 2000 },
+      { id: 's8_05', texto: '⚡ *O Monarca das Chamas!*\n\nO segundo Monarca aparece!\n\nFogo que destrói cidades inteiras!\n\n"Eu vou queimar este mundo até às cinzas!"', boss: {
+        nome: 'Monarca das Chamas', emoji: '🔥', hp: 18000, atk: 400, def: 140, xp: 5000, coins: 12000,
+        habilidades: ['Chama Eterna', 'Ocean de Fogo', 'Explosão Solar', 'Exército de Fogo'],
+        descricao: 'O Monarca das Chamas. O fogo que consome mundos.',
+      }},
+      { id: 's8_06', texto: '🔥 *Jin-Woo vs Monarca das Chamas!*\n\nO fogo queima tudo!\n\nMas Jin-Woo usa as sombras para se proteger!\n\n"SOMBRA: DOME!"\n\nA sombra bloqueia o fogo!\n\nJin-Woo avança e corta!\n\n"Os Monarcas... não são invencíveis!"', xp: 1000, coins: 3000 },
+      { id: 's8_07', texto: '❄️ *O Monarca do Gelo!*\n\nO terceiro Monarca congela o mundo!\n\nTemperatura: -200°C!\n\n"Este mundo vai ser o meu trono de gelo!"', boss: {
+        nome: 'Monarca do Gelo', emoji: '❄️', hp: 20000, atk: 380, def: 160, xp: 5000, coins: 12000,
+        habilidades: ['Zero Absoluto', 'Glaciar Eterno', 'Exército de Gelo', 'Congelamento Total'],
+        descricao: 'O Monarca do Gelo. O frio que congela o tempo.',
+      }},
+      { id: 's8_08', texto: '❄️ *Jin-Woo vs Monarca do Gelo!*\n\nO frio congela as sombras!\n\nMas Jin-Woo aquece com o poder do Monarca das Chamas!\n\n"Eu absorvi o teu poder!"\n\nFogo vs Gelo!\n\nO Monarca do Gelo... derrete!', xp: 1000, coins: 3000 },
+      { id: 's8_09', texto: '👤 *O Monarca das Sombras Desperta!*\n\nJin-Woo absorveu os poderes dos 3 Monarcas!\n\nO corpo brilha de poder!\n\n"EU SOU O MONARCA DAS SOMBRAS!"\n\nO exército das sombras: 10.000 soldados!\n\n> 👤 *Sung Jin-Woo é o Monarca das Sombras!*\n> ⭐ *O poder supremo foi alcançado!*', xp: 2000, coins: 5000, title: 'Monarca das Sombras', skill: 'Exército de 10.000 Sombras' },
+    ],
+    recompensas: { xp: 8000, coins: 25000, title: 'Monarca das Sombras', skill: 'Exército de 10.000 Sombras' },
+  },
+  // ═══ ARCO 9: ANTARES — O REI DOS DRAGÕES (Cap 14-15) ═══════
+  {
+    id: 'sl_ch09', titulo: 'Antares — O Rei dos Dragões',
+    descricao: 'O Monarca mais forte. O dragão que destrói mundos. A batalha final.',
+    nivel: 40, xp: 3000, coins: 8000,
+    nodes: [
+      { id: 's9_01', texto: '🐉 *A Última Invasão!*\n\nO céu parte-se ao meio!\n\nUm dragão colossal aparece!\n\nANTARES — O Rei dos Dragões!\n\nO Monarca mais forte de todas as dimensões!\n\n"Este mundo... vai ser a minha última conquista."', falante: 'Antares' },
+      { id: 's9_02', texto: '🐉 *O Poder de Antares!*\n\nAntares destrói uma cidade inteira com o sopro!\n\nOs caçadores mais fortes do mundo não conseguem fazer nada!\n\nThomas Andre: "Ele é... impossível..."\n\nSó Jin-Woo pode pará-lo!', xp: 300, coins: 800 },
+      { id: 's9_03', texto: '🐉 *Jin-Woo vs Antares — A BATALHA FINAL!*\n\n10.000 sombras vs o exército de dragões!\n\nJin-Woo voa nas costas do dragão sombrio!\n\n"SOMBRA: ARISE!"\n\nMas Antares é forte demais!\n\n"EU SOU O REI DOS DRAGÕES! NINGUÉM ME DERROTA!"', boss: {
+        nome: 'Antares, Rei dos Dragões', emoji: '🐉', hp: 30000, atk: 500, def: 200, xp: 10000, coins: 30000,
+        habilidades: ['Sopro Destruidor', 'Voo Supremo', 'Exército de Dragões', 'Breath of Destruction', 'Dragon Fear Supremo'],
+        descricao: 'O Monarca mais forte. O Rei dos Dragões. O fim de todos os mundos.',
+      }},
+      { id: 's9_04', texto: '🐉 *O Golpe Final!*\n\nJin-Woo reúne todo o seu poder!\n\nTodas as sombras! Todos os Monarcas absorvidos!\n\n"ANTARES! ESTA É A MINHA PROMESSA!"\n\n"SOMBRA: ARRIIIIISE!"\n\nO exército das sombras avança!\n\nJin-Woo perfura Antares com a Espada do Monarca!\n\n*EXPLOSAO DIMENSIONAL!*\n\nAntares cai!\n\n> 🐉 *ANTARES DERROTADO!*\n> 🏆 *A GUERRA DIMENSIONAL ACABOU!*\n> 👤 *Jin-Woo é o Monarca Supremo!*', xp: 5000, coins: 15000, title: 'Monarca Supremo', item: 'Espada de Antares' },
+      { id: 's9_05', texto: '🌅 *O Novo Mundo!*\n\nA guerra acabou. Os portões fecham.\n\nJin-Woo olha para o céu.\n\n"Pai... eu cumpri a tua missão."\n\nO mundo é livre. Os Monarcas foram derrotados.\n\nJin-Woo sorri.\n\n"Eu era o caçador mais fraco do mundo..."\n"...e agora sou o mais forte."\n\n> 🌅 *FIM — Solo Leveling completo!*\n> 🏆 *Sung Jin-Woo — O Monarca das Sombras!*\n> ⭐ *Do zero ao absoluto.*', xp: 3000, coins: 10000, title: 'Lenda Suprema' },
+    ],
+    recompensas: { xp: 15000, coins: 40000, title: 'Monarca Supremo', item: 'Espada de Antares', skill: 'Poder Absoluto' },
+  },
+];
+
+WORLDS.sololeveling.capitulos = SOLOLEVELING_CHAPTERS.length;
+
+// Atualizar _getChapters
+function _getChapters(worldId) {
+  const map = { naruto: NARUTO_CHAPTERS, onepiece: ONEPIECE_CHAPTERS, sololeveling: SOLOLEVELING_CHAPTERS };
+  return map[worldId] || [];
+}
+
