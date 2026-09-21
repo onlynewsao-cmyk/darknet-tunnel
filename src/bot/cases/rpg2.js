@@ -446,16 +446,33 @@ module.exports = function registerRPG2(registerCase) {
     // havia um savePlayer(p) com `p` inexistente. Além disso o `if`
     // sem chavetas fazia o return correr SEMPRE — o ranking nunca
     // aparecia, mesmo com jogadores.
+    // v9.22: quando o cache está vazio (após restart), consulta o MongoDB
+    // directamente — senão o ranking aparece sempre vazio.
+    let sorted = [];
     const fonte = rpg._cache || rpg._players || new Map();
-    const sorted = [...fonte.entries()]
-      .sort((a, b) => (b[1]?.level || 0) - (a[1]?.level || 0) || (b[1]?.kills || 0) - (a[1]?.kills || 0))
-      .slice(0, 10);
+    if (fonte.size > 0) {
+      sorted = [...fonte.entries()]
+        .sort((a, b) => (b[1]?.level || 0) - (a[1]?.level || 0) || (b[1]?.kills || 0) - (a[1]?.kills || 0))
+        .slice(0, 10);
+    }
+    if (!sorted.length) {
+      try {
+        const RPGPlayer = require('../../database/models/RPGPlayer');
+        const tops = await RPGPlayer.find({})
+          .sort({ level: -1, kills: -1 })
+          .limit(10)
+          .lean();
+        if (tops?.length) {
+          sorted = tops.map(p => [p.whatsappNumber, p]);
+        }
+      } catch {}
+    }
     if (!sorted.length) {
       return tReply(sock, msg, ctx, '🏆 RANKING', ['🏆 Sem jogadores ainda!']);
     }
     const lines = sorted.map(([id, p], i) => {
       const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`;
-      return `${medal} *${p.name}* — Nv.${p.level} ⚔️${p.kills} 💀${p.deaths}`;
+      return `${medal} *${p.name || 'Aventureiro'}* — Nv.${p.level || 1} ⚔️${p.kills || 0} 💀${p.deaths || 0}`;
     });
     // v6.62: o `p` aqui era o do .map() acima, já fora de escopo.
     // Um ranking não grava nada — só lista.
