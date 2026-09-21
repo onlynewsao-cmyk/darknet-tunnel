@@ -191,19 +191,20 @@ module.exports = function registerRPG2(registerCase) {
     return tReply(sock, msg, ctx, quest.titulo, linhas);
   }, true);
 
-  // ═══ MODO HISTÓRIA ÉPICO (v10.0) ═══
+  // ═══ MODO HISTORIA v11 — COM CARROSSEL, TESTES, EVOLUCAO ═══
   registerCase(['historia', 'story', 'mundo', 'worlds', 'mundos'], async ({ sock, msg, ctx, args }) => {
     const storyMode = require('../rpg/storyMode');
     const p = await rpg.getPlayer(ctx.senderNumber);
-
-    // Sem argumentos → listar mundos
-    if (!args[0]) {
-      return storyMode.listarMundos(sock, msg, ctx);
-    }
-
-    // Com argumento → entrar num mundo específico
+    if (!args[0]) return storyMode.listarMundos(sock, msg, ctx);
     const worldId = args[0].toLowerCase();
+    if (worldId === 'status') return storyMode.mostrarStatus(sock, msg, ctx);
     return storyMode.jogarMundo(sock, msg, ctx, worldId);
+  }, true);
+
+  // ═══ STATUS RPG COMPLETO (v11) ═══
+  registerCase(['status', 'stats', 'mystatus'], async ({ sock, msg, ctx }) => {
+    const storyMode = require('../rpg/storyMode');
+    return storyMode.mostrarStatus(sock, msg, ctx);
   }, true);
 
   // ═══ COMBATE INTERACTIVO (v9.23 — com botões!) ═══

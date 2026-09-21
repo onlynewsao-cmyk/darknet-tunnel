@@ -1,17 +1,14 @@
 'use strict';
 /**
  * ╔══════════════════════════════════════════════════════════════════╗
- * ║   DARK BOT — RPG STORY MODE v10.0                               ║
- * ║   Modo História ÉPICO com mundos de anime completos              ║
- * ║                                                                   ║
- * ║   MUNDOS: Naruto | One Piece | Solo Leveling | Jujutsu Kaisen   ║
- * ║           Dragon Ball | Demon Slayer | Devil May Cry | Bleach    ║
- * ║                                                                   ║
- * ║   Cada mundo: 20-40 capítulos, boss fights, escolhas, loot,     ║
- * ║   cutscenes, diálogos com NPCs, transformações, recompensas     ║
+ * ║   DARK BOT — RPG STORY MODE v11.0                               ║
+ * ║   Carrossel de Mundos | Teste de Iniciante | Evolução            ║
+ * ║   Status por Jogador | Imagens Reais | 8 Mundos de Anime         ║
  * ╚══════════════════════════════════════════════════════════════════╝
  */
 
+const fs = require('fs');
+const path = require('path');
 const rpg = require('./engine');
 const combat = require('./combat');
 const config = require('../../config');
@@ -19,93 +16,205 @@ const config = require('../../config');
 const R = (a, b) => Math.floor(Math.random() * (b - a + 1)) + a;
 const P = (a) => a[Math.floor(Math.random() * a.length)];
 
+const IMAGES_DIR = path.join(__dirname, 'images');
+
 // ══════════════════════════════════════════════════════════════
-// CATÁLOGO DE MUNDOS
+// CATÁLOGO DE MUNDOS — COM TESTES DE INICIANTE
 // ══════════════════════════════════════════════════════════════
 const WORLDS = {
   naruto: {
-    id: 'naruto', emoji: '🍥', name: 'Naruto',
+    id: 'naruto', emoji: '\u{1f363}', name: 'Naruto',
     desc: 'O mundo dos shinobis. Chakra, Jutsus e o Caminho Ninja.',
-    cor: '#FF6B00',
-    nivelMin: 1,
-    capitulos: 0, // será atualizado
+    cor: '#FF6B00', nivelMin: 1, capitulos: 0,
     recompensaFinal: { item: 'Rasengan Absoluto', title: 'Hokage', xp: 5000, coins: 10000 },
+    image: 'naruto.jpg',
+    teste: {
+      titulo: '\u{1f363} Teste do Shinobi',
+      descricao: 'Prova que conheces o mundo ninja de Konoha!',
+      perguntas: [
+        { q: 'Quem é o sensei da Equipe 7?', opcoes: ['Kakashi Hatake', 'Iruka Umino', 'Jiraiya', 'Asuma Sarutobi'], correta: 0 },
+        { q: 'Qual é o jutsu de assinatura de Naruto?', opcoes: ['Chidori', 'Rasengan', 'Sharingan', 'Byakugan'], correta: 1 },
+        { q: 'Quantas caudas tem a Kyuubi?', opcoes: ['7', '8', '9', '10'], correta: 2 },
+        { q: 'Quem é o líder da Akatsuki?', opcoes: ['Orochimaru', 'Pain', 'Madara', 'Obito'], correta: 1 },
+      ],
+    },
+    evolucoes: [
+      { nivel: 0, titulo: 'Academia Ninja', emoji: '\u{1f393}' },
+      { nivel: 3, titulo: 'Genin', emoji: '\u{1f343}' },
+      { nivel: 5, titulo: 'Chuunin', emoji: '\u2694\uFE0F' },
+      { nivel: 7, titulo: 'Jounin', emoji: '\u{1f525}' },
+      { nivel: 10, titulo: 'Hokage', emoji: '\u{1f363}' },
+    ],
   },
   onepiece: {
-    id: 'onepiece', emoji: '🏴‍☠️', name: 'One Piece',
+    id: 'onepiece', emoji: '\u{1f3f4}\u200D\u2620\uFE0F', name: 'One Piece',
     desc: 'Grand Line espera. Haki, Akuma no Mi e o Rei dos Piratas.',
-    cor: '#E60012',
-    nivelMin: 5,
-    capitulos: 0,
+    cor: '#E60012', nivelMin: 5, capitulos: 0,
     recompensaFinal: { item: 'Gomu Gomu no Mi Awakened', title: 'Rei dos Piratas', xp: 8000, coins: 15000 },
+    image: 'onepiece.jpg',
+    teste: {
+      titulo: '\u{1f3f4}\u200D\u2620\uFE0F Teste do Pirata',
+      descricao: 'Prova que estás pronto para a Grand Line!',
+      perguntas: [
+        { q: 'Navio dos Chapéu de Palha?', opcoes: ['Thousand Sunny', 'Going Merry', 'Oro Jackson', 'Red Force'], correta: 1 },
+        { q: 'O cozinheiro dos Chapéu de Palha?', opcoes: ['Zoro', 'Sanji', 'Usopp', 'Brook'], correta: 1 },
+        { q: 'O que é o Haki?', opcoes: ['Fruta do diabo', 'Poder espiritual', 'Técnica de espada', 'Tipo de navio'], correta: 1 },
+        { q: 'Quem é o Rei dos Piratas?', opcoes: ['Luffy', 'Shanks', 'Gol D. Roger', 'Barba Branca'], correta: 2 },
+      ],
+    },
+    evolucoes: [
+      { nivel: 0, titulo: 'Pirata Iniciante', emoji: '\u26F5' },
+      { nivel: 3, titulo: 'Pirata East Blue', emoji: '\u{1f30a}' },
+      { nivel: 6, titulo: 'Supernova', emoji: '\u2B50' },
+      { nivel: 10, titulo: 'Yonkou', emoji: '\u{1f451}' },
+      { nivel: 18, titulo: 'Rei dos Piratas', emoji: '\u{1f3f4}\u200D\u2620\uFE0F' },
+    ],
   },
   sololeveling: {
-    id: 'sololeveling', emoji: '⚔️', name: 'Solo Leveling',
-    desc: 'O Sistema escolheu-te. Portões, Monstro e Monarca das Sombras.',
-    cor: '#7B2FBE',
-    nivelMin: 10,
-    capitulos: 0,
+    id: 'sololeveling', emoji: '\u2694\uFE0F', name: 'Solo Leveling',
+    desc: 'O Sistema escolheu-te. Portões, Monstros e Monarca das Sombras.',
+    cor: '#7B2FBE', nivelMin: 10, capitulos: 0,
     recompensaFinal: { item: 'Arma do Monarca', title: 'Monarca das Sombras', xp: 10000, coins: 20000 },
+    image: 'sololeveling.jpg',
+    teste: {
+      titulo: '\u2694\uFE0F Teste do Caçador',
+      descricao: 'O Sistema vai testar os teus reflexos!',
+      perguntas: [
+        { q: 'Rank inicial de Jin-Woo?', opcoes: ['D', 'C', 'E', 'B'], correta: 2 },
+        { q: 'O que é o "Arise"?', opcoes: ['Uma espada', 'Invocar sombras', 'Um portal', 'Cura'], correta: 1 },
+        { q: 'Quem é o Rei dos Dragões?', opcoes: ['Igris', 'Baran', 'Antares', 'Thomas Andre'], correta: 2 },
+        { q: 'O que o Sistema obriga Jin-Woo a fazer?', opcoes: ['Meditar', 'Treinar', 'Dormir', 'Comer'], correta: 1 },
+      ],
+    },
+    evolucoes: [
+      { nivel: 0, titulo: 'Rank E', emoji: '\u{1f480}' },
+      { nivel: 3, titulo: 'Rank C', emoji: '\u2694\uFE0F' },
+      { nivel: 5, titulo: 'Rank A', emoji: '\u{1f525}' },
+      { nivel: 7, titulo: 'Rank S', emoji: '\u26A1' },
+      { nivel: 9, titulo: 'Monarca das Sombras', emoji: '\u{1f464}' },
+    ],
   },
   jjk: {
-    id: 'jjk', emoji: '👁️', name: 'Jujutsu Kaisen',
+    id: 'jjk', emoji: '\u{1f441}\uFE0F', name: 'Jujutsu Kaisen',
     desc: 'Maldições, Domínios e o Infinito. O mundo das trevas.',
-    cor: '#2D1B69',
-    nivelMin: 15,
-    capitulos: 0,
+    cor: '#2D1B69', nivelMin: 15, capitulos: 0,
     recompensaFinal: { item: 'Olho de Sukuna', title: 'Feiticeiro Especial', xp: 12000, coins: 25000 },
+    image: 'jjk.jpg',
+    teste: {
+      titulo: '\u{1f441}\uFE0F Teste do Feiticeiro',
+      descricao: 'Prova que podes enfrentar maldições!',
+      perguntas: [
+        { q: 'Professor de Yuji?', opcoes: ['Nanami', 'Gojo', 'Todo', 'Megumi'], correta: 1 },
+        { q: 'O que é um Domínio?', opcoes: ['Técnica de cura', 'Espaço de combate supremo', 'Uma arma', 'Tipo de maldição'], correta: 1 },
+        { q: 'Técnica de Gojo?', opcoes: ['Infinity', 'Cleave', 'Idle Transfiguration', 'Dismantle'], correta: 0 },
+        { q: 'Rei das Maldições?', opcoes: ['Mahito', 'Sukuna', 'Kenjaku', 'Jogo'], correta: 1 },
+      ],
+    },
+    evolucoes: [
+      { nivel: 0, titulo: 'Grau 4', emoji: '\u{1f4d6}' },
+      { nivel: 3, titulo: 'Grau 2', emoji: '\u2694\uFE0F' },
+      { nivel: 6, titulo: 'Grau 1', emoji: '\u{1f525}' },
+      { nivel: 8, titulo: 'Especial', emoji: '\u{1f441}\uFE0F' },
+      { nivel: 10, titulo: 'Nível Gojo', emoji: '\u267E\uFE0F' },
+    ],
   },
   dragonball: {
-    id: 'dragonball', emoji: '🐉', name: 'Dragon Ball',
+    id: 'dragonball', emoji: '\u{1f409}', name: 'Dragon Ball',
     desc: 'Ki, Transformações e o Universo em jogo. Além dos limites.',
-    cor: '#FF9500',
-    nivelMin: 20,
-    capitulos: 0,
+    cor: '#FF9500', nivelMin: 20, capitulos: 0,
     recompensaFinal: { item: 'Esfera do Dragão Dourada', title: 'Guerreiro Lendário', xp: 15000, coins: 30000 },
+    image: 'dragonball.jpg',
+    teste: {
+      titulo: '\u{1f409} Teste do Guerreiro Z',
+      descricao: 'Prova que tens Ki suficiente!',
+      perguntas: [
+        { q: 'Planeta natal de Goku?', opcoes: ['Namek', 'Terra', 'Vegeta', 'Kaioshin'], correta: 2 },
+        { q: 'Quem derrotou Cell?', opcoes: ['Goku', 'Vegeta', 'Gohan', 'Trunks'], correta: 2 },
+        { q: 'O que é o Ultra Instinto?', opcoes: ['Transformação Saiyajin', 'Corpo move-se sozinho', 'Técnica de cura', 'Um Kaioken'], correta: 1 },
+        { q: 'Quantas esferas do dragão existem?', opcoes: ['5', '6', '7', '10'], correta: 2 },
+      ],
+    },
+    evolucoes: [
+      { nivel: 0, titulo: 'Humano', emoji: '\u{1f9d1}' },
+      { nivel: 3, titulo: 'Saiyajin', emoji: '\u26A1' },
+      { nivel: 5, titulo: 'Super Saiyajin', emoji: '\u{1f49b}' },
+      { nivel: 7, titulo: 'SSJ Blue', emoji: '\u{1f499}' },
+      { nivel: 10, titulo: 'Ultra Instinto', emoji: '\u26AA' },
+    ],
   },
   demonslayer: {
-    id: 'demonslayer', emoji: '🗡️', name: 'Demon Slayer',
+    id: 'demonslayer', emoji: '\u{1f5e1}\uFE0F', name: 'Demon Slayer',
     desc: 'Respirações, Demônios e o Juramento do Hashira.',
-    cor: '#1a1a2e',
-    nivelMin: 8,
-    capitulos: 0,
+    cor: '#1a1a2e', nivelMin: 8, capitulos: 0,
     recompensaFinal: { item: 'Espada Nichirin Dourada', title: 'Hashira Supremo', xp: 9000, coins: 18000 },
+    image: 'demonslayer.jpg',
+    teste: {
+      titulo: '\u{1f5e1}\uFE0F Teste do Caçador',
+      descricao: 'Prova que podes empunhar uma Nichirin!',
+      perguntas: [
+        { q: 'Respiração de Tanjiro?', opcoes: ['Fogo', 'Água', 'Trovão', 'Vento'], correta: 1 },
+        { q: 'Progenitor dos demónios?', opcoes: ['Kokushibo', 'Muzan', 'Akaza', 'Daki'], correta: 1 },
+        { q: 'O que é um Hashira?', opcoes: ['Um demónio', 'Pilar — guerreiro supremo', 'Uma espada', 'Uma técnica'], correta: 1 },
+        { q: 'Fraqueza dos demónios?', opcoes: ['Água', 'Fogo', 'Luz solar', 'Espadas'], correta: 2 },
+      ],
+    },
+    evolucoes: [
+      { nivel: 0, titulo: 'Iniciante', emoji: '\u{1f331}' },
+      { nivel: 3, titulo: 'Caçador', emoji: '\u2694\uFE0F' },
+      { nivel: 5, titulo: 'Hashira', emoji: '\u{1f525}' },
+      { nivel: 7, titulo: 'Hashira Supremo', emoji: '\u{1f5e1}\uFE0F' },
+      { nivel: 9, titulo: 'Lenda', emoji: '\u2728' },
+    ],
   },
   dmc: {
-    id: 'dmc', emoji: '😈', name: 'Devil May Cry',
+    id: 'dmc', emoji: '\u{1f608}', name: 'Devil May Cry',
     desc: 'Dante, demônios e estilo. O sangue de Sparda corre em ti.',
-    cor: '#8B0000',
-    nivelMin: 12,
-    capitulos: 0,
+    cor: '#8B0000', nivelMin: 12, capitulos: 0,
     recompensaFinal: { item: 'Rebellion Awakened', title: 'Filho de Sparda', xp: 11000, coins: 22000 },
+    image: 'dmc.jpg',
+    teste: {
+      titulo: '\u{1f608} Teste do Caçador de Demónios',
+      descricao: 'Prova que tens estilo SSS!',
+      perguntas: [
+        { q: 'Irmão gémeo de Dante?', opcoes: ['Nero', 'Vergil', 'Sparda', 'Mundus'], correta: 1 },
+        { q: 'Espada de Dante?', opcoes: ['Yamato', 'Rebellion', 'Force Edge', 'Alastor'], correta: 1 },
+        { q: 'O que é o Devil Trigger?', opcoes: ['Uma arma', 'Transformação demoníaca', 'Técnica de cura', 'Um combo'], correta: 1 },
+        { q: 'Estilo mais icónico de Dante?', opcoes: ['Trickster', 'Swordmaster', 'Royalguard', 'Gunslinger'], correta: 1 },
+      ],
+    },
+    evolucoes: [
+      { nivel: 0, titulo: 'Humano', emoji: '\u{1f9d1}' },
+      { nivel: 3, titulo: 'Meio-Demónio', emoji: '\u{1f608}' },
+      { nivel: 5, titulo: 'Devil Hunter', emoji: '\u2694\uFE0F' },
+      { nivel: 7, titulo: 'Filho de Sparda', emoji: '\u{1f525}' },
+      { nivel: 9, titulo: 'Estilo SSS', emoji: '\u{1f48e}' },
+    ],
   },
   bleach: {
-    id: 'bleach', emoji: '👻', name: 'Bleach',
-    desc: 'Zanpakutō, Soul Society e o poder dos Quincy.',
-    cor: '#FF4500',
-    nivelMin: 18,
-    capitulos: 0,
+    id: 'bleach', emoji: '\u{1f47b}', name: 'Bleach',
+    desc: 'Zanpakuto, Soul Society e o poder dos Quincy.',
+    cor: '#FF4500', nivelMin: 18, capitulos: 0,
     recompensaFinal: { item: 'Zangetsu Final', title: 'Shinigami Capitão', xp: 13000, coins: 27000 },
+    image: 'bleach.jpg',
+    teste: {
+      titulo: '\u{1f47b} Teste do Shinigami',
+      descricao: 'Prova que podes proteger Soul Society!',
+      perguntas: [
+        { q: 'Zanpakuto de Ichigo?', opcoes: ['Senbonzakura', 'Zangetsu', 'Kyoka Suigetsu', 'Hyourinmaru'], correta: 1 },
+        { q: 'O que é o Bankai?', opcoes: ['Forma selada', 'Libertação final da Zanpakuto', 'Técnica de cura', 'Tipo de Hollow'], correta: 1 },
+        { q: 'Líder dos Quincy?', opcoes: ['Uryu', 'Yhwach', 'Aizen', 'Grimmjow'], correta: 1 },
+        { q: 'Companhias na Soul Society?', opcoes: ['10', '11', '13', '15'], correta: 2 },
+      ],
+    },
+    evolucoes: [
+      { nivel: 0, titulo: 'Alma', emoji: '\u{1f47b}' },
+      { nivel: 3, titulo: 'Shinigami', emoji: '\u2694\uFE0F' },
+      { nivel: 5, titulo: 'Vice-Capitão', emoji: '\u{1f525}' },
+      { nivel: 7, titulo: 'Capitão', emoji: '\u2B50' },
+      { nivel: 9, titulo: 'Rei Shinigamis', emoji: '\u{1f47b}' },
+    ],
   },
 };
-
-// ══════════════════════════════════════════════════════════════
-// ESTRUTURA DE UM CAPÍTULO
-// ══════════════════════════════════════════════════════════════
-/*
-  Cada capítulo tem:
-  - id: identificador único
-  - titulo: nome do capítulo
-  - descricao: texto narrativo
-  - nodes: array de story nodes
-    - node: { id, texto, falante?, escolhas?, boss?, loot?, xp?, next?, cutscene? }
-  - boss: opcional — boss fight no final
-  - recompensas: xp, coins, items, skills, transforms
-*/
-
-// ══════════════════════════════════════════════════════════════
-// NARUTO — 30 CAPÍTULOS COMPLETOS
-// ══════════════════════════════════════════════════════════════
 const NARUTO_CHAPTERS = [
   // ═══ ARCO 1: ACADEMIA NINJA (Cap 1-3) ═══════════════════════
   {
@@ -329,1047 +438,6 @@ const NARUTO_CHAPTERS = [
   },
 ];
 
-// Atualizar contagem de capítulos
-WORLDS.naruto.capitulos = NARUTO_CHAPTERS.length;
-
-// ══════════════════════════════════════════════════════════════
-// REGISTO DE PROGRESSO DO JOGADOR
-// ══════════════════════════════════════════════════════════════
-// O progresso vive no RPGPlayer.storyProgress:
-// { naruto: { capitulo: 0, node: 'n1_01', completos: [] }, ... }
-
-async function getProgress(p, worldId) {
-  if (!p.storyProgress) p.storyProgress = {};
-  if (!p.storyProgress[worldId]) {
-    p.storyProgress[worldId] = { capitulo: 0, node: null, completos: [] };
-  }
-  return p.storyProgress[worldId];
-}
-
-// ══════════════════════════════════════════════════════════════
-// FUNÇÕES DE UI
-// ══════════════════════════════════════════════════════════════
-
-async function tReply(sock, msg, ctx, title, lines) {
-  const RE = require('../renderEngine');
-  const t = await RE.getTheme(ctx.remoteJid).catch(() => null);
-  return sock.sendMessage(ctx.remoteJid, {
-    text: RE.renderBlock(t, title, lines, { botName: config.bot.name })
-  }, { quoted: msg });
-}
-
-async function enviarBotoes(sock, msg, ctx, corpo, botoes) {
-  try {
-    const { generateWAMessageFromContent, proto } = require('@systemzero/baileys');
-    const m = generateWAMessageFromContent(ctx.remoteJid, {
-      interactiveMessage: proto.Message.InteractiveMessage.fromObject({
-        body: { text: corpo },
-        footer: { text: '📖 RPG Story Mode' },
-        header: { title: '', hasMediaAttachment: false },
-        nativeFlowMessage: {
-          buttons: botoes.map(b => ({
-            name: 'quick_reply',
-            buttonParamsJson: JSON.stringify({ display_text: b.text, id: b.id }),
-          })),
-        },
-      }),
-    }, { userJid: sock.user?.id, quoted: msg });
-    await sock.relayMessage(ctx.remoteJid, m.message, {
-      messageId: m.key.id,
-      additionalNodes: [{ tag: 'biz', attrs: {}, content: [{
-        tag: 'interactive', attrs: { type: 'native_flow', v: '1' },
-        content: [{ tag: 'native_flow', attrs: { v: '9', name: 'mixed' } }],
-      }] }],
-    });
-    return true;
-  } catch { return false; }
-}
-
-async function enviarLista(sock, msg, ctx, titulo, rows, corpo) {
-  try {
-    const { generateWAMessageFromContent, proto } = require('@systemzero/baileys');
-    const m = generateWAMessageFromContent(ctx.remoteJid, {
-      interactiveMessage: proto.Message.InteractiveMessage.fromObject({
-        body: { text: corpo },
-        footer: { text: '📖 RPG Story Mode' },
-        header: { title: '', hasMediaAttachment: false },
-        nativeFlowMessage: {
-          buttons: [{
-            name: 'single_select',
-            buttonParamsJson: JSON.stringify({ title: titulo, sections: [{ title: titulo, rows }] }),
-          }],
-        },
-      }),
-    }, { userJid: sock.user?.id, quoted: msg });
-    await sock.relayMessage(ctx.remoteJid, m.message, {
-      messageId: m.key.id,
-      additionalNodes: [{ tag: 'biz', attrs: {}, content: [{
-        tag: 'interactive', attrs: { type: 'native_flow', v: '1' },
-        content: [{ tag: 'native_flow', attrs: { v: '9', name: 'mixed' } }],
-      }] }],
-    });
-    return true;
-  } catch { return false; }
-}
-
-// ══════════════════════════════════════════════════════════════
-// LISTAR MUNDOS DISPONÍVEIS
-// ══════════════════════════════════════════════════════════════
-
-async function listarMundos(sock, msg, ctx) {
-  const p = await rpg.getPlayer(ctx.senderNumber);
-  const mundoLinhas = [];
-  const rows = [];
-
-  for (const [id, w] of Object.entries(WORLDS)) {
-    const prog = await getProgress(p, id);
-    const capAtual = prog.capitulo || 0;
-    const total = w.capitulos;
-    const pct = total > 0 ? Math.round((capAtual / total) * 100) : 0;
-    const barra = '🟩'.repeat(Math.min(10, Math.round(pct / 10))) + '⬛'.repeat(10 - Math.min(10, Math.round(pct / 10)));
-    const desbloqueado = p.level >= w.nivelMin;
-    const status = !desbloqueado ? `🔒 Nv.${w.nivelMin}` : capAtual >= total ? '✅ COMPLETO' : `${pct}%`;
-
-    mundoLinhas.push(
-      `${w.emoji} *${w.name}* ${status}`,
-      `   ${barra} ${capAtual}/${total} capítulos`,
-      desbloqueado ? '' : `   🔒 Precisas de nível ${w.nivelMin}`,
-      ''
-    );
-
-    if (desbloqueado) {
-      rows.push({
-        title: `${w.emoji} ${w.name}`,
-        description: `${capAtual}/${total} capítulos · ${status}`,
-        id: `STORY_${id}`,
-      });
-    }
-  }
-
-  const corpo = [
-    `📖 *MODO HISTÓRIA*`,
-    `📊 Nível ${p.level} · ${Object.keys(WORLDS).length} mundos`,
-    '',
-    ...mundoLinhas,
-    '> Toca num mundo para jogar! 👇',
-  ].join('\n');
-
-  if (rows.length) {
-    await enviarLista(sock, msg, ctx, '📖 MUNDOS', rows, corpo);
-  } else {
-    await tReply(sock, msg, ctx, '📖 MODO HISTÓRIA', [corpo]);
-  }
-}
-
-// ══════════════════════════════════════════════════════════════
-// JOGAR UM MUNDO
-// ══════════════════════════════════════════════════════════════
-
-async function jogarMundo(sock, msg, ctx, worldId) {
-  const p = await rpg.getPlayer(ctx.senderNumber);
-  const w = WORLDS[worldId];
-  if (!w) return tReply(sock, msg, ctx, '❌', ['Mundo não encontrado.']);
-
-  if (p.level < w.nivelMin) {
-    return tReply(sock, msg, ctx, '🔒 MUNDO BLOQUEADO', [
-      `${w.emoji} *${w.name}*`,
-      `Precisas de nível *${w.nivelMin}* para entrar.`,
-      `Agora tens nível *${p.level}*.`,
-    ]);
-  }
-
-  // Obter capítulos do mundo
-  const chapters = _getChapters(worldId);
-  if (!chapters.length) {
-    return tReply(sock, msg, ctx, `${w.emoji} ${w.name}`, ['📖 Este mundo ainda não tem capítulos.']);
-  }
-
-  const prog = await getProgress(p, worldId);
-  const capIdx = Math.min(prog.capitulo || 0, chapters.length - 1);
-  const chapter = chapters[capIdx];
-
-  // Mostrar capítulo atual
-  return _mostrarCapitulo(sock, msg, ctx, p, w, chapter, capIdx);
-}
-
-
-// ══════════════════════════════════════════════════════════════
-// DRAGON BALL — 15 CAPÍTULOS ÉPICOS
-// ══════════════════════════════════════════════════════════════
-const DRAGONBALL_CHAPTERS = [
-  {
-    id: 'db_ch01', titulo: 'O Rapaz da Cauda',
-    descricao: 'Montanha Paozu. Um rapaz com cauda de macaco vive sozinho ate Bulma aparecer.',
-    nivel: 20, xp: 300, coins: 800,
-    nodes: [
-      { id: 'd1_01', texto: '🐉 *Montanha Paozu*\n\nUm rapaz de 12 anos com cauda vive sozinho. Pesca, treina e come. Muito.\n\n"Eu sou Son Goku!"', falante: 'Goku' },
-      { id: 'd1_02', texto: '🔮 *Bulma e as Esferas do Dragao!*\n\n"EU SOU BULMA! Procuro as 7 Esferas do Dragao!"\n\nGoku: "Que fixe! Eu vou contigo!"', falante: 'Bulma' },
-      { id: 'd1_03', texto: '🐢 *Mestre Roshi*\n\nGoku treina com o velho pervertido durante 8 meses!\n\nDepois entra no 21o Torneio de Artes Marciais!', xp: 200, coins: 500, item: 'Kinton' },
-    ],
-    recompensas: { xp: 800, coins: 2000, item: 'Kinton', title: 'Lutador de Torneio' },
-  },
-  {
-    id: 'db_ch02', titulo: 'O Rei Piccolo',
-    descricao: 'O demónio mais antigo desperta. Goku precisa de vinganca.',
-    nivel: 22, xp: 400, coins: 1000,
-    nodes: [
-      { id: 'd2_01', texto: '💀 *Krillin Morreu!*\n\nO demónio mais antigo do mundo despertou!', xp: 100 },
-      { id: 'd2_02', texto: '👹 *Goku vs Rei Piccolo!*', boss: { nome: 'Rei Piccolo', emoji: '👹', hp: 4000, atk: 150, def: 60, xp: 800, coins: 2000, habilidades: ['Makankosappo', 'Explosao Demoníaca'], descricao: 'O demónio mais antigo do mundo.' }},
-      { id: 'd2_03', texto: '🏆 *Goku vence e torna-se Campeao Mundial!*', xp: 300, title: 'Campeao Mundial' },
-    ],
-    recompensas: { xp: 1200, coins: 3000, title: 'Campeao Mundial' },
-  },
-  {
-    id: 'db_ch03', titulo: 'A Chegada dos Saiyajins',
-    descricao: 'Raditz revela a verdade: Goku e um Saiyajin!',
-    nivel: 25, xp: 600, coins: 1500,
-    nodes: [
-      { id: 'd3_01', texto: '⚡ *Raditz — O Irmao de Goku!*\n\n"Tu es um Saiyajin! Foste enviado para destruir a Terra!"', falante: 'Raditz' },
-      { id: 'd3_02', texto: '⚡ *Goku vs Raditz!*', boss: { nome: 'Raditz', emoji: '⚡', hp: 3000, atk: 140, def: 50, xp: 600, coins: 1500, habilidades: ['Ki Blast', 'Double Sunday'], descricao: 'O irmao de Goku.' }},
-      { id: 'd3_03', texto: '💀 *Goku morre para derrotar Raditz...*', xp: 200 },
-      { id: 'd3_04', texto: '🏋️ *Treino com o Rei Kaioh!*\n\nGoku aprende o Kaioken!\n\n"KAIOKEN TIMES 2!"', xp: 300, skill: 'Kaioken' },
-      { id: 'd3_05', texto: '💥 *Goku vs Vegeta!*', boss: { nome: 'Vegeta', emoji: '👑', hp: 6000, atk: 200, def: 80, xp: 1500, coins: 3000, habilidades: ['Galick Gun', 'Oozaru'], descricao: 'O Principe dos Saiyajins.' }},
-      { id: 'd3_06', texto: '👑 *Vegeta foge!*\n\nRumo a Namek!', xp: 400, title: 'Saiyajin de Classe Baixa' },
-    ],
-    recompensas: { xp: 2500, coins: 6000, skill: 'Kaioken', title: 'Saiyajin' },
-  },
-  {
-    id: 'db_ch04', titulo: 'Namek — O Imperador Frieza',
-    descricao: 'O planeta Namek. O tirano mais cruel do universo.',
-    nivel: 30, xp: 1000, coins: 2500,
-    nodes: [
-      { id: 'd4_01', texto: '🟢 *O Planeta Namek!*\n\nFrieza ja esta la!', xp: 200 },
-      { id: 'd4_02', texto: '⚡ *Goku vs Ginyu Force!*', xp: 300 },
-      { id: 'd4_03', texto: '👿 *Frieza — O Tirano!*', boss: { nome: 'Frieza (Forma Final)', emoji: '👿', hp: 15000, atk: 300, def: 120, xp: 3000, coins: 8000, habilidades: ['Death Beam', 'Death Ball'], descricao: 'O imperador do universo.' }},
-      { id: 'd4_04', texto: '💀 *Krillin morre de novo!*\n\nGoku: "KRILLIN... AAAAAAH!"\n\nO cabelo fica dourado. Os olhos verdes.\n\n> 💛 *SUPER SAIYAJIN!*', xp: 500, skill: 'Super Saiyajin' },
-      { id: 'd4_05', texto: '💛 *Goku SSJ vs Frieza!*\n\nGoku vence! Namek explode!', xp: 500, title: 'Super Saiyajin' },
-    ],
-    recompensas: { xp: 3500, coins: 9000, skill: 'Super Saiyajin', title: 'Super Saiyajin' },
-  },
-  {
-    id: 'db_ch05', titulo: 'Androides e Cell',
-    descricao: 'Trunks do futuro avisa: androides vao destruir a Terra!',
-    nivel: 35, xp: 1200, coins: 3000,
-    nodes: [
-      { id: 'd5_01', texto: '⚡ *Trunks do Futuro!*\n\n"Em 3 anos, androides vao destruir a Terra!"', falante: 'Trunks' },
-      { id: 'd5_02', texto: '🤖 *Os Androides 17 e 18!*\n\nVegeta atinge o Super Saiyajin!\n\n"FINAL FLASH!"', xp: 300, skill: 'Final Flash' },
-      { id: 'd5_03', texto: '🧬 *Cell — O Perfeito!*', boss: { nome: 'Cell Perfeito', emoji: '🧬', hp: 20000, atk: 350, def: 150, xp: 4000, coins: 10000, habilidades: ['Kamehameha', 'Regeneracao'], descricao: 'O ser perfeito.' }},
-      { id: 'd5_04', texto: '⚡ *Gohan atinge o Super Saiyajin 2!*\n\n"VOCES VAO PAGAR!"', xp: 500, skill: 'Super Saiyajin 2' },
-      { id: 'd5_05', texto: '⚡ *Gohan vence Cell!*', xp: 500, title: 'Heroi do Torneio' },
-    ],
-    recompensas: { xp: 3000, coins: 8000, skill: 'Super Saiyajin 2', title: 'Heroi do Torneio' },
-  },
-  {
-    id: 'db_ch06', titulo: 'Majin Buu',
-    descricao: 'O demónio mais antigo desperta. A Terra esta em perigo!',
-    nivel: 40, xp: 1500, coins: 4000,
-    nodes: [
-      { id: 'd6_01', texto: '💀 *Majin Buu desperta!*\n\nBabidi controla Vegeta!', xp: 300 },
-      { id: 'd6_02', texto: '👑 *Vegeta sacrifica-se!*\n\n"TRUNKS... BULMA... EU VOU SALVAR-VOS!"', xp: 400 },
-      { id: 'd6_03', texto: '💀 *Buu absorve todos!*', boss: { nome: 'Super Buu', emoji: '💀', hp: 25000, atk: 400, def: 160, xp: 5000, coins: 12000, habilidades: ['Absorcao', 'Candy Beam', 'Regeneracao'], descricao: 'O demónio mais antigo.' }},
-      { id: 'd6_04', texto: '🐉 *Goku SSJ3!*\n\n"EU VOU ALÉM DOS LIMITES!"', xp: 600, skill: 'Super Saiyajin 3' },
-      { id: 'd6_05', texto: '🌍 *Genkidama!*\n\nToda a Terra da energia!\n\n*BUU É DESTRUÍDO!*', xp: 600, title: 'Salvador da Terra' },
-    ],
-    recompensas: { xp: 4000, coins: 10000, skill: 'Super Saiyajin 3', title: 'Salvador da Terra' },
-  },
-  {
-    id: 'db_ch07', titulo: 'Battle of Gods — Beerus',
-    descricao: 'O Deus da Destruição desperta! E mais forte que qualquer Saiyajin!',
-    nivel: 45, xp: 2000, coins: 5000,
-    nodes: [
-      { id: 'd7_01', texto: '😴 *Beerus acorda!*\n\n"Eu sou o Deus da Destruição. Alguém me provocou."', falante: 'Beerus' },
-      { id: 'd7_02', texto: '💜 *Goku vs Beerus!*', boss: { nome: 'Beerus', emoji: '😴', hp: 30000, atk: 500, def: 200, xp: 6000, coins: 15000, habilidades: ['Hakai', 'Sphere of Destruction'], descricao: 'O Deus da Destruição.' }},
-      { id: 'd7_03', texto: '🔴 *Super Saiyajin God!*\n\nGoku atinge o poder divino!', xp: 800, skill: 'Super Saiyajin God' },
-      { id: 'd7_04', texto: '🔴 *Goku SSG vs Beerus!*\n\nO combate destrói planetas!\n\nBeerus fica impressionado!', xp: 600, title: 'Deus Saiyajin' },
-    ],
-    recompensas: { xp: 5000, coins: 12000, skill: 'Super Saiyajin God', title: 'Deus Saiyajin' },
-  },
-  {
-    id: 'db_ch08', titulo: 'Resurrection F — Golden Frieza',
-    descricao: 'Frieza volta da morte com uma nova forma dourada!',
-    nivel: 50, xp: 2500, coins: 6000,
-    nodes: [
-      { id: 'd8_01', texto: '👿 *Frieza ressuscita!*\n\n"EU VOU VINGAR-ME DO GOKU!"', falante: 'Frieza' },
-      { id: 'd8_02', texto: '💛 *Golden Frieza!*', boss: { nome: 'Golden Frieza', emoji: '💛', hp: 35000, atk: 550, def: 220, xp: 7000, coins: 18000, habilidades: ['Golden Death Beam', 'Earth Breaker'], descricao: 'Frieza na sua forma dourada.' }},
-      { id: 'd8_03', texto: '💙 *Super Saiyajin Blue!*\n\nGoku atinge o SSB!', xp: 1000, skill: 'Super Saiyajin Blue' },
-      { id: 'd8_04', texto: '💙 *Goku SSB vs Golden Frieza!*\n\nGoku vence de novo!', xp: 800, title: 'Saiyajin Blue' },
-    ],
-    recompensas: { xp: 6000, coins: 15000, skill: 'Super Saiyajin Blue', title: 'Saiyajin Blue' },
-  },
-  {
-    id: 'db_ch09', titulo: 'Goku Black — Zamasu',
-    descricao: 'Um Kaioshin corrompido rouba o corpo de Goku!',
-    nivel: 55, xp: 3000, coins: 7000,
-    nodes: [
-      { id: 'd9_01', texto: '🖤 *Goku Black!*\n\nUm Goku do futuro com o poder de Zamasu!', xp: 400 },
-      { id: 'd9_02', texto: '💜 *Zamasu Imortal!*', boss: { nome: 'Zamasu Fusionado', emoji: '💜', hp: 40000, atk: 600, def: 250, xp: 8000, coins: 20000, habilidades: ['Holy Wrath', 'Lightning of Absolution'], descricao: 'O deus corrompido.' }},
-      { id: 'd9_03', texto: '⚡ *Trunks SSJ Rage!*\n\n"EU VOU PROTEGER TODOS!"', xp: 800, skill: 'Spirit Sword' },
-      { id: 'd9_04', texto: '🌍 *Zeno apaga a linha temporal!*\n\nO universo e salvo!', xp: 600, title: 'Guerreiro Temporal' },
-    ],
-    recompensas: { xp: 7000, coins: 17000, skill: 'Spirit Sword', title: 'Guerreiro Temporal' },
-  },
-  {
-    id: 'db_ch10', titulo: 'Torneio do Poder',
-    descricao: '8 universos lutam pela sobrevivencia! Goku alcanca o poder supremo!',
-    nivel: 60, xp: 4000, coins: 10000,
-    nodes: [
-      { id: 'd10_01', texto: '🏆 *Torneio do Poder!*\n\n8 universos! 80 guerreiros! O universo perdedor e apagado!', xp: 500 },
-      { id: 'd10_02', texto: '💪 *Jiren — O Mais Forte!*', boss: { nome: 'Jiren', emoji: '💪', hp: 50000, atk: 800, def: 300, xp: 10000, coins: 25000, habilidades: ['Power Impact', 'Invisible Strikes', 'Full Power'], descricao: 'O guerreiro mais forte do Universo 11.' }},
-      { id: 'd10_03', texto: '⚪ *ULTRA INSTINTO!*\n\nGoku atinge o poder supremo!\n\nO corpo move-se sozinho!\n\nO cabelo fica prateado!', xp: 2000, skill: 'Ultra Instinto' },
-      { id: 'd10_04', texto: '⚪ *Goku UI vs Jiren!*\n\nA batalha mais epica de todos os tempos!\n\nGoku vence! O Universo 7 e salvo!', xp: 1500, title: 'Mortal Mais Forte' },
-      { id: 'd10_05', texto: '🏆 *FIM — Dragon Ball Super!*\n\nGoku e o mortal mais forte do multiverso!\n\n> 🏆 *Parabens! Completaste Dragon Ball!*', xp: 3000, coins: 20000, title: 'Lenda Saiyajin' },
-    ],
-    recompensas: { xp: 10000, coins: 30000, skill: 'Ultra Instinto', title: 'Lenda Saiyajin' },
-  },
-];
-
-WORLDS.dragonball.capitulos = DRAGONBALL_CHAPTERS.length;
-
-
-// ══════════════════════════════════════════════════════════════
-// JUJUTSU KAISEN — 12 CAPÍTULOS ÉPICOS
-// ══════════════════════════════════════════════════════════════
-const JJK_CHAPTERS = [
-  {
-    id: 'jjk_ch01', titulo: 'O Dedo de Sukuna',
-    descricao: 'Itadori Yuji engole o dedo do Rei das Maldições. A sua vida muda para sempre.',
-    nivel: 15, xp: 200, coins: 500,
-    nodes: [
-      { id: 'j1_01', texto: '🏫 *Escola Secundária de Sendai*\n\nItadori Yuji é o atleta mais forte da escola. Mas hoje...\n\nO clã oculto do seu avô moribundo deixa-lhe um dedo humano.\n\n"E não o abras..." — são as últimas palavras do avô.', falante: 'Yuji' },
-      { id: 'j1_02', texto: '👁️ *A Maldição!*\n\nUma maldição ataca a escola! Megumi Fushiguro aparece!\n\n"Esse dedo... é de Sukuna! O Rei das Maldições!"\n\nYuji engole o dedo para salvar os amigos!', xp: 100, coins: 200 },
-      { id: 'j1_03', texto: '👁️ *Sukuna Desperta!*\n\nYuji transforma-se! Dois rostos! Olhos vermelhos!\n\n"Eu sou Ryomen Sukuna... o Rei das Maldições!"\n\nMas Yuji recupera o controlo!\n\nSatoru Gojo aparece. "Interessante... ele consegue conter Sukuna?"', falante: 'Gojo' },
-      { id: 'j1_04', texto: '👁️ *A Decisão de Gojo*\n\nGojo: "Yuji... vais morrer. Ou vais viver e comer todos os dedos de Sukuna?"\n\n"Eu prefiro morrer como humano!"\n\nGojo sorri. "Então... vamos ao colégio de Jujutsu!"\n\n> 👁️ *Itadori Yuji torna-se um feiticeiro jujutsu!*', xp: 150, coins: 300, title: 'Recipiente de Sukuna' },
-    ],
-    recompensas: { xp: 600, coins: 1200, title: 'Recipiente de Sukuna' },
-  },
-  {
-    id: 'jjk_ch02', titulo: 'O Colégio de Jujutsu',
-    descricao: 'Gojo Sensei. Nobara. Megumi. A trio mais desequilibrada.',
-    nivel: 16, xp: 250, coins: 600,
-    nodes: [
-      { id: 'j2_01', texto: '🏛️ *Colégio de Jujutsu de Tóquio*\n\nGojo apresenta:\n- Megumi Fushiguro — Ten Shadows\n- Nobara Kugisaki — Straw Doll\n- Yuji Itadori — Sukuna\n\n"Vocês são a minha turma favorita!"', falante: 'Gojo' },
-      { id: 'j2_02', texto: '🪆 *Nobara, a Rainha!*\n\n"Eu sou Nobara! Bonita, forte e com mau feitio!"\n\nUsa bonecos de palha e pregos amaldiçoados.\n\n"Ninguém me controla!"', falante: 'Nobara' },
-      { id: 'j2_03', texto: '🐺 *Missão: Maldição de Grau Especial!*\n\nUma maldição de Grau Especial aparece num hospital!\n\nYuji e Nobara enfrentam-na juntos!', boss: { nome: 'Maldição do Hospital', emoji: '🐺', hp: 3000, atk: 130, def: 50, xp: 500, coins: 1000, habilidades: ['Domínio do Hospital', 'Cura Maligna', 'Grito Paralisante'], descricao: 'Uma maldição nascida do medo dos pacientes.' }},
-      { id: 'j2_04', texto: '👊 *Punho Divergente!*\n\nYuji combate corpo a corpo! A maldição cai!\n\n"Vamos! Juntos somos mais fortes!"\n\n> 🏛️ *Primeira missão completa!*', xp: 200, coins: 400, title: 'Feiticeiro Iniciante' },
-    ],
-    recompensas: { xp: 700, coins: 1500, title: 'Feiticeiro Iniciante' },
-  },
-  {
-    id: 'jjk_ch03', titulo: 'O Incidente de Yasohachi Bridge',
-    descricao: 'Junpei. Mahito. A crueldade das maldições.',
-    nivel: 18, xp: 300, coins: 800,
-    nodes: [
-      { id: 'j3_01', texto: '🌊 *Junpei Yoshino*\n\nUm estudante isolado. Mahito encontra-o.\n\n"Eu posso dar-te poder... para vingar a tua mãe."\n\nMahito transforma pessoas em maldições. É o pior dos piores.', falante: 'Mahito' },
-      { id: 'j3_02', texto: '💀 *Mahito — A Maldição Humana!*\n\n"Eu sou Mahito. Nasci do ódio dos humanos contra humanos."\n\nA sua técnica: Idle Transfiguration. Muda a forma da alma!\n\nJunpei é transformado em maldição!', boss: { nome: 'Mahito', emoji: '💀', hp: 4000, atk: 150, def: 60, xp: 800, coins: 2000, habilidades: ['Idle Transfiguration', 'Polymorphic Soul', 'Body Repel'], descricao: 'A maldição que nasceu do ódio humano.' }},
-      { id: 'j3_03', texto: '👊 *Yuji vs Mahito!*\n\nYuji tenta salvar Junpei... mas é tarde!\n\n"MAHITO! EU VOU MATAR-TE!"\n\nGojo aparece e salva Yuji. Mas foge.\n\n> 💀 *Junpei morreu... Mahito vai pagar.*', xp: 250, coins: 600, title: 'Vingança Prometida' },
-    ],
-    recompensas: { xp: 900, coins: 2000, title: 'Vingança Prometida' },
-  },
-  {
-    id: 'jjk_ch04', titulo: 'O Evento de Troca — Kyoto',
-    descricao: 'Feiticeiros de Tóquio vs Kyoto. Todo quer matar Yuji!',
-    nivel: 20, xp: 400, coins: 1000,
-    nodes: [
-      { id: 'j4_01', texto: '⚔️ *Evento de Troca entre Escolas!*\n\nTóquio vs Kyoto! Os melhores feiticeiros!\n\nAoi Todo de Kyoto: "Yuji! Vou matar-te!"\n\nMas Todo muda de ideias depois de lutar!', falante: 'Todo' },
-      { id: 'j4_02', texto: '👊 *Yuji vs Todo — Irmãos de Alma!*\n\nTodo é o mais forte de Kyoto!\n\nMas depois de ver a determinação de Yuji:\n\n"Tu és o meu melhor amigo! Vamos treinar juntos!"\n\nTodo torna-se o mentor de Yuji!', xp: 300, coins: 600, skill: 'Black Flash' },
-      { id: 'j4_03', texto: '⚡ *Black Flash!*\n\nYuji executa o Black Flash pela primeira vez!\n\nO impacto distorce o espaço!\n\n*CRACK!*\n\nTodo sorri. "Excelente...!"', xp: 400, coins: 800, skill: 'Black Flash' },
-      { id: 'j4_04', texto: '💀 *A Invasão de Hanami!*\n\nHanami — uma maldição de Grau Especial — invade!\n\nTodos unem-se para lutar!', boss: { nome: 'Hanami', emoji: '🌿', hp: 5000, atk: 180, def: 70, xp: 1000, coins: 2500, habilidades: ['Domínio da Floresta', 'Disaster Plants', 'Wooden Ball'], descricao: 'A maldição da natureza. Quer eliminar a humanidade.' }},
-      { id: 'j4_05', texto: '🌿 *Gojo Satoru — O Mais Forte!*\n\nGojo aparece!\n\n"Vocês aborrecem-me."\n\nUsa o Infinito. Hanami recua.\n\n"Eu sou o mais forte. Nunca se esqueçam."\n\n> ⚔️ *Evento de Troca termina com vitória de Tóquio!*', xp: 300, coins: 700, title: 'Feiticeiro de Grau 1' },
-    ],
-    recompensas: { xp: 1500, coins: 3500, skill: 'Black Flash', title: 'Feiticeiro de Grau 1' },
-  },
-  {
-    id: 'jjk_ch05', titulo: 'A Queda de Gojo',
-    descricao: 'O plano de Geto. O selamento de Gojo. O mundo perde o seu guarda.',
-    nivel: 25, xp: 600, coins: 1500,
-    nodes: [
-      { id: 'j5_01', texto: '👁️ *O Incidente de Shibuya!*\n\nAs maldições atacam Shibuya! É uma armadilha para Gojo!\n\nMahito, Jogo, Hanami, Dagon — todos juntos!\n\n"Eles querem selar o Gojo!"', xp: 200 },
-      { id: 'j5_02', texto: '👁️ *Gojo vs Todos!*\n\nGojo enfrenta 4 Graus Especiais ao mesmo tempo!\n\n"Infinito... é o poder de um deus."\n\nMas... o Prison Realm! O selo ancestral!', boss: { nome: 'Jogo + Hanami + Dagon', emoji: '👁️', hp: 8000, atk: 250, def: 100, xp: 2000, coins: 5000, habilidades: ['Domínio Combinado', 'Disaster Trio', 'Maximum: Meteor'], descricao: 'Três Graus Especiais contra o mais forte.' }},
-      { id: 'j5_03', texto: '💀 *Gojo é Selado!*\n\nO Prison Realm ativa-se!\n\n"GOJO-SENSEI! NÃO!"\n\nGojo desaparece. O mundo fica sem o seu protetor.\n\n> 💀 *Satoru Gojo foi selado...*', xp: 300, coins: 800 },
-      { id: 'j5_04', texto: '🔥 *A Rebelião de Geto!*\n\nSuguru Geto (ou alguém que parece) lidera a revolta!\n\n"Sem Gojo... o mundo das maldições vai mudar!"\n\nYuji: "Eu vou salvar o Gojo!"', xp: 300, coins: 600, title: 'Feiticeiro Rebelde' },
-    ],
-    recompensas: { xp: 1800, coins: 4500, title: 'Sobrevivente de Shibuya' },
-  },
-  {
-    id: 'jjk_ch06', titulo: 'A Guerra contra as Maldições',
-    descricao: 'Sem Gojo, os feiticeiros lutam sozinhos.',
-    nivel: 28, xp: 800, coins: 2000,
-    nodes: [
-      { id: 'j6_01', texto: '⚔️ *A Culling Game!*\n\nKenjaku (a verdadeira mente por trás) ativa o jogo!\n\nFeiticeiros e maldições presos em barreiras!\n\n"Matem para sobreviver!"', xp: 300 },
-      { id: 'j6_02', texto: '👁️ *Megumi descende nas Sombras!*\n\nMegumi usa o Mahoraga — o Shikigami mais forte!\n\nMas o preço é a sua própria vida...\n\nYuji: "MEGUMI! NÃO!"', xp: 200, coins: 500 },
-      { id: 'j6_03', texto: '💀 *Mahito vs Yuji — O Combate Final!*\n\nYuji enfrenta Mahito de novo!\n\n"Tu mataste o Junpei! Tu vais pagar!"\n\nMahito: "Humanos são todos iguais... fracos!"', boss: { nome: 'Mahito (Forma Verdadeira)', emoji: '💀', hp: 10000, atk: 280, def: 100, xp: 3000, coins: 7000, habilidades: ['Soul Multiplicity', 'Instant Spirit Body', 'Domain Expansion: Self-Embodiment'], descricao: 'Mahito na sua forma mais forte.' }},
-      { id: 'j6_04', texto: '👊 *Yuji derrota Mahito!*\n\n"Eu não sou tu! Eu protejo os meus amigos!"\n\nMahito é derrotado!\n\n> 👊 *Mahito foi destruído!*', xp: 800, coins: 2000, title: 'Destruidor de Maldições' },
-    ],
-    recompensas: { xp: 2500, coins: 6000, title: 'Destruidor de Maldições' },
-  },
-  {
-    id: 'jjk_ch07', titulo: 'Sukuna Assume o Controlo',
-    descricao: 'O Rei das Maldições desperta verdadeiramente.',
-    nivel: 32, xp: 1000, coins: 3000,
-    nodes: [
-      { id: 'j7_01', texto: '👁️ *Sukuna Toma o Corpo!*\n\nYuji perde o controlo! Sukuna assume!\n\n"Eu sou o Rei das Maldições! Este corpo é meu!"\n\nMegumi tenta parar... mas Sukuna é forte demais!', falante: 'Sukuna' },
-      { id: 'j7_02', texto: '👁️ *Domain Expansion: Malevolent Shrine!*\n\nSukuna ativa o seu Domínio!\n\nMil lâminas cortam tudo!\n\nNinguém pode escapar!', xp: 500, coins: 1500, skill: 'Malevolent Shrine' },
-      { id: 'j7_03', texto: '👁️ *Sukuna vs Todos os Feiticeiros!*', boss: { nome: 'Sukuna (20 Dedos)', emoji: '👁️', hp: 20000, atk: 500, def: 200, xp: 8000, coins: 20000, habilidades: ['Cleave', 'Dismantle', 'Malevolent Shrine', 'Fire Arrow'], descricao: 'O Rei das Maldições com poder total.' }},
-      { id: 'j7_04', texto: '💀 *O Sacrifício Final!*\n\nYuji luta dentro do próprio corpo!\n\n"SUKUNA! EU VOU DERROTAR-TE DE DENTRO!"\n\nMas Sukuna é forte demais...\n\n> 💀 *Sukuna conquistou o corpo de Yuji...*', xp: 500, coins: 1500 },
-    ],
-    recompensas: { xp: 3500, coins: 9000, title: 'Recipiente Perdido' },
-  },
-  {
-    id: 'jjk_ch08', titulo: 'Gojo Libertado',
-    descricao: 'O selo é quebrado. O mais forte regressa.',
-    nivel: 35, xp: 1200, coins: 3500,
-    nodes: [
-      { id: 'j8_01', texto: '👁️ *O Prison Realm é quebrado!*\n\nYuji e Megumi encontram o selo!\n\n"GOJO-SENSEI! ESTAMOS AQUI!"\n\nO selo parte-se. Luz azul inunda tudo!', xp: 400 },
-      { id: 'j8_02', texto: '👁️ *Gojo Satoru — O Mais Forte!*\n\nGojo aparece. Mais forte que nunca.\n\n"Saudades. O que perdi?"\n\nYuji: "Tudo. Tudo mudou."\n\nGojo: "Então... vamos mudar de volta."', falante: 'Gojo' },
-      { id: 'j8_03', texto: '👁️ *Gojo vs Sukuna — O Combate Supremo!*', boss: { nome: 'Gojo Satoru', emoji: '👁️', hp: 25000, atk: 600, def: 250, xp: 10000, coins: 25000, habilidades: ['Infinity', 'Hollow Purple', 'Domain Expansion: Unlimited Void', 'Six Eyes'], descricao: 'O feiticeiro mais forte de todos os tempos.' }},
-      { id: 'j8_04', texto: '👁️ *Gojo vs Sukuna — O Infinito vs O Rei!*\n\nA batalha mais épica da história!\n\nGojo usa o Hollow Purple!\n\nSukuna contra-ataca com Cleave!\n\nO mundo treme!\n\n> 👁️ *A batalha mais intensa da história...*', xp: 1000, coins: 3000, title: 'Testemunha do Infinito' },
-    ],
-    recompensas: { xp: 4500, coins: 12000, title: 'Testemunha do Infinito' },
-  },
-  {
-    id: 'jjk_ch09', titulo: 'O Preço da Vitória',
-    descricao: 'Gojo cai. Os alunos continuam a luta.',
-    nivel: 38, xp: 1500, coins: 4000,
-    nodes: [
-      { id: 'j9_01', texto: '💀 *Gojo Cai!*\n\nSukuna usa uma técnica que nem Gojo esperava!\n\n"O mais forte... caiu."\n\nO mundo perde o seu herói.\n\nYuji chora. Mas não desiste.', xp: 300, coins: 800 },
-      { id: 'j9_02', texto: '🔥 *A Última Esperança!*\n\nYuji, Megumi, Nobara, Todo, Maki — todos juntos!\n\n"GOJO-SENSEI ACREDITOU EM NÓS! NÃO VAMOS FALHAR!"\n\nA nova geração levanta-se!', xp: 400, coins: 1000 },
-      { id: 'j9_03', texto: '👊 *Yuji vs Sukuna — Round Final!*', boss: { nome: 'Sukuna (Forma Final)', emoji: '👁️', hp: 30000, atk: 700, def: 280, xp: 12000, coins: 30000, habilidades: ['World Cutting Slash', 'Malevolent Shrine', 'Fire Arrow', 'Reverse Cursed Technique'], descricao: 'Sukuna no seu poder supremo.' }},
-      { id: 'j9_04', texto: '👊 *O Punho Final!*\n\nYuji reúne todo o seu poder!\n\nCada amigo. Cada perda. Cada momento.\n\n"EU SOU ITADORI YUJI! E EU VOU PROTEGER O MUNDO!"\n\n*BLACK FLASH FINAL!*\n\nSukuna cai!', xp: 2000, coins: 5000, title: 'Herói de Jujutsu' },
-    ],
-    recompensas: { xp: 5000, coins: 15000, title: 'Herói de Jujutsu' },
-  },
-  {
-    id: 'jjk_ch10', titulo: 'O Novo Mundo',
-    descricao: 'Sem maldições. Sem sofrimento. O mundo que Gojo sonhou.',
-    nivel: 40, xp: 2000, coins: 5000,
-    nodes: [
-      { id: 'j10_01', texto: '🌅 *O Mundo Depois*\n\nAs maldições desaparecem. O mundo é livre.\n\nYuji olha para o céu.\n\n"Avô... eu cumpri a promessa."\n\nMegumi sorri. Nobara ri-se.\n\nGojo, do além, acena.\n\n> 🌅 *FIM — Jujutsu Kaisen completo!*\n> 🏆 *Itadori Yuji salvou o mundo!*\n> ⭐ *A geração mais forte.*', xp: 5000, coins: 15000, title: 'Lenda de Jujutsu', item: 'Olho de Sukuna' },
-    ],
-    recompensas: { xp: 10000, coins: 30000, title: 'Lenda de Jujutsu', item: 'Olho de Sukuna' },
-  },
-];
-
-WORLDS.jjk.capitulos = JJK_CHAPTERS.length;
-
-
-
-// ══════════════════════════════════════════════════════════════
-// DEMON SLAYER — 10 CAPÍTULOS ÉPICOS
-// ══════════════════════════════════════════════════════════════
-const DEMONSLAYER_CHAPTERS = [
-  {
-    id: 'ds_ch01', titulo: 'A Família Assassinada',
-    descricao: 'Tanjiro encontra a família morta. Nezuko torna-se demónio.',
-    nivel: 8, xp: 150, coins: 400,
-    nodes: [
-      { id: 'ds1_01', texto: '❄️ *Montanha Neve*\n\nTanjiro Kamado volta para casa... e encontra a família inteira morta.\n\nSangue por todo o lado.\n\nMas... Nezuko ainda respira!\n\n"NEZUKO! AGUENTA!"', falante: 'Tanjiro' },
-      { id: 'ds1_02', texto: '👹 *Nezuko Transforma-se!*\n\nNezuko torna-se demónio!\n\nMas... ela não ataca Tanjiro!\n\n"Nezuko... tu ainda és a minha irmã!"\n\nGiyu Tomioka aparece. "Mate-a."\n\n"NUNCA!"', xp: 100, coins: 200 },
-      { id: 'ds1_03', texto: '⚔️ *Giyu Tomioka — Pilar da Água!*\n\nGiyu quer matar Nezuko. Tanjiro protege-a.\n\n"Se a minha irmã matar alguém, eu vou junto!"\n\nGiyu hesita. Pela primeira vez, vê algo diferente.', xp: 80 },
-      { id: 'ds1_04', texto: '🏔️ *Urokodaki — O Treino!*\n\nGiyu envia Tanjiro para Urokodaki, o antigo Pilar da Água.\n\n"Treina durante 2 anos. Depois enfrenta a seleção."\n\nTanjiro aprende a Respiração da Água!\n\n> ❄️ *O caminho do Caçador de Demónios começa!*', xp: 200, coins: 500, skill: 'Respiração da Água' },
-    ],
-    recompensas: { xp: 500, coins: 1200, skill: 'Respiração da Água', title: 'Caçador Iniciante' },
-  },
-  {
-    id: 'ds_ch02', titulo: 'A Seleção Final',
-    descricao: 'Monte Fujikasane. Sobreviver ao amanhecer entre demónios.',
-    nivel: 9, xp: 200, coins: 500,
-    nodes: [
-      { id: 'ds2_01', texto: '🌸 *Monte Fujikasane*\n\n100 candidatos. Demónios por todo o lado.\n\nSobrevivam até ao amanhecer!\n\nTanjiro luta com a espada de Urokodaki.', xp: 100 },
-      { id: 'ds2_02', texto: '⚡ *Zenitsu Agatsuma!*\n\nUm rapaz medroso que só luta a dormir!\n\n"Eu não quero morrer! Quero casar!"\n\nMas quando adormece... usa a Respiração do Trovão!', falante: 'Zenitsu' },
-      { id: 'ds2_03', texto: '🐗 *Inosuke Hashibira!*\n\nUm rapaz com cabeça de javali!\n\n"EU SOU O REI DA MONTANHA!"\n\nUsa duas espadas e Respiração da Besta!', falante: 'Inosuke' },
-      { id: 'ds2_04', texto: '⚔️ *A Manhã Chega!*\n\nOs sobreviventes são aceites como Caçadores de Demónios!\n\nTanjiro, Zenitsu e Inosuke tornam-se uma equipa!\n\n> ⚔️ *Seleção Final completa!*', xp: 150, coins: 300, title: 'Caçador de Demónios' },
-    ],
-    recompensas: { xp: 600, coins: 1500, title: 'Caçador de Demónios' },
-  },
-  {
-    id: 'ds_ch03', titulo: 'O Comboio Infinito',
-    descricao: 'Enmu, um Lua Inferior, controla um comboio de sonhos!',
-    nivel: 11, xp: 300, coins: 800,
-    nodes: [
-      { id: 'ds3_01', texto: '🚂 *O Comboio Infinito!*\n\nUm comboio onde todos adormecem!\n\nEnmu controla os sonhos!\n\nTanjiro está preso num sonho feliz... com a família viva...', xp: 150, coins: 300 },
-      { id: 'ds3_02', texto: '😴 *O Sonho de Tanjiro*\n\nA família está viva. Nezuko é humana. Tudo é perfeito.\n\nMas Tanjiro sabe que não é real.\n\n"Eu preciso de acordar... há pessoas para proteger!"\n\n*Corta o próprio pescoço no sonho!*', xp: 200, coins: 400 },
-      { id: 'ds3_03', texto: '🌙 *Enmu — Lua Inferior 1!*', boss: { nome: 'Enmu', emoji: '😴', hp: 3000, atk: 120, def: 50, xp: 600, coins: 1500, habilidades: ['Manipulação de Sonhos', 'Sono Eterno', 'Fusão com Comboio'], descricao: 'O demónio que controla sonhos.' }},
-      { id: 'ds3_04', texto: '🔥 *Rengoku — O Pilar da Chama!*\n\nKyojuro Rengoku aparece!\n\n"Não se preocupem! Estou aqui!"\n\nA Respiração da Chama destrói Enmu!', xp: 300, coins: 600, skill: 'Respiração da Chama' },
-      { id: 'ds3_05', texto: '🔥 *Rengoku vs Akaza!*\n\nAkaza — Lua Superior 3 — aparece!\n\n"Rengoku! Junta-te a mim!"\n\n"NUNCA! Eu protejo os meus!"', boss: { nome: 'Akaza', emoji: '🔥', hp: 8000, atk: 250, def: 100, xp: 2000, coins: 5000, habilidades: ['Destructive Death', 'Compass Needle', 'Air Type'], descricao: 'Lua Superior 3. O demónio que respeita os guerreiros fortes.' }},
-      { id: 'ds3_06', texto: '🔥 *O Sacrifício de Rengoku!*\n\nRengoku luta até ao amanhecer!\n\n"Tanjiro... protege as pessoas!"\n\nRengoku morre de pé. Os olhos abertos.\n\n> 🔥 *Kyojuro Rengoku... o herói que nunca se rendeu.*', xp: 500, coins: 1500, title: 'Herdeiro da Chama' },
-    ],
-    recompensas: { xp: 2000, coins: 5000, skill: 'Respiração da Chama', title: 'Herdeiro da Chama' },
-  },
-  {
-    id: 'ds_ch04', titulo: 'A Vila dos Ferreiros',
-    descricao: 'Espadas novas. Novos poderes. As Prostitutas vêm aí.',
-    nivel: 14, xp: 400, coins: 1000,
-    nodes: [
-      { id: 'ds4_01', texto: '🔨 *Vila dos Ferreiros!*\n\nTanjiro precisa de uma nova espada!\n\nHaganezuka, o ferreiro, está furioso.\n\n"PARA DE PARTIR AS ESPADAS!"', falante: 'Haganezuka' },
-      { id: 'ds4_02', texto: '⚔️ *A Espada Negra-Verde!*\n\nTanjiro recebe uma espada especial!\n\nCor: Negro-Verde. Rara como a de Yoriichi!\n\n"Esta espada... escolheu-te."', xp: 200, coins: 500, item: 'Espada Nichirin Negra-Verde' },
-      { id: 'ds4_03', texto: '🌊 *Treino com Tengen!*\n\nTengen Uzui, o Pilar do Som, treina Tanjiro!\n\n"Eu sou o mais extravagante! O mais bonito!"\n\nA Respiração do Som é única!', xp: 300, coins: 700, skill: 'Respiração do Som' },
-      { id: 'ds4_04', texto: '⚔️ *As Prostitutas Chegam!*\n\nDaki e Gyutaro — Luas Superiores 6!\n\nVão destruir o Distrito Vermelho!\n\n> 🔨 *Missão: Destruir as Luas Superiores!*', xp: 250, coins: 600 },
-    ],
-    recompensas: { xp: 1200, coins: 3000, item: 'Espada Nichirin', skill: 'Respiração do Som' },
-  },
-  {
-    id: 'ds_ch05', titulo: 'O Distrito Vermelho — Daki e Gyutaro',
-    descricao: 'As prostitutas mais belas e mortais.',
-    nivel: 16, xp: 500, coins: 1500,
-    nodes: [
-      { id: 'ds5_01', texto: '🌙 *Distrito do Entretenimento!*\n\nTanjiro, Zenitsu e Inosuke infiltram-se!\n\nDaki é a geisha mais bela... e mais mortífera!\n\n"Vocês são tão feios... vou matar-vos."', falante: 'Daki' },
-      { id: 'ds5_02', texto: '🌙 *Daki — Lua Superior 6!*', boss: { nome: 'Daki', emoji: '🌙', hp: 5000, atk: 180, def: 70, xp: 1200, coins: 3000, habilidades: ['Obi Demoníaco', 'Blood Demon Art', 'Regeneracao'], descricao: 'Lua Superior 6. A geisha demoníaca.' }},
-      { id: 'ds5_03', texto: '👹 *Gyutaro — O Verdadeiro Lua Superior 6!*\n\nDaki é só metade! Gyutaro é o verdadeiro!\n\n"Eu sou o irmão mais velho! Ninguém toca na minha irmã!"', boss: { nome: 'Gyutaro', emoji: '👹', hp: 7000, atk: 220, def: 90, xp: 2000, coins: 5000, habilidades: ['Blood Sickles', 'Poison Blood', 'Rotating Circular Slashes'], descricao: 'O verdadeiro Lua Superior 6.' }},
-      { id: 'ds5_04', texto: '🔥 *Tengen vs Gyutaro!*\n\nTengen luta com as duas espadas!\n\n"EU SOU O MAIS EXTRAVAGANTE!"\n\nMas Gyutaro é forte demais! Tengen perde uma mão!', xp: 400, coins: 1000 },
-      { id: 'ds5_05', texto: '⚡ *Tanjiro + Tengen vs Gyutaro — FINAL!*\n\nTanjiro corta a cabeça de Gyutaro!\n\nTengen corta a de Daki!\n\nAo mesmo tempo!\n\n*AS LUAS SUPERIORES 6 CAEM!*\n\n> 🌙 *Distrito Vermelho salvo!*', xp: 600, coins: 2000, title: 'Caçador de Luas' },
-    ],
-    recompensas: { xp: 2500, coins: 7000, title: 'Caçador de Luas' },
-  },
-  {
-    id: 'ds_ch06', titulo: 'A Casa das Borboletas — Treino Hashira',
-    descricao: 'Tanjiro treina com os Pilares para ficar mais forte.',
-    nivel: 18, xp: 600, coins: 1500,
-    nodes: [
-      { id: 'ds6_01', texto: '🦋 *Casa das Borboletas!*\n\nTanjiro treina com Shinobu Kocho, o Pilar dosInsetos!\n\n"Eu vou matar todos os demónios... com um sorriso!"', falante: 'Shinobu' },
-      { id: 'ds6_02', texto: '⚡ *A Marca do Caçador!*\n\nTanjiro desbloqueia a Marca!\n\nAparece na testa como uma cicatriz flamejante!\n\n"Este poder... é de outro nível!"', xp: 300, coins: 800, skill: 'Marca do Caçador' },
-      { id: 'ds6_03', texto: '⚡ *Respiração Trovejante — Forma 7!*\n\nTanjiro combina Água + Trovão!\n\nCria a sua própria técnica!\n\n> ⚡ *Tanjiro evoluiu!*', xp: 400, coins: 1000, skill: 'Respiração Trovejante' },
-      { id: 'ds6_04', texto: '⚔️ *Reunião dos Pilares!*\n\nOs 9 Pilares juntos!\n\n"Tanjiro... vais enfrentar Muzan em breve."\n\n> 🦋 *Preparação para a batalha final!*', xp: 300, coins: 700, title: 'Guerreiro Hashira' },
-    ],
-    recompensas: { xp: 1800, coins: 4500, skill: 'Marca do Caçador', title: 'Guerreiro Hashira' },
-  },
-  {
-    id: 'ds_ch07', titulo: 'A Fortaleza Infinita — Kokushibo',
-    descricao: 'A lua superior mais forte. O demónio que foi humano.',
-    nivel: 22, xp: 800, coins: 2000,
-    nodes: [
-      { id: 'ds7_01', texto: '🏯 *A Fortaleza Infinita!*\n\nA base de Muzan! Uma dimensão onde nada morre!\n\nCada sala é uma armadilha!\n\nOs Pilares entram!', xp: 200, coins: 500 },
-      { id: 'ds7_02', texto: '⚔️ *Kokushibo — Lua Superior 1!*\n\nO demónio mais forte abaixo de Muzan!\n\nEra humano... irmão de Yoriichi!\n\n"Eu escolhi ser demónio... para superar o meu irmão!"', boss: { nome: 'Kokushibo', emoji: '⚔️', hp: 12000, atk: 300, def: 130, xp: 3000, coins: 8000, habilidades: ['Respiração Lunar', 'Blood Demon Art', 'See-Through World', 'Six Eyes'], descricao: 'Lua Superior 1. O demónio mais forte.' }},
-      { id: 'ds7_03', texto: '⚔️ *Os Pilares vs Kokushibo!*\n\nMuichiro, Sanemi, Gyomei — os mais fortes!\n\nKokushibo é impossível!\n\nMas Muichiro usa o selo do Criador!', xp: 500, coins: 1500 },
-      { id: 'ds7_04', texto: '⚔️ *Kokushibo Cai!*\n\nGyomei, o Pilar da Rocha, dá o golpe final!\n\n"Eu... finalmente... posso descansar?"\n\n> ⚔️ *Lua Superior 1 derrotado!*', xp: 800, coins: 2500, title: 'Destruidor de Luas' },
-    ],
-    recompensas: { xp: 3000, coins: 8000, title: 'Destruidor de Luas' },
-  },
-  {
-    id: 'ds_ch08', titulo: 'Muzan Kibutsuji — O Progenitor',
-    descricao: 'O demónio original. O que criou todos os demónios.',
-    nivel: 26, xp: 1200, coins: 3000,
-    nodes: [
-      { id: 'ds8_01', texto: '👹 *Muzan Kibutsuji!*\n\nO progenitor de todos os demónios!\n\n"Eu sou perfeito. Imortal. Ninguém me pode matar!"\n\nMuzan transforma Nezuko em humano... ou tenta!', falante: 'Muzan' },
-      { id: 'ds8_02', texto: '🔥 *Tanjiro vs Muzan!*', boss: { nome: 'Muzan Kibutsuji', emoji: '👹', hp: 25000, atk: 500, def: 200, xp: 8000, coins: 20000, habilidades: ['Demon Blood', 'Thousand Arms', 'Regeneracao Absoluta', 'Demon Transformation'], descricao: 'O progenitor de todos os demónios.' }},
-      { id: 'ds8_03', texto: '🔥 *Todos os Pilares vs Muzan!*\n\nOs 9 Pilares restantes atacam juntos!\n\nMuzan é forte demais! Mata Pilares com um golpe!\n\nMas Tanjiro não desiste!', xp: 600, coins: 1500 },
-      { id: 'ds8_04', texto: '☀️ *O Amanhecer!*\n\nTanjiro luta até o sol nascer!\n\nMuzan começa a derreter!\n\n"IMPOSSÍVEL! EU SOU PERFEITO!"\n\nMas o sol é o seu inimigo final!', xp: 1000, coins: 3000, title: 'Destruidor de Muzan' },
-    ],
-    recompensas: { xp: 4500, coins: 12000, title: 'Destruidor de Muzan' },
-  },
-  {
-    id: 'ds_ch09', titulo: 'O Amanhecer Eterno',
-    descricao: 'Muzan cai. O mundo é livre. Nezuko torna-se humana.',
-    nivel: 30, xp: 1500, coins: 4000,
-    nodes: [
-      { id: 'ds9_01', texto: '☀️ *Muzan Morre!*\n\nO sol consome Muzan!\n\n"EU... NÃO... POSSO... MORRER!"\n\nMas morre. Os demónios desaparecem.\n\nO mundo é livre!', xp: 500, coins: 1500 },
-      { id: 'ds9_02', texto: '🌸 *Nezuko é Humana!*\n\nNezuko acorda humana!\n\n"Tanjiro... irmão..."\n\nTanjiro chora. A sua irmã voltou.', xp: 500, coins: 1500 },
-      { id: 'ds9_03', texto: '🌅 *O Mundo sem Demónios!*\n\nOs sobreviventes celebram!\n\nZenitsu casa com Nezuko (finalmente!).\n\nInosuke continua a ser selvagem.\n\nTanjiro olha para o céu.\n\n"Rengoku... cumprimos a missão."\n\n> 🌅 *FIM — Demon Slayer completo!*\n> 🏆 *O sol nasceu sobre um mundo sem demónios.*', xp: 3000, coins: 10000, title: 'Lenda dos Caçadores', item: 'Espada Nichirin Dourada' },
-    ],
-    recompensas: { xp: 8000, coins: 25000, title: 'Lenda dos Caçadores', item: 'Espada Nichirin Dourada' },
-  },
-];
-
-WORLDS.demonslayer.capitulos = DEMONSLAYER_CHAPTERS.length;
-
-
-
-// ══════════════════════════════════════════════════════════════
-// DEVIL MAY CRY — 10 CAPÍTULOS ÉPICOS
-// ══════════════════════════════════════════════════════════════
-const DMC_CHAPTERS = [
-  {
-    id: 'dmc_ch01', titulo: 'O Sangue de Sparda',
-    descricao: 'Dante, o filho do cavaleiro demoníaco. Meio-humano, meio-demónio.',
-    nivel: 12, xp: 200, coins: 500,
-    nodes: [
-      { id: 'dm1_01', texto: '😈 *Devil May Cry — A Loja*\n\n"Dante. Caçador de demónios."\n\nUma loja escura. Pizza. Whisky. E muitas armas.\n\nDante é filho de Sparda — o cavaleiro demoníaco que salvou a humanidade.', falante: 'Dante' },
-      { id: 'dm1_02', texto: '💃 *Trish Aparece!*\n\nUma mulher loira entra na loja.\n\n"Eu tenho um trabalho para ti... em Mallet Island."\n\nDante aceita. O dinheiro é bom.', falante: 'Trish' },
-      { id: 'dm1_03', texto: '👹 *Demónios por Todo o Lado!*\n\nMallet Island está infestada de demónios!\n\nDante usa Ebony & Ivory — as pistolas duplas!\n\n*BANG BANG BANG!*\n\n"Vamos lá... isto vai ser divertido!"', xp: 150, coins: 300, item: 'Ebony & Ivory' },
-      { id: 'dm1_04', texto: '⚔️ *Rebellion — A Espada de Sparda!*\n\nDante empunha a Rebellion — a espada do pai!\n\n"O sangue de Sparda corre em mim!"\n\n> ⚔️ *Dante desperta o poder demoníaco!*', xp: 200, coins: 500, skill: 'Devil Trigger', title: 'Caçador de Demónios' },
-    ],
-    recompensas: { xp: 600, coins: 1500, skill: 'Devil Trigger', title: 'Caçador de Demónios' },
-  },
-  {
-    id: 'dmc_ch02', titulo: 'Vergil — O Irmão Gémeo',
-    descricao: 'O irmão de Dante. O que escolheu o poder.',
-    nivel: 15, xp: 300, coins: 800,
-    nodes: [
-      { id: 'dm2_01', texto: '⚔️ *Vergil!*\n\nO irmão gémeo de Dante!\n\n"Eu quero o poder do pai... a qualquer preço!"\n\nVergil é o oposto de Dante — frio, calculista, obcecado.', falante: 'Vergil' },
-      { id: 'dm2_02', texto: '⚔️ *Dante vs Vergil!*', boss: { nome: 'Vergil', emoji: '⚔️', hp: 5000, atk: 200, def: 80, xp: 1500, coins: 3000, habilidades: ['Yamato', 'Judgement Cut', 'Rapid Slash', 'Devil Trigger'], descricao: 'O irmão gémeo de Dante. Mestre da Yamato.' }},
-      { id: 'dm2_03', texto: '⚔️ *Irmãos Separados!*\n\nDante e Vergil lutam no topo da torre!\n\n"Vergil! Não precisas de ser como o pai!"\n\n"Eu SUPERO o pai!"\n\nVergil cai no abismo demoníaco...\n\n> ⚔️ *Vergil desaparece... por agora.*', xp: 400, coins: 1000, title: 'Filho de Sparda' },
-    ],
-    recompensas: { xp: 1200, coins: 3000, title: 'Filho de Sparda' },
-  },
-  {
-    id: 'dmc_ch03', titulo: 'A Demónio que Tornou-se Humana',
-    descricao: 'Trish trai Dante... ou não?',
-    nivel: 17, xp: 350, coins: 900,
-    nodes: [
-      { id: 'dm3_01', texto: '💀 *Trish Traz Dante!*\n\nTrish é uma demónio criada por Mundus!\n\nEla trai Dante! Mas...\n\nDante salva-a mesmo assim!', xp: 200, coins: 500 },
-      { id: 'dm3_02', texto: '👹 *Mundus — O Imperador dos Demónios!*', boss: { nome: 'Mundus', emoji: '👹', hp: 8000, atk: 280, def: 120, xp: 3000, coins: 8000, habilidades: ['Orbs Demoníacos', 'Inferno', 'Chuva de Meteoros', 'Mundo Demoníaco'], descricao: 'O imperador do mundo demoníaco.' }},
-      { id: 'dm3_03', texto: '😈 *Devil Trigger Total!*\n\nDante ativa o Devil Trigger completo!\n\nAsas demoníacas! Poder supremo!\n\n"EU SOU O FILHO DE SPARDA!"\n\nMundus é derrotado!', xp: 500, coins: 1500, skill: 'Devil Trigger Perfeito' },
-      { id: 'dm3_04', texto: '😈 *Devil May Cry — O Fim!*\n\nTrish torna-se humana. Dante continua a caçar.\n\n"O trabalho nunca acaba..."\n\n> 😈 *Fim do primeiro capítulo!*', xp: 300, coins: 800, title: 'Lenda de Sparda' },
-    ],
-    recompensas: { xp: 2000, coins: 5000, skill: 'Devil Trigger Perfeito', title: 'Lenda de Sparda' },
-  },
-  {
-    id: 'dmc_ch04', titulo: 'DMC3 — A Origem',
-    descricao: 'O jovem Dante. A torre de Temen-Ni-Gru. A rivalidade com Vergil.',
-    nivel: 20, xp: 500, coins: 1200,
-    nodes: [
-      { id: 'dm4_01', texto: '🍕 *O Jovem Dante!*\n\nDante tem 19 anos. Pizza e atitude!\n\n"Eu não me importo com nada!"\n\nMas Vergil quer abrir a torre demoníaca!', falante: 'Dante' },
-      { id: 'dm4_02', texto: '⚔️ *Dante vs Vergil — Round 1!*', boss: { nome: 'Vergil (Jovem)', emoji: '⚔️', hp: 4000, atk: 180, def: 70, xp: 1200, coins: 2500, habilidades: ['Yamato', 'Judgement Cut', 'Rapid Slash'], descricao: 'Vergil no seu auge.' }},
-      { id: 'dm4_03', texto: '⚡ *Os Estilos de Combate!*\n\nDante desbloqueia os estilos!\n- Swordmaster (espadas)\n- Gunslinger (armas)\n- Trickster (agilidade)\n- Royalguard (defesa)\n\n> ⚡ *Dante torna-se completo!*', xp: 400, coins: 1000, skill: 'Estilos de Combate' },
-      { id: 'dm4_04', texto: '⚔️ *Dante vs Vergil — Final!*\n\nNo topo da torre! Sangue e honra!\n\n"Eu protejo o que o pai protegeu!"\n\nVergil cai. Dante chora.\n\n> ⚔️ *Os irmãos separados... novamente.*', xp: 500, coins: 1500, title: 'Estiloso' },
-    ],
-    recompensas: { xp: 2000, coins: 5000, skill: 'Estilos de Combate', title: 'Estiloso' },
-  },
-  {
-    id: 'dmc_ch05', titulo: 'DMC4 — Nero',
-    descricao: 'Um novo herói. Nero. O sobrinho de Dante.',
-    nivel: 22, xp: 600, coins: 1500,
-    nodes: [
-      { id: 'dm5_01', texto: '⚔️ *Nero — O Novo Herói!*\n\nNero é um caçador da Ordem da Espada!\n\nTem um braço demoníaco — o Devil Bringer!\n\n"Eu vou proteger Kyrie!"', falante: 'Nero' },
-      { id: 'dm5_02', texto: '😈 *Dante vs Nero!*\n\nDante ataca a Ordem! Nero defende!\n\n"Quem és tu?!"\n\n"Eu sou Dante. Prazer."', boss: { nome: 'Dante (DMC4)', emoji: '😈', hp: 6000, atk: 220, def: 90, xp: 1500, coins: 3500, habilidades: ['Rebellion', 'Ebony & Ivory', 'Trickster', 'Royalguard'], descricao: 'Dante no seu auge.' }},
-      { id: 'dm5_03', texto: '⚔️ *Sanctus — O Falso Deus!*\n\nSanctus usa o poder de Sparda!\n\n"Eu sou o novo Deus!"\n\nNero: "Tu não és Deus! És um farsante!"', boss: { nome: 'Sanctus', emoji: '💀', hp: 7000, atk: 240, def: 100, xp: 2000, coins: 5000, habilidades: ['Sparda Sword', 'Ascension', 'Divine Armour'], descricao: 'O líder da Ordem que roubou o poder de Sparda.' }},
-      { id: 'dm5_04', texto: '⚔️ *Nero vence! Dante sorri.*\n\n"Nero... tu tens o sangue de Sparda."\n\n"Eu sei... e vou honrar esse nome."\n\n> ⚔️ *DMC4 completo! Nero é o novo herói!*', xp: 600, coins: 2000, title: 'Novo Filho de Sparda' },
-    ],
-    recompensas: { xp: 2500, coins: 6000, skill: 'Devil Bringer', title: 'Novo Filho de Sparda' },
-  },
-  {
-    id: 'dmc_ch06', titulo: 'DMC5 — O Regresso de Vergil',
-    descricao: 'Vergil volta. Nero descobre a verdade. Dante e Vergil — a batalha final.',
-    nivel: 25, xp: 800, coins: 2000,
-    nodes: [
-      { id: 'dm6_01', texto: '💀 *V é Vergil!*\n\nO misterioso "V" é a metade humana de Vergil!\n\n"Eu sou uma parte dele... a parte que queria redenção."', falante: 'V' },
-      { id: 'dm6_02', texto: '⚔️ *Vergil Regressa!*\n\nVergil reúne as duas metades!\n\n"Eu quero uma revanche, Dante."\n\nA Qliphoth cresce! Demónios invadem!', xp: 400, coins: 1000 },
-      { id: 'dm6_03', texto: '⚔️ *Dante vs Vergil — A Batalha Definitiva!*', boss: { nome: 'Vergil (Completo)', emoji: '⚔️', hp: 12000, atk: 350, def: 150, xp: 4000, coins: 10000, habilidades: ['Yamato Perfeita', 'Judgement Cut End', 'Devil Trigger', 'Beowulf'], descricao: 'Vergil no seu poder máximo.' }},
-      { id: 'dm6_04', texto: '⚔️ *Nero Desperta!*\n\nNero: "PAREM! VOCÊS SÃO FAMÍLIA!"\n\nNero ativa o Devil Trigger!\n\nAsas de energia! Poder divino!\n\n"Eu não vou deixar vocês se matarem!"', xp: 800, coins: 2500, skill: 'Devil Trigger Nero' },
-      { id: 'dm6_05', texto: '😈 *Dante e Vergil — Irmãos de Novo!*\n\nNero separa Dante e Vergil!\n\n"Vocês são irmãos... parem de lutar!"\n\nVergil sorri. Pela primeira vez.\n\n"Obrigado... Nero."\n\n> 😈 *DMC5 completo! Família reunida!*', xp: 1000, coins: 3000, title: 'Lenda de Sparda' },
-    ],
-    recompensas: { xp: 4000, coins: 10000, skill: 'Devil Trigger Nero', title: 'Lenda de Sparda' },
-  },
-  {
-    id: 'dmc_ch07', titulo: 'O Inferno Profundo',
-    descricao: 'Dante e Vergil descem ao inferno para lutar para sempre.',
-    nivel: 28, xp: 1000, coins: 2500,
-    nodes: [
-      { id: 'dm7_01', texto: '🔥 *O Abismo Demoníaco!*\n\nDante e Vergil descem ao inferno!\n\nDemónios sem fim! Mas os irmãos lutam juntos!\n\n"FINALMENTE... JUNTOS!"', xp: 300, coins: 800 },
-      { id: 'dm7_02', texto: '👹 *O Demónio Antigo!*', boss: { nome: 'Rei do Inferno', emoji: '👹', hp: 10000, atk: 300, def: 130, xp: 3000, coins: 8000, habilidades: ['Inferno Eterno', 'Chama Demoníaca', 'Exército Infernal'], descricao: 'O rei dos demónios infernais.' }},
-      { id: 'dm7_03', texto: '⚔️ *Dante + Vergil vs O Rei!*\n\nOs irmãos Sparda lutam juntos!\n\nA combinação perfeita!\n\n*SLASH SLASH SLASH!*\n\nO Rei do Inferno cai!', xp: 800, coins: 2000, title: 'Guerreiro do Inferno' },
-      { id: 'dm7_04', texto: '😈 *O Novo Capítulo!*\n\nDante fica no inferno. Vergil também.\n\n"Vamos ver quem é o mais forte!"\n\nNero fica na Terra. O novo protetor.\n\n> 😈 *O ciclo de Sparda continua...*', xp: 500, coins: 1500, title: 'Guardião do Inferno' },
-    ],
-    recompensas: { xp: 3000, coins: 8000, title: 'Guardião do Inferno' },
-  },
-  {
-    id: 'dmc_ch08', titulo: 'O Estilo SSS',
-    descricao: 'Dante no seu auge. O estilo supremo.',
-    nivel: 30, xp: 1200, coins: 3000,
-    nodes: [
-      { id: 'dm8_01', texto: '🔥 *SSS — Triple S!*\n\nDante atinge o estilo supremo!\n\nCada golpe é perfeito! Cada combo é divino!\n\n"VOCÊS NÃO SÃO PARES PARA MIM!"', xp: 400, coins: 1000, skill: 'SSS Style' },
-      { id: 'dm8_02', texto: '⚔️ *Os Demónios Fogem!*\n\nDante é tão forte que os demónios fogem!\n\n"Onde estão?! Eu quero mais!"\n\nTrish: "Dante... já não há mais demónios."', xp: 300, coins: 800 },
-      { id: 'dm8_03', texto: '🍕 *A Pizza Final!*\n\nDante come uma pizza. Bebe whisky.\n\n"O trabalho acabou... por agora."\n\nMas um novo cliente entra na loja.\n\n"Dante? Preciso da tua ajuda."\n\n"Quanto pagas?"\n\n> 🍕 *Devil May Cry nunca acaba...*', xp: 500, coins: 1500, title: 'Estilo SSS' },
-    ],
-    recompensas: { xp: 2000, coins: 5000, skill: 'SSS Style', title: 'Estilo SSS' },
-  },
-  {
-    id: 'dmc_ch09', titulo: 'O Legado de Sparda',
-    descricao: 'A história completa de Sparda revelada.',
-    nivel: 32, xp: 1500, coins: 4000,
-    nodes: [
-      { id: 'dm9_01', texto: '⚔️ *Sparda — O Cavaleiro Demoníaco!*\n\nHá 2000 anos, Sparda rebelou-se contra os demónios!\n\n"Eu vou proteger os humanos!"\n\nSelou o mundo demoníaco e viveu como humano.', xp: 500, coins: 1500 },
-      { id: 'dm9_02', texto: '⚔️ *O Sacrifício de Sparda!*\n\nSparda deu a vida pelos filhos!\n\n"Dante... Vergil... protejam o mundo."\n\nA espada Rebellion e a Yamato são as suas heranças.', xp: 500, coins: 1500, item: 'Espada de Sparda' },
-      { id: 'dm9_03', texto: '😈 *O Legado Continua!*\n\nDante, Vergil e Nero.\n\nTrês gerações de Sparda.\n\nO sangue demoníaco que protege a humanidade.\n\n> 😈 *FIM — Devil May Cry completo!*\n> 🏆 *O legado de Sparda é eterno.*', xp: 2000, coins: 6000, title: 'Herdeiro de Sparda', item: 'Rebellion Awakened' },
-    ],
-    recompensas: { xp: 6000, coins: 18000, title: 'Herdeiro de Sparda', item: 'Rebellion Awakened' },
-  },
-];
-
-WORLDS.dmc.capitulos = DMC_CHAPTERS.length;
-
-
-
-// ══════════════════════════════════════════════════════════════
-// BLEACH — 12 CAPÍTULOS ÉPICOS
-// ══════════════════════════════════════════════════════════════
-const BLEACH_CHAPTERS = [
-  {
-    id: 'bl_ch01', titulo: 'O Shinigami Substituto',
-    descricao: 'Ichigo Kurosaki vê espíritos. Rukia Kuchiki dá-lhe os poderes de Shinigami.',
-    nivel: 18, xp: 250, coins: 600,
-    nodes: [
-      { id: 'b1_01', texto: '👻 *Karakura Town*\n\nIchigo Kurosaki, 15 anos. Vê fantasmas.\n\nUma mulher de preto aparece!\n\n"Eu sou Rukia Kuchiki. Shinigami. Caçadora de almas malignas."', falante: 'Rukia' },
-      { id: 'b1_02', texto: '👻 *O Hollow Ataca!*\n\nUma máscara branca! Uma criatura que devora almas!\n\n"HOLLOW!"\n\nMas Ichigo não foge! Protege a família!', xp: 100, coins: 200 },
-      { id: 'b1_03', texto: '⚔️ *Ichigo Torna-se Shinigami!*\n\nRukia transfere os seus poderes!\n\nIchigo empunha uma Zanpakutō gigante!\n\n"Eu vou proteger todos!"\n\nO Hollow é destruído!', xp: 200, coins: 500, skill: 'Zanpakutō', title: 'Shinigami Substituto' },
-      { id: 'b1_04', texto: '⚔️ *O Treino de Urahara!*\n\nKisuke Urahara, o génio, treina Ichigo!\n\n"Para ser Shinigami, precisas de morrer primeiro!"\n\nIchigo entra na Soul Society!\n\n> ⚔️ *O caminho do Shinigami começa!*', xp: 150, coins: 400, skill: 'Getsuga Tensho' },
-    ],
-    recompensas: { xp: 700, coins: 1800, skill: 'Zanpakutō', title: 'Shinigami Substituto' },
-  },
-  {
-    id: 'bl_ch02', titulo: 'Soul Society — A Invasão',
-    descricao: 'Rukia é condenada à morte. Ichigo invade a Soul Society para a salvar!',
-    nivel: 20, xp: 400, coins: 1000,
-    nodes: [
-      { id: 'b2_01', texto: '🏛️ *Soul Society!*\n\nO mundo dos mortos! Onde vivem os Shinigamis!\n\n13 Companhias! Capitães lendários!\n\nRukia vai ser executada!', xp: 200, coins: 500 },
-      { id: 'b2_02', texto: '⚡ *Ichigo vs Renji!*\n\nRenji Abarai, Vice-Capitão, bloqueia o caminho!\n\n"Não passes! Rukia morrerá!"\n\nMas Ichigo é mais forte!', boss: { nome: 'Renji Abarai', emoji: '⚡', hp: 3000, atk: 140, def: 60, xp: 600, coins: 1500, habilidades: ['Zabimaru', 'Hado #31', 'Shikai'], descricao: 'Vice-Capitão da 6ª Companhia.' }},
-      { id: 'b2_03', texto: '⚡ *Ichigo vs Byakuya!*\n\nByakuya Kuchiki, o Capitão mais frio!\n\n"Tu és um substituto. Morre."', boss: { nome: 'Byakuya Kuchiki', emoji: '⚡', hp: 5000, atk: 200, def: 80, xp: 1200, coins: 3000, habilidades: ['Senbonzakura', 'Senkei', 'Gokei'], descricao: 'O Capitão da 6ª Companhia. O mais elegante.' }},
-      { id: 'b2_04', texto: '⚡ *Ichigo Ativa o Bankai!*\n\n"ZANGETSU!"\n\nA espada muda! Fica preta e vermelha!\n\nTensa Zangetsu!\n\nByakuya está espantado!\n\n> ⚡ *Bankai desbloqueado!*', xp: 500, coins: 1500, skill: 'Bankai: Tensa Zangetsu' },
-    ],
-    recompensas: { xp: 1800, coins: 4500, skill: 'Bankai: Tensa Zangetsu', title: 'Bankai User' },
-  },
-  {
-    id: 'bl_ch03', titulo: 'A Traição de Aizen',
-    descricao: 'O Capitão mais amado trai a Soul Society!',
-    nivel: 22, xp: 500, coins: 1200,
-    nodes: [
-      { id: 'b3_01', texto: '👁️ *Aizen Sousuke — O Traiçoeiro!*\n\nAizen não morreu! Tudo foi um plano!\n\n"Eu sou o génio supremo. Ninguém me pode parar."\n\nEle roubou o Hogyoku!', falante: 'Aizen' },
-      { id: 'b3_02', texto: '👁️ *Aizen vs Todos!*', boss: { nome: 'Aizen Sousuke', emoji: '👁️', hp: 10000, atk: 300, def: 130, xp: 3000, coins: 8000, habilidades: ['Kyoka Suigetsu', 'Hogyoku', 'Hado #90', 'Complete Hypnosis'], descricao: 'O génio supremo. Controla os 5 sentidos.' }},
-      { id: 'b3_03', texto: '⚡ *Ichigo vs Aizen!*\n\nIchigo usa o Final Getsuga Tensho!\n\n"EU SOU... O GETSUGA!"\n\nO poder supremo! Mas a que preço?', xp: 800, coins: 2000, skill: 'Final Getsuga Tensho' },
-      { id: 'b3_04', texto: '👁️ *Aizen é Selado!*\n\nUrahara sela Aizen!\n\n"Obrigado, Ichigo..."\n\nMas Ichigo perde os poderes de Shinigami!\n\n> 👁️ *Aizen selado. Ichigo perde os poderes.*', xp: 500, coins: 1500, title: 'Herói de Karakura' },
-    ],
-    recompensas: { xp: 2500, coins: 6000, skill: 'Final Getsuga Tensho', title: 'Herói de Karakura' },
-  },
-  {
-    id: 'bl_ch04', titulo: 'Os Quincy — A Nova Ameaça',
-    descricao: 'Os Quincy regressam. Yhwach, o pai dos Quincy, quer destruir tudo.',
-    nivel: 25, xp: 600, coins: 1500,
-    nodes: [
-      { id: 'b4_01', texto: '⚔️ *A Invasão Quincy!*\n\nYhwach invade a Soul Society!\n\n"Eu sou o pai dos Quincy. Vou destruir tudo."\n\nOs Capitães caem um a um!', xp: 200, coins: 500 },
-      { id: 'b4_02', texto: '💀 *O Massacre dos Shinigamis!*\n\nYhwach mata Yamamoto, o Capitão-General!\n\n"O mais forte... caiu."\n\nA Soul Society está em ruínas!', xp: 300, coins: 800 },
-      { id: 'b4_03', texto: '⚡ *Ichigo Desperta de Novo!*\n\nIchigo recupera os poderes! Mais forte que nunca!\n\n"ZANGETSU! ESTOU DE VOLTA!"\n\nA Zanpakutō muda! Dupla!', xp: 400, coins: 1000, skill: 'Zangetsu Dupla' },
-      { id: 'b4_04', texto: '⚔️ *Ichigo vs Yhwach — Round 1!*', boss: { nome: 'Yhwach', emoji: '⚔️', hp: 15000, atk: 400, def: 170, xp: 4000, coins: 10000, habilidades: ['The Almighty', 'Sankt Altar', 'Auswahlen', 'Reishi Absorption'], descricao: 'O pai dos Quincy. Vê todos os futuros.' }},
-      { id: 'b4_05', texto: '⚔️ *Ichigo é derrotado... por agora.*\n\nYhwach é forte demais!\n\nMas Ichigo promete: "Eu vou voltar mais forte!"\n\n> ⚔️ *A guerra dos Quincy começou...*', xp: 500, coins: 1500, title: 'Guerreiro Quincy' },
-    ],
-    recompensas: { xp: 2500, coins: 6500, skill: 'Zangetsu Dupla', title: 'Guerreiro Quincy' },
-  },
-  {
-    id: 'bl_ch05', titulo: 'O Rei Quincy — Yhwach',
-    descricao: 'A batalha final contra o inimigo mais poderoso.',
-    nivel: 28, xp: 800, coins: 2000,
-    nodes: [
-      { id: 'b5_01', texto: '⚔️ *A Contra-Invasão!*\n\nIchigo + Uryu + Renji + todos!\n\nInfiltram o Palácio Real de Yhwach!\n\n"A VINGANÇA COMEÇA AGORA!"', xp: 300, coins: 800 },
-      { id: 'b5_02', texto: '⚔️ *Yhwach vs Ichigo — A Batalha Suprema!*', boss: { nome: 'Yhwach (Final)', emoji: '⚔️', hp: 25000, atk: 600, def: 250, xp: 8000, coins: 20000, habilidades: ['The Almighty Perfeito', 'Sankt Zwinger', 'Auswahlen Supremo', 'Rei do Mundo'], descricao: 'Yhwach no seu poder supremo.' }},
-      { id: 'b5_03', texto: '⚔️ *O Getsuga Final!*\n\nIchigo usa o Getsuga Tensho final!\n\nUryu atira a seta de prata!\n\n*YHWACH É DERROTADO!*\n\nA Soul Society é salva!', xp: 1500, coins: 5000, skill: 'Getsuga Final' },
-      { id: 'b5_04', texto: '⚔️ *O Fim da Guerra!*\n\nO mundo é restaurado. Os Quincy desaparecem.\n\nIchigo olha para o céu.\n\n"Obrigado... Zangetsu."\n\n> ⚔️ *Guerra dos Quincy terminou!*', xp: 800, coins: 2500, title: 'Salvador da Soul Society' },
-    ],
-    recompensas: { xp: 4000, coins: 10000, skill: 'Getsuga Final', title: 'Salvador da Soul Society' },
-  },
-  {
-    id: 'bl_ch06', titulo: 'A Verdade sobre Zangetsu',
-    descricao: 'Ichigo descobre a verdade sobre o seu poder.',
-    nivel: 30, xp: 1000, coins: 2500,
-    nodes: [
-      { id: 'b6_01', texto: '👁️ *O Verdadeiro Zangetsu!*\n\nO velho na mente de Ichigo... é Yhwach!\n\n"Eu sou a parte Quincy do teu poder!"\n\nMas o verdadeiro Zangetsu é o Hollow!', xp: 500, coins: 1500 },
-      { id: 'b6_02', texto: '⚔️ *Ichigo Aceita Tudo!*\n\n"Eu sou Shinigami. Sou Quincy. Sou Hollow.\nSou Humano. Sou TUDO!"\n\nA Zangetsu final nasce!', xp: 800, coins: 2000, skill: 'Zangetsu Verdadeira' },
-      { id: 'b6_03', texto: '⚔️ *O Poder Completo!*\n\nIchigo atinge o poder supremo!\n\nTodos os caminhos num só!\n\n> ⚔️ *Ichigo é o guerreiro mais completo da história!*', xp: 600, coins: 1500, title: 'Shinigami Quincy Hollow' },
-    ],
-    recompensas: { xp: 3000, coins: 7000, skill: 'Zangetsu Verdadeira', title: 'Shinigami Quincy Hollow' },
-  },
-  {
-    id: 'bl_ch07', titulo: 'O Novo Mundo',
-    descricao: 'A paz regressa. Ichigo e os amigos. O mundo é salvo.',
-    nivel: 32, xp: 1500, coins: 4000,
-    nodes: [
-      { id: 'b7_01', texto: '🌅 *Karakura Town — Amanhecer!*\n\nIchigo volta para casa.\n\nOrihime sorri. Chad acena. Uryu ignora (mas sorri por dentro).\n\nTudo voltou ao normal.', xp: 500, coins: 1500 },
-      { id: 'b7_02', texto: '⚔️ *O Espírito Continua!*\n\nIchigo continua a proteger Karakura!\n\nMas agora... com amigos ao lado.\n\n"Eu não preciso de lutar sozinho!"', xp: 500, coins: 1500 },
-      { id: 'b7_03', texto: '👻 *FIM — Bleach completo!*\n\nIchigo Kurosaki. O Shinigami Substituto.\n\nO que mudou o destino de dois mundos.\n\n> 👻 *Parabéns! Completaste Bleach!*\n> 🏆 *Ichigo — O Herói dos Dois Mundos!*\n> ⭐ *Bankai... é apenas o começo.*', xp: 5000, coins: 15000, title: 'Herói dos Dois Mundos', item: 'Zangetsu Final' },
-    ],
-    recompensas: { xp: 10000, coins: 30000, title: 'Herói dos Dois Mundos', item: 'Zangetsu Final' },
-  },
-];
-
-WORLDS.bleach.capitulos = BLEACH_CHAPTERS.length;
-
-
-function _getChapters(worldId) {
-  const map = { naruto: NARUTO_CHAPTERS, onepiece: ONEPIECE_CHAPTERS, sololeveling: SOLOLEVELING_CHAPTERS, dragonball: DRAGONBALL_CHAPTERS };
-  return map[worldId] || [];
-
-
-  return map[worldId] || [];
-}
-
-// ══════════════════════════════════════════════════════════════
-// MOSTRAR CAPÍTULO
-// ══════════════════════════════════════════════════════════════
-
-async function _mostrarCapitulo(sock, msg, ctx, p, w, chapter, capIdx) {
-  const prog = p.storyProgress[w.id];
-  const nodeId = prog.node || chapter.nodes[0]?.id;
-  const node = chapter.nodes.find(n => n.id === nodeId) || chapter.nodes[0];
-
-  if (!node) return tReply(sock, msg, ctx, `${w.emoji} ${chapter.titulo}`, ['Capítulo vazio.']);
-
-  // Mostrar texto narrativo
-  const header = [
-    `${w.emoji} *${chapter.titulo}*`,
-    `📖 Capítulo ${capIdx + 1} de ${w.capitulos}`,
-    `📊 Nível recomendado: ${chapter.nivel}`,
-    '',
-  ].join('\n');
-
-  const corpo = header + node.texto;
-
-  // Se tem escolhas → botões
-  if (node.escolhas?.length) {
-    const botoes = node.escolhas.map((e, i) => ({
-      id: `STORYC_${w.id}_${chapter.id}_${node.id}_${i}`,
-      text: e.txt.slice(0, 25),
-    }));
-
-    await enviarBotoes(sock, msg, ctx, corpo, botoes);
-    return;
-  }
-
-  // Se tem boss → iniciar combate
-  if (node.boss) {
-    await tReply(sock, msg, ctx, `${w.emoji} ${chapter.titulo}`, [corpo]);
-    // Iniciar combate especial com stats do boss
-    return _iniciarBossFight(sock, msg, ctx, p, w, chapter, node);
-  }
-
-  // Se é nó final (sem next) → avançar capítulo
-  if (!node.next && !node.escolhas) {
-    await tReply(sock, msg, ctx, `${w.emoji} ${chapter.titulo}`, [corpo]);
-
-    // Aplicar recompensas do nó
-    if (node.xp) rpg.addXP(p, node.xp);
-    if (node.coins) p.coins += node.coins;
-    if (node.item) p.inventory.push(node.item);
-    if (node.skill && !p.skills.includes(node.skill)) p.skills.push(node.skill);
-    if (node.title) p.title = node.title;
-
-    // Avançar para próximo capítulo
-    prog.capitulo = (prog.capitulo || 0) + 1;
-    prog.node = null;
-    if (!prog.completos) prog.completos = [];
-    prog.completos.push(chapter.id);
-
-    // Recompensas do capítulo
-    if (chapter.recompensas) {
-      const r = chapter.recompensas;
-      if (r.xp) rpg.addXP(p, r.xp);
-      if (r.coins) p.coins += r.coins;
-      if (r.item && !p.inventory.includes(r.item)) p.inventory.push(r.item);
-      if (r.skill && !p.skills.includes(r.skill)) p.skills.push(r.skill);
-      if (r.title) p.title = r.title;
-    }
-
-    await rpg.savePlayer(p);
-
-    // Mostrar botão para próximo capítulo
-    const chapters = _getChapters(w.id);
-    if (prog.capitulo < chapters.length) {
-      const proximo = chapters[prog.capitulo];
-      await enviarBotoes(sock, msg, ctx, `✅ *${chapter.titulo}* completo!\n\n📖 Próximo: *${proximo.titulo}*\n📊 Nível: ${proximo.nivel}`, [
-        { id: `STORY_${w.id}`, text: '📖 Próximo Capítulo' },
-      ]);
-    } else {
-      await tReply(sock, msg, ctx, `🏆 ${w.name} COMPLETO!`, [
-        `🎉 *PARABÉNS! Completaste toda a história de ${w.name}!*`,
-        `🏆 Recompensa final: ${w.recompensaFinal.title}`,
-        '',
-        '> Explora outros mundos com *!historia*',
-      ]);
-      // Recompensa final
-      const rf = w.recompensaFinal;
-      if (rf.xp) rpg.addXP(p, rf.xp);
-      if (rf.coins) p.coins += rf.coins;
-      if (rf.item) p.inventory.push(rf.item);
-      if (rf.title) p.title = rf.title;
-      await rpg.savePlayer(p);
-    }
-    return;
-  }
-
-  // Nó com next → mostrar com botão "Continuar"
-  if (node.next) {
-    const botoes = [{ id: `STORYN_${w.id}_${chapter.id}_${node.next}`, text: '▶️ Continuar' }];
-    await enviarBotoes(sock, msg, ctx, corpo, botoes);
-    return;
-  }
-
-  // Fallback
-  await tReply(sock, msg, ctx, `${w.emoji} ${chapter.titulo}`, [corpo]);
-}
-
-// ══════════════════════════════════════════════════════════════
-// BOSS FIGHT ESPECIAL
-// ══════════════════════════════════════════════════════════════
-
-async function _iniciarBossFight(sock, msg, ctx, p, w, chapter, node) {
-  const boss = node.boss;
-  // Usar o sistema de combate existente com stats especiais
-  await tReply(sock, msg, ctx, `👑 BOSS: ${boss.nome}`, [
-    `${boss.descricao}`,
-    `❤️ HP: ${boss.hp} | ⚔️ ATK: ${boss.atk} | 🛡️ DEF: ${boss.def}`,
-    `✨ Habilidades: ${boss.habilidades.join(', ')}`,
-    '',
-    '> Usa *!lutar boss* para enfrentar!',
-  ]);
-}
-
-// ══════════════════════════════════════════════════════════════
-// PROCESSAR CLIQUES
-// ══════════════════════════════════════════════════════════════
-
-async function resolverClique(sock, msg, ctx, token) {
-  const tk = String(token || '');
-
-  // STORY_<worldId> — entrar num mundo
-  let m = tk.match(/^STORY_([a-z]+)$/i);
-  if (m) {
-    await jogarMundo(sock, msg, ctx, m[1].toLowerCase());
-    return true;
-  }
-
-  // STORYC_<worldId>_<chapterId>_<nodeId>_<choiceIdx> — escolha numa história
-  m = tk.match(/^STORYC_([a-z]+)_([^_]+)_([^_]+)_(\d+)$/i);
-  if (m) {
-    const [, worldId, chapterId, nodeId, choiceIdx] = m;
-    await _processarEscolha(sock, msg, ctx, worldId, chapterId, nodeId, parseInt(choiceIdx));
-    return true;
-  }
-
-  // STORYN_<worldId>_<chapterId>_<nextNodeId> — próximo nó
-  m = tk.match(/^STORYN_([a-z]+)_([^_]+)_([^_]+)$/i);
-  if (m) {
-    const [, worldId, chapterId, nextNodeId] = m;
-    await _processarProximo(sock, msg, ctx, worldId, chapterId, nextNodeId);
-    return true;
-  }
-
-  return false;
-}
-
-async function _processarEscolha(sock, msg, ctx, worldId, chapterId, nodeId, choiceIdx) {
-  const p = await rpg.getPlayer(ctx.senderNumber);
-  const w = WORLDS[worldId];
-  const chapters = _getChapters(worldId);
-  const chapter = chapters.find(c => c.id === chapterId);
-  if (!chapter) return tReply(sock, msg, ctx, '❌', ['Capítulo não encontrado.']);
-
-  const node = chapter.nodes.find(n => n.id === nodeId);
-  if (!node?.escolhas?.[choiceIdx]) return tReply(sock, msg, ctx, '❌', ['Escolha inválida.']);
-
-  const choice = node.escolhas[choiceIdx];
-
-  // Aplicar recompensas da escolha
-  if (choice.xp) rpg.addXP(p, choice.xp);
-  if (choice.coins) p.coins += choice.coins;
-  if (choice.item) p.inventory.push(choice.item);
-  if (choice.skill && !p.skills.includes(choice.skill)) p.skills.push(choice.skill);
-  if (choice.title) p.title = choice.title;
-
-  // Avançar para o próximo nó
-  const prog = await getProgress(p, worldId);
-  prog.node = choice.next || null;
-
-  // Se tem next → mostrar esse nó
-  if (choice.next) {
-    const nextNode = chapter.nodes.find(n => n.id === choice.next);
-    if (nextNode) {
-      await rpg.savePlayer(p);
-      const corpo = `${w.emoji} *${chapter.titulo}*\n📖 Capítulo ${chapters.indexOf(chapter) + 1}\n\n${nextNode.texto}`;
-
-      if (nextNode.escolhas?.length) {
-        const botoes = nextNode.escolhas.map((e, i) => ({
-          id: `STORYC_${worldId}_${chapterId}_${nextNode.id}_${i}`,
-          text: e.txt.slice(0, 25),
-        }));
-        await enviarBotoes(sock, msg, ctx, corpo, botoes);
-      } else if (nextNode.next) {
-        await enviarBotoes(sock, msg, ctx, corpo, [
-          { id: `STORYN_${worldId}_${chapterId}_${nextNode.next}`, text: '▶️ Continuar' },
-        ]);
-      } else {
-        // Nó final
-        await tReply(sock, msg, ctx, `${w.emoji} ${chapter.titulo}`, [corpo]);
-        // Avançar capítulo
-        prog.capitulo = (prog.capitulo || 0) + 1;
-        prog.node = null;
-        if (!prog.completos) prog.completos = [];
-        prog.completos.push(chapterId);
-
-        // Recompensas do capítulo
-        if (chapter.recompensas) {
-          const r = chapter.recompensas;
-          if (r.xp) rpg.addXP(p, r.xp);
-          if (r.coins) p.coins += r.coins;
-          if (r.item && !p.inventory.includes(r.item)) p.inventory.push(r.item);
-          if (r.skill && !p.skills.includes(r.skill)) p.skills.push(r.skill);
-          if (r.title) p.title = r.title;
-        }
-        await rpg.savePlayer(p);
-
-        // Botão próximo capítulo
-        if (prog.capitulo < chapters.length) {
-          const proximo = chapters[prog.capitulo];
-          await enviarBotoes(sock, msg, ctx, `✅ Capítulo completo!\n\n📖 Próximo: *${proximo.titulo}*`, [
-            { id: `STORY_${worldId}`, text: '📖 Próximo Capítulo' },
-          ]);
-        }
-      }
-      return;
-    }
-  }
-
-  // Sem next → avançar capítulo
-  prog.capitulo = (prog.capitulo || 0) + 1;
-  prog.node = null;
-  if (!prog.completos) prog.completos = [];
-  prog.completos.push(chapterId);
-  await rpg.savePlayer(p);
-
-  await tReply(sock, msg, ctx, `${w.emoji} ${chapter.titulo}`, [
-    `✅ Escolha: *${choice.txt}*`,
-    choice.xp ? `⭐ +${choice.xp} XP` : '',
-    choice.item ? `🎒 +${choice.item}` : '',
-    '',
-    '> Próximo capítulo disponível com *!historia*',
-  ].filter(Boolean));
-}
-
-async function _processarProximo(sock, msg, ctx, worldId, chapterId, nextNodeId) {
-  const p = await rpg.getPlayer(ctx.senderNumber);
-  const w = WORLDS[worldId];
-  const chapters = _getChapters(worldId);
-  const chapter = chapters.find(c => c.id === chapterId);
-  if (!chapter) return;
-
-  const node = chapter.nodes.find(n => n.id === nextNodeId);
-  if (!node) return;
-
-  const prog = await getProgress(p, worldId);
-  prog.node = nextNodeId;
-  await rpg.savePlayer(p);
-
-  const corpo = `${w.emoji} *${chapter.titulo}*\n📖 Capítulo ${chapters.indexOf(chapter) + 1}\n\n${node.texto}`;
-
-  if (node.escolhas?.length) {
-    const botoes = node.escolhas.map((e, i) => ({
-      id: `STORYC_${worldId}_${chapterId}_${node.id}_${i}`,
-      text: e.txt.slice(0, 25),
-    }));
-    await enviarBotoes(sock, msg, ctx, corpo, botoes);
-  } else if (node.next) {
-    await enviarBotoes(sock, msg, ctx, corpo, [
-      { id: `STORYN_${worldId}_${chapterId}_${node.next}`, text: '▶️ Continuar' },
-    ]);
-  } else {
-    await tReply(sock, msg, ctx, `${w.emoji} ${chapter.titulo}`, [corpo]);
-    // Avançar capítulo
-    prog.capitulo = (prog.capitulo || 0) + 1;
-    prog.node = null;
-    if (!prog.completos) prog.completos = [];
-    prog.completos.push(chapterId);
-    await rpg.savePlayer(p);
-  }
-}
-
-// ══════════════════════════════════════════════════════════════
-// ONE PIECE — 35 CAPÍTULOS ÉPICOS
-// ══════════════════════════════════════════════════════════════
 const ONEPIECE_CHAPTERS = [
   // ═══ ARCO 1: ROMANCE DAWN (Cap 1) ═════════════════════════
   {
@@ -1681,16 +749,6 @@ const ONEPIECE_CHAPTERS = [
   },
 ];
 
-WORLDS.onepiece.capitulos = ONEPIECE_CHAPTERS.length;
-
-// Atualizar _getChapters para incluir One Piece
-
-// Sobrescrever a função
-
-
-// ══════════════════════════════════════════════════════════════
-// SOLO LEVELING — 25 CAPÍTULOS ÉPICOS
-// ══════════════════════════════════════════════════════════════
 const SOLOLEVELING_CHAPTERS = [
   // ═══ ARCO 1: O CAÇADOR MAIS FRACO (Cap 1) ══════════════════
   {
@@ -1864,16 +922,579 @@ const SOLOLEVELING_CHAPTERS = [
   },
 ];
 
+const JJK_CHAPTERS = [
+  {
+    id: 'jjk_ch01', titulo: 'O Dedo de Sukuna',
+    descricao: 'Itadori Yuji engole o dedo do Rei das Maldições. A sua vida muda para sempre.',
+    nivel: 15, xp: 200, coins: 500,
+    nodes: [
+      { id: 'j1_01', texto: '🏫 *Escola Secundária de Sendai*\n\nItadori Yuji é o atleta mais forte da escola. Mas hoje...\n\nO clã oculto do seu avô moribundo deixa-lhe um dedo humano.\n\n"E não o abras..." — são as últimas palavras do avô.', falante: 'Yuji' },
+      { id: 'j1_02', texto: '👁️ *A Maldição!*\n\nUma maldição ataca a escola! Megumi Fushiguro aparece!\n\n"Esse dedo... é de Sukuna! O Rei das Maldições!"\n\nYuji engole o dedo para salvar os amigos!', xp: 100, coins: 200 },
+      { id: 'j1_03', texto: '👁️ *Sukuna Desperta!*\n\nYuji transforma-se! Dois rostos! Olhos vermelhos!\n\n"Eu sou Ryomen Sukuna... o Rei das Maldições!"\n\nMas Yuji recupera o controlo!\n\nSatoru Gojo aparece. "Interessante... ele consegue conter Sukuna?"', falante: 'Gojo' },
+      { id: 'j1_04', texto: '👁️ *A Decisão de Gojo*\n\nGojo: "Yuji... vais morrer. Ou vais viver e comer todos os dedos de Sukuna?"\n\n"Eu prefiro morrer como humano!"\n\nGojo sorri. "Então... vamos ao colégio de Jujutsu!"\n\n> 👁️ *Itadori Yuji torna-se um feiticeiro jujutsu!*', xp: 150, coins: 300, title: 'Recipiente de Sukuna' },
+    ],
+    recompensas: { xp: 600, coins: 1200, title: 'Recipiente de Sukuna' },
+  },
+  {
+    id: 'jjk_ch02', titulo: 'O Colégio de Jujutsu',
+    descricao: 'Gojo Sensei. Nobara. Megumi. A trio mais desequilibrada.',
+    nivel: 16, xp: 250, coins: 600,
+    nodes: [
+      { id: 'j2_01', texto: '🏛️ *Colégio de Jujutsu de Tóquio*\n\nGojo apresenta:\n- Megumi Fushiguro — Ten Shadows\n- Nobara Kugisaki — Straw Doll\n- Yuji Itadori — Sukuna\n\n"Vocês são a minha turma favorita!"', falante: 'Gojo' },
+      { id: 'j2_02', texto: '🪆 *Nobara, a Rainha!*\n\n"Eu sou Nobara! Bonita, forte e com mau feitio!"\n\nUsa bonecos de palha e pregos amaldiçoados.\n\n"Ninguém me controla!"', falante: 'Nobara' },
+      { id: 'j2_03', texto: '🐺 *Missão: Maldição de Grau Especial!*\n\nUma maldição de Grau Especial aparece num hospital!\n\nYuji e Nobara enfrentam-na juntos!', boss: { nome: 'Maldição do Hospital', emoji: '🐺', hp: 3000, atk: 130, def: 50, xp: 500, coins: 1000, habilidades: ['Domínio do Hospital', 'Cura Maligna', 'Grito Paralisante'], descricao: 'Uma maldição nascida do medo dos pacientes.' }},
+      { id: 'j2_04', texto: '👊 *Punho Divergente!*\n\nYuji combate corpo a corpo! A maldição cai!\n\n"Vamos! Juntos somos mais fortes!"\n\n> 🏛️ *Primeira missão completa!*', xp: 200, coins: 400, title: 'Feiticeiro Iniciante' },
+    ],
+    recompensas: { xp: 700, coins: 1500, title: 'Feiticeiro Iniciante' },
+  },
+  {
+    id: 'jjk_ch03', titulo: 'O Incidente de Yasohachi Bridge',
+    descricao: 'Junpei. Mahito. A crueldade das maldições.',
+    nivel: 18, xp: 300, coins: 800,
+    nodes: [
+      { id: 'j3_01', texto: '🌊 *Junpei Yoshino*\n\nUm estudante isolado. Mahito encontra-o.\n\n"Eu posso dar-te poder... para vingar a tua mãe."\n\nMahito transforma pessoas em maldições. É o pior dos piores.', falante: 'Mahito' },
+      { id: 'j3_02', texto: '💀 *Mahito — A Maldição Humana!*\n\n"Eu sou Mahito. Nasci do ódio dos humanos contra humanos."\n\nA sua técnica: Idle Transfiguration. Muda a forma da alma!\n\nJunpei é transformado em maldição!', boss: { nome: 'Mahito', emoji: '💀', hp: 4000, atk: 150, def: 60, xp: 800, coins: 2000, habilidades: ['Idle Transfiguration', 'Polymorphic Soul', 'Body Repel'], descricao: 'A maldição que nasceu do ódio humano.' }},
+      { id: 'j3_03', texto: '👊 *Yuji vs Mahito!*\n\nYuji tenta salvar Junpei... mas é tarde!\n\n"MAHITO! EU VOU MATAR-TE!"\n\nGojo aparece e salva Yuji. Mas foge.\n\n> 💀 *Junpei morreu... Mahito vai pagar.*', xp: 250, coins: 600, title: 'Vingança Prometida' },
+    ],
+    recompensas: { xp: 900, coins: 2000, title: 'Vingança Prometida' },
+  },
+  {
+    id: 'jjk_ch04', titulo: 'O Evento de Troca — Kyoto',
+    descricao: 'Feiticeiros de Tóquio vs Kyoto. Todo quer matar Yuji!',
+    nivel: 20, xp: 400, coins: 1000,
+    nodes: [
+      { id: 'j4_01', texto: '⚔️ *Evento de Troca entre Escolas!*\n\nTóquio vs Kyoto! Os melhores feiticeiros!\n\nAoi Todo de Kyoto: "Yuji! Vou matar-te!"\n\nMas Todo muda de ideias depois de lutar!', falante: 'Todo' },
+      { id: 'j4_02', texto: '👊 *Yuji vs Todo — Irmãos de Alma!*\n\nTodo é o mais forte de Kyoto!\n\nMas depois de ver a determinação de Yuji:\n\n"Tu és o meu melhor amigo! Vamos treinar juntos!"\n\nTodo torna-se o mentor de Yuji!', xp: 300, coins: 600, skill: 'Black Flash' },
+      { id: 'j4_03', texto: '⚡ *Black Flash!*\n\nYuji executa o Black Flash pela primeira vez!\n\nO impacto distorce o espaço!\n\n*CRACK!*\n\nTodo sorri. "Excelente...!"', xp: 400, coins: 800, skill: 'Black Flash' },
+      { id: 'j4_04', texto: '💀 *A Invasão de Hanami!*\n\nHanami — uma maldição de Grau Especial — invade!\n\nTodos unem-se para lutar!', boss: { nome: 'Hanami', emoji: '🌿', hp: 5000, atk: 180, def: 70, xp: 1000, coins: 2500, habilidades: ['Domínio da Floresta', 'Disaster Plants', 'Wooden Ball'], descricao: 'A maldição da natureza. Quer eliminar a humanidade.' }},
+      { id: 'j4_05', texto: '🌿 *Gojo Satoru — O Mais Forte!*\n\nGojo aparece!\n\n"Vocês aborrecem-me."\n\nUsa o Infinito. Hanami recua.\n\n"Eu sou o mais forte. Nunca se esqueçam."\n\n> ⚔️ *Evento de Troca termina com vitória de Tóquio!*', xp: 300, coins: 700, title: 'Feiticeiro de Grau 1' },
+    ],
+    recompensas: { xp: 1500, coins: 3500, skill: 'Black Flash', title: 'Feiticeiro de Grau 1' },
+  },
+  {
+    id: 'jjk_ch05', titulo: 'A Queda de Gojo',
+    descricao: 'O plano de Geto. O selamento de Gojo. O mundo perde o seu guarda.',
+    nivel: 25, xp: 600, coins: 1500,
+    nodes: [
+      { id: 'j5_01', texto: '👁️ *O Incidente de Shibuya!*\n\nAs maldições atacam Shibuya! É uma armadilha para Gojo!\n\nMahito, Jogo, Hanami, Dagon — todos juntos!\n\n"Eles querem selar o Gojo!"', xp: 200 },
+      { id: 'j5_02', texto: '👁️ *Gojo vs Todos!*\n\nGojo enfrenta 4 Graus Especiais ao mesmo tempo!\n\n"Infinito... é o poder de um deus."\n\nMas... o Prison Realm! O selo ancestral!', boss: { nome: 'Jogo + Hanami + Dagon', emoji: '👁️', hp: 8000, atk: 250, def: 100, xp: 2000, coins: 5000, habilidades: ['Domínio Combinado', 'Disaster Trio', 'Maximum: Meteor'], descricao: 'Três Graus Especiais contra o mais forte.' }},
+      { id: 'j5_03', texto: '💀 *Gojo é Selado!*\n\nO Prison Realm ativa-se!\n\n"GOJO-SENSEI! NÃO!"\n\nGojo desaparece. O mundo fica sem o seu protetor.\n\n> 💀 *Satoru Gojo foi selado...*', xp: 300, coins: 800 },
+      { id: 'j5_04', texto: '🔥 *A Rebelião de Geto!*\n\nSuguru Geto (ou alguém que parece) lidera a revolta!\n\n"Sem Gojo... o mundo das maldições vai mudar!"\n\nYuji: "Eu vou salvar o Gojo!"', xp: 300, coins: 600, title: 'Feiticeiro Rebelde' },
+    ],
+    recompensas: { xp: 1800, coins: 4500, title: 'Sobrevivente de Shibuya' },
+  },
+  {
+    id: 'jjk_ch06', titulo: 'A Guerra contra as Maldições',
+    descricao: 'Sem Gojo, os feiticeiros lutam sozinhos.',
+    nivel: 28, xp: 800, coins: 2000,
+    nodes: [
+      { id: 'j6_01', texto: '⚔️ *A Culling Game!*\n\nKenjaku (a verdadeira mente por trás) ativa o jogo!\n\nFeiticeiros e maldições presos em barreiras!\n\n"Matem para sobreviver!"', xp: 300 },
+      { id: 'j6_02', texto: '👁️ *Megumi descende nas Sombras!*\n\nMegumi usa o Mahoraga — o Shikigami mais forte!\n\nMas o preço é a sua própria vida...\n\nYuji: "MEGUMI! NÃO!"', xp: 200, coins: 500 },
+      { id: 'j6_03', texto: '💀 *Mahito vs Yuji — O Combate Final!*\n\nYuji enfrenta Mahito de novo!\n\n"Tu mataste o Junpei! Tu vais pagar!"\n\nMahito: "Humanos são todos iguais... fracos!"', boss: { nome: 'Mahito (Forma Verdadeira)', emoji: '💀', hp: 10000, atk: 280, def: 100, xp: 3000, coins: 7000, habilidades: ['Soul Multiplicity', 'Instant Spirit Body', 'Domain Expansion: Self-Embodiment'], descricao: 'Mahito na sua forma mais forte.' }},
+      { id: 'j6_04', texto: '👊 *Yuji derrota Mahito!*\n\n"Eu não sou tu! Eu protejo os meus amigos!"\n\nMahito é derrotado!\n\n> 👊 *Mahito foi destruído!*', xp: 800, coins: 2000, title: 'Destruidor de Maldições' },
+    ],
+    recompensas: { xp: 2500, coins: 6000, title: 'Destruidor de Maldições' },
+  },
+  {
+    id: 'jjk_ch07', titulo: 'Sukuna Assume o Controlo',
+    descricao: 'O Rei das Maldições desperta verdadeiramente.',
+    nivel: 32, xp: 1000, coins: 3000,
+    nodes: [
+      { id: 'j7_01', texto: '👁️ *Sukuna Toma o Corpo!*\n\nYuji perde o controlo! Sukuna assume!\n\n"Eu sou o Rei das Maldições! Este corpo é meu!"\n\nMegumi tenta parar... mas Sukuna é forte demais!', falante: 'Sukuna' },
+      { id: 'j7_02', texto: '👁️ *Domain Expansion: Malevolent Shrine!*\n\nSukuna ativa o seu Domínio!\n\nMil lâminas cortam tudo!\n\nNinguém pode escapar!', xp: 500, coins: 1500, skill: 'Malevolent Shrine' },
+      { id: 'j7_03', texto: '👁️ *Sukuna vs Todos os Feiticeiros!*', boss: { nome: 'Sukuna (20 Dedos)', emoji: '👁️', hp: 20000, atk: 500, def: 200, xp: 8000, coins: 20000, habilidades: ['Cleave', 'Dismantle', 'Malevolent Shrine', 'Fire Arrow'], descricao: 'O Rei das Maldições com poder total.' }},
+      { id: 'j7_04', texto: '💀 *O Sacrifício Final!*\n\nYuji luta dentro do próprio corpo!\n\n"SUKUNA! EU VOU DERROTAR-TE DE DENTRO!"\n\nMas Sukuna é forte demais...\n\n> 💀 *Sukuna conquistou o corpo de Yuji...*', xp: 500, coins: 1500 },
+    ],
+    recompensas: { xp: 3500, coins: 9000, title: 'Recipiente Perdido' },
+  },
+  {
+    id: 'jjk_ch08', titulo: 'Gojo Libertado',
+    descricao: 'O selo é quebrado. O mais forte regressa.',
+    nivel: 35, xp: 1200, coins: 3500,
+    nodes: [
+      { id: 'j8_01', texto: '👁️ *O Prison Realm é quebrado!*\n\nYuji e Megumi encontram o selo!\n\n"GOJO-SENSEI! ESTAMOS AQUI!"\n\nO selo parte-se. Luz azul inunda tudo!', xp: 400 },
+      { id: 'j8_02', texto: '👁️ *Gojo Satoru — O Mais Forte!*\n\nGojo aparece. Mais forte que nunca.\n\n"Saudades. O que perdi?"\n\nYuji: "Tudo. Tudo mudou."\n\nGojo: "Então... vamos mudar de volta."', falante: 'Gojo' },
+      { id: 'j8_03', texto: '👁️ *Gojo vs Sukuna — O Combate Supremo!*', boss: { nome: 'Gojo Satoru', emoji: '👁️', hp: 25000, atk: 600, def: 250, xp: 10000, coins: 25000, habilidades: ['Infinity', 'Hollow Purple', 'Domain Expansion: Unlimited Void', 'Six Eyes'], descricao: 'O feiticeiro mais forte de todos os tempos.' }},
+      { id: 'j8_04', texto: '👁️ *Gojo vs Sukuna — O Infinito vs O Rei!*\n\nA batalha mais épica da história!\n\nGojo usa o Hollow Purple!\n\nSukuna contra-ataca com Cleave!\n\nO mundo treme!\n\n> 👁️ *A batalha mais intensa da história...*', xp: 1000, coins: 3000, title: 'Testemunha do Infinito' },
+    ],
+    recompensas: { xp: 4500, coins: 12000, title: 'Testemunha do Infinito' },
+  },
+  {
+    id: 'jjk_ch09', titulo: 'O Preço da Vitória',
+    descricao: 'Gojo cai. Os alunos continuam a luta.',
+    nivel: 38, xp: 1500, coins: 4000,
+    nodes: [
+      { id: 'j9_01', texto: '💀 *Gojo Cai!*\n\nSukuna usa uma técnica que nem Gojo esperava!\n\n"O mais forte... caiu."\n\nO mundo perde o seu herói.\n\nYuji chora. Mas não desiste.', xp: 300, coins: 800 },
+      { id: 'j9_02', texto: '🔥 *A Última Esperança!*\n\nYuji, Megumi, Nobara, Todo, Maki — todos juntos!\n\n"GOJO-SENSEI ACREDITOU EM NÓS! NÃO VAMOS FALHAR!"\n\nA nova geração levanta-se!', xp: 400, coins: 1000 },
+      { id: 'j9_03', texto: '👊 *Yuji vs Sukuna — Round Final!*', boss: { nome: 'Sukuna (Forma Final)', emoji: '👁️', hp: 30000, atk: 700, def: 280, xp: 12000, coins: 30000, habilidades: ['World Cutting Slash', 'Malevolent Shrine', 'Fire Arrow', 'Reverse Cursed Technique'], descricao: 'Sukuna no seu poder supremo.' }},
+      { id: 'j9_04', texto: '👊 *O Punho Final!*\n\nYuji reúne todo o seu poder!\n\nCada amigo. Cada perda. Cada momento.\n\n"EU SOU ITADORI YUJI! E EU VOU PROTEGER O MUNDO!"\n\n*BLACK FLASH FINAL!*\n\nSukuna cai!', xp: 2000, coins: 5000, title: 'Herói de Jujutsu' },
+    ],
+    recompensas: { xp: 5000, coins: 15000, title: 'Herói de Jujutsu' },
+  },
+  {
+    id: 'jjk_ch10', titulo: 'O Novo Mundo',
+    descricao: 'Sem maldições. Sem sofrimento. O mundo que Gojo sonhou.',
+    nivel: 40, xp: 2000, coins: 5000,
+    nodes: [
+      { id: 'j10_01', texto: '🌅 *O Mundo Depois*\n\nAs maldições desaparecem. O mundo é livre.\n\nYuji olha para o céu.\n\n"Avô... eu cumpri a promessa."\n\nMegumi sorri. Nobara ri-se.\n\nGojo, do além, acena.\n\n> 🌅 *FIM — Jujutsu Kaisen completo!*\n> 🏆 *Itadori Yuji salvou o mundo!*\n> ⭐ *A geração mais forte.*', xp: 5000, coins: 15000, title: 'Lenda de Jujutsu', item: 'Olho de Sukuna' },
+    ],
+    recompensas: { xp: 10000, coins: 30000, title: 'Lenda de Jujutsu', item: 'Olho de Sukuna' },
+  },
+];
+
+const DRAGONBALL_CHAPTERS = [
+  {
+    id: 'db_ch01', titulo: 'O Rapaz da Cauda',
+    descricao: 'Montanha Paozu. Um rapaz com cauda de macaco vive sozinho ate Bulma aparecer.',
+    nivel: 20, xp: 300, coins: 800,
+    nodes: [
+      { id: 'd1_01', texto: '🐉 *Montanha Paozu*\n\nUm rapaz de 12 anos com cauda vive sozinho. Pesca, treina e come. Muito.\n\n"Eu sou Son Goku!"', falante: 'Goku' },
+      { id: 'd1_02', texto: '🔮 *Bulma e as Esferas do Dragao!*\n\n"EU SOU BULMA! Procuro as 7 Esferas do Dragao!"\n\nGoku: "Que fixe! Eu vou contigo!"', falante: 'Bulma' },
+      { id: 'd1_03', texto: '🐢 *Mestre Roshi*\n\nGoku treina com o velho pervertido durante 8 meses!\n\nDepois entra no 21o Torneio de Artes Marciais!', xp: 200, coins: 500, item: 'Kinton' },
+    ],
+    recompensas: { xp: 800, coins: 2000, item: 'Kinton', title: 'Lutador de Torneio' },
+  },
+  {
+    id: 'db_ch02', titulo: 'O Rei Piccolo',
+    descricao: 'O demónio mais antigo desperta. Goku precisa de vinganca.',
+    nivel: 22, xp: 400, coins: 1000,
+    nodes: [
+      { id: 'd2_01', texto: '💀 *Krillin Morreu!*\n\nO demónio mais antigo do mundo despertou!', xp: 100 },
+      { id: 'd2_02', texto: '👹 *Goku vs Rei Piccolo!*', boss: { nome: 'Rei Piccolo', emoji: '👹', hp: 4000, atk: 150, def: 60, xp: 800, coins: 2000, habilidades: ['Makankosappo', 'Explosao Demoníaca'], descricao: 'O demónio mais antigo do mundo.' }},
+      { id: 'd2_03', texto: '🏆 *Goku vence e torna-se Campeao Mundial!*', xp: 300, title: 'Campeao Mundial' },
+    ],
+    recompensas: { xp: 1200, coins: 3000, title: 'Campeao Mundial' },
+  },
+  {
+    id: 'db_ch03', titulo: 'A Chegada dos Saiyajins',
+    descricao: 'Raditz revela a verdade: Goku e um Saiyajin!',
+    nivel: 25, xp: 600, coins: 1500,
+    nodes: [
+      { id: 'd3_01', texto: '⚡ *Raditz — O Irmao de Goku!*\n\n"Tu es um Saiyajin! Foste enviado para destruir a Terra!"', falante: 'Raditz' },
+      { id: 'd3_02', texto: '⚡ *Goku vs Raditz!*', boss: { nome: 'Raditz', emoji: '⚡', hp: 3000, atk: 140, def: 50, xp: 600, coins: 1500, habilidades: ['Ki Blast', 'Double Sunday'], descricao: 'O irmao de Goku.' }},
+      { id: 'd3_03', texto: '💀 *Goku morre para derrotar Raditz...*', xp: 200 },
+      { id: 'd3_04', texto: '🏋️ *Treino com o Rei Kaioh!*\n\nGoku aprende o Kaioken!\n\n"KAIOKEN TIMES 2!"', xp: 300, skill: 'Kaioken' },
+      { id: 'd3_05', texto: '💥 *Goku vs Vegeta!*', boss: { nome: 'Vegeta', emoji: '👑', hp: 6000, atk: 200, def: 80, xp: 1500, coins: 3000, habilidades: ['Galick Gun', 'Oozaru'], descricao: 'O Principe dos Saiyajins.' }},
+      { id: 'd3_06', texto: '👑 *Vegeta foge!*\n\nRumo a Namek!', xp: 400, title: 'Saiyajin de Classe Baixa' },
+    ],
+    recompensas: { xp: 2500, coins: 6000, skill: 'Kaioken', title: 'Saiyajin' },
+  },
+  {
+    id: 'db_ch04', titulo: 'Namek — O Imperador Frieza',
+    descricao: 'O planeta Namek. O tirano mais cruel do universo.',
+    nivel: 30, xp: 1000, coins: 2500,
+    nodes: [
+      { id: 'd4_01', texto: '🟢 *O Planeta Namek!*\n\nFrieza ja esta la!', xp: 200 },
+      { id: 'd4_02', texto: '⚡ *Goku vs Ginyu Force!*', xp: 300 },
+      { id: 'd4_03', texto: '👿 *Frieza — O Tirano!*', boss: { nome: 'Frieza (Forma Final)', emoji: '👿', hp: 15000, atk: 300, def: 120, xp: 3000, coins: 8000, habilidades: ['Death Beam', 'Death Ball'], descricao: 'O imperador do universo.' }},
+      { id: 'd4_04', texto: '💀 *Krillin morre de novo!*\n\nGoku: "KRILLIN... AAAAAAH!"\n\nO cabelo fica dourado. Os olhos verdes.\n\n> 💛 *SUPER SAIYAJIN!*', xp: 500, skill: 'Super Saiyajin' },
+      { id: 'd4_05', texto: '💛 *Goku SSJ vs Frieza!*\n\nGoku vence! Namek explode!', xp: 500, title: 'Super Saiyajin' },
+    ],
+    recompensas: { xp: 3500, coins: 9000, skill: 'Super Saiyajin', title: 'Super Saiyajin' },
+  },
+  {
+    id: 'db_ch05', titulo: 'Androides e Cell',
+    descricao: 'Trunks do futuro avisa: androides vao destruir a Terra!',
+    nivel: 35, xp: 1200, coins: 3000,
+    nodes: [
+      { id: 'd5_01', texto: '⚡ *Trunks do Futuro!*\n\n"Em 3 anos, androides vao destruir a Terra!"', falante: 'Trunks' },
+      { id: 'd5_02', texto: '🤖 *Os Androides 17 e 18!*\n\nVegeta atinge o Super Saiyajin!\n\n"FINAL FLASH!"', xp: 300, skill: 'Final Flash' },
+      { id: 'd5_03', texto: '🧬 *Cell — O Perfeito!*', boss: { nome: 'Cell Perfeito', emoji: '🧬', hp: 20000, atk: 350, def: 150, xp: 4000, coins: 10000, habilidades: ['Kamehameha', 'Regeneracao'], descricao: 'O ser perfeito.' }},
+      { id: 'd5_04', texto: '⚡ *Gohan atinge o Super Saiyajin 2!*\n\n"VOCES VAO PAGAR!"', xp: 500, skill: 'Super Saiyajin 2' },
+      { id: 'd5_05', texto: '⚡ *Gohan vence Cell!*', xp: 500, title: 'Heroi do Torneio' },
+    ],
+    recompensas: { xp: 3000, coins: 8000, skill: 'Super Saiyajin 2', title: 'Heroi do Torneio' },
+  },
+  {
+    id: 'db_ch06', titulo: 'Majin Buu',
+    descricao: 'O demónio mais antigo desperta. A Terra esta em perigo!',
+    nivel: 40, xp: 1500, coins: 4000,
+    nodes: [
+      { id: 'd6_01', texto: '💀 *Majin Buu desperta!*\n\nBabidi controla Vegeta!', xp: 300 },
+      { id: 'd6_02', texto: '👑 *Vegeta sacrifica-se!*\n\n"TRUNKS... BULMA... EU VOU SALVAR-VOS!"', xp: 400 },
+      { id: 'd6_03', texto: '💀 *Buu absorve todos!*', boss: { nome: 'Super Buu', emoji: '💀', hp: 25000, atk: 400, def: 160, xp: 5000, coins: 12000, habilidades: ['Absorcao', 'Candy Beam', 'Regeneracao'], descricao: 'O demónio mais antigo.' }},
+      { id: 'd6_04', texto: '🐉 *Goku SSJ3!*\n\n"EU VOU ALÉM DOS LIMITES!"', xp: 600, skill: 'Super Saiyajin 3' },
+      { id: 'd6_05', texto: '🌍 *Genkidama!*\n\nToda a Terra da energia!\n\n*BUU É DESTRUÍDO!*', xp: 600, title: 'Salvador da Terra' },
+    ],
+    recompensas: { xp: 4000, coins: 10000, skill: 'Super Saiyajin 3', title: 'Salvador da Terra' },
+  },
+  {
+    id: 'db_ch07', titulo: 'Battle of Gods — Beerus',
+    descricao: 'O Deus da Destruição desperta! E mais forte que qualquer Saiyajin!',
+    nivel: 45, xp: 2000, coins: 5000,
+    nodes: [
+      { id: 'd7_01', texto: '😴 *Beerus acorda!*\n\n"Eu sou o Deus da Destruição. Alguém me provocou."', falante: 'Beerus' },
+      { id: 'd7_02', texto: '💜 *Goku vs Beerus!*', boss: { nome: 'Beerus', emoji: '😴', hp: 30000, atk: 500, def: 200, xp: 6000, coins: 15000, habilidades: ['Hakai', 'Sphere of Destruction'], descricao: 'O Deus da Destruição.' }},
+      { id: 'd7_03', texto: '🔴 *Super Saiyajin God!*\n\nGoku atinge o poder divino!', xp: 800, skill: 'Super Saiyajin God' },
+      { id: 'd7_04', texto: '🔴 *Goku SSG vs Beerus!*\n\nO combate destrói planetas!\n\nBeerus fica impressionado!', xp: 600, title: 'Deus Saiyajin' },
+    ],
+    recompensas: { xp: 5000, coins: 12000, skill: 'Super Saiyajin God', title: 'Deus Saiyajin' },
+  },
+  {
+    id: 'db_ch08', titulo: 'Resurrection F — Golden Frieza',
+    descricao: 'Frieza volta da morte com uma nova forma dourada!',
+    nivel: 50, xp: 2500, coins: 6000,
+    nodes: [
+      { id: 'd8_01', texto: '👿 *Frieza ressuscita!*\n\n"EU VOU VINGAR-ME DO GOKU!"', falante: 'Frieza' },
+      { id: 'd8_02', texto: '💛 *Golden Frieza!*', boss: { nome: 'Golden Frieza', emoji: '💛', hp: 35000, atk: 550, def: 220, xp: 7000, coins: 18000, habilidades: ['Golden Death Beam', 'Earth Breaker'], descricao: 'Frieza na sua forma dourada.' }},
+      { id: 'd8_03', texto: '💙 *Super Saiyajin Blue!*\n\nGoku atinge o SSB!', xp: 1000, skill: 'Super Saiyajin Blue' },
+      { id: 'd8_04', texto: '💙 *Goku SSB vs Golden Frieza!*\n\nGoku vence de novo!', xp: 800, title: 'Saiyajin Blue' },
+    ],
+    recompensas: { xp: 6000, coins: 15000, skill: 'Super Saiyajin Blue', title: 'Saiyajin Blue' },
+  },
+  {
+    id: 'db_ch09', titulo: 'Goku Black — Zamasu',
+    descricao: 'Um Kaioshin corrompido rouba o corpo de Goku!',
+    nivel: 55, xp: 3000, coins: 7000,
+    nodes: [
+      { id: 'd9_01', texto: '🖤 *Goku Black!*\n\nUm Goku do futuro com o poder de Zamasu!', xp: 400 },
+      { id: 'd9_02', texto: '💜 *Zamasu Imortal!*', boss: { nome: 'Zamasu Fusionado', emoji: '💜', hp: 40000, atk: 600, def: 250, xp: 8000, coins: 20000, habilidades: ['Holy Wrath', 'Lightning of Absolution'], descricao: 'O deus corrompido.' }},
+      { id: 'd9_03', texto: '⚡ *Trunks SSJ Rage!*\n\n"EU VOU PROTEGER TODOS!"', xp: 800, skill: 'Spirit Sword' },
+      { id: 'd9_04', texto: '🌍 *Zeno apaga a linha temporal!*\n\nO universo e salvo!', xp: 600, title: 'Guerreiro Temporal' },
+    ],
+    recompensas: { xp: 7000, coins: 17000, skill: 'Spirit Sword', title: 'Guerreiro Temporal' },
+  },
+  {
+    id: 'db_ch10', titulo: 'Torneio do Poder',
+    descricao: '8 universos lutam pela sobrevivencia! Goku alcanca o poder supremo!',
+    nivel: 60, xp: 4000, coins: 10000,
+    nodes: [
+      { id: 'd10_01', texto: '🏆 *Torneio do Poder!*\n\n8 universos! 80 guerreiros! O universo perdedor e apagado!', xp: 500 },
+      { id: 'd10_02', texto: '💪 *Jiren — O Mais Forte!*', boss: { nome: 'Jiren', emoji: '💪', hp: 50000, atk: 800, def: 300, xp: 10000, coins: 25000, habilidades: ['Power Impact', 'Invisible Strikes', 'Full Power'], descricao: 'O guerreiro mais forte do Universo 11.' }},
+      { id: 'd10_03', texto: '⚪ *ULTRA INSTINTO!*\n\nGoku atinge o poder supremo!\n\nO corpo move-se sozinho!\n\nO cabelo fica prateado!', xp: 2000, skill: 'Ultra Instinto' },
+      { id: 'd10_04', texto: '⚪ *Goku UI vs Jiren!*\n\nA batalha mais epica de todos os tempos!\n\nGoku vence! O Universo 7 e salvo!', xp: 1500, title: 'Mortal Mais Forte' },
+      { id: 'd10_05', texto: '🏆 *FIM — Dragon Ball Super!*\n\nGoku e o mortal mais forte do multiverso!\n\n> 🏆 *Parabens! Completaste Dragon Ball!*', xp: 3000, coins: 20000, title: 'Lenda Saiyajin' },
+    ],
+    recompensas: { xp: 10000, coins: 30000, skill: 'Ultra Instinto', title: 'Lenda Saiyajin' },
+  },
+];
+
+const DEMONSLAYER_CHAPTERS = [
+  {
+    id: 'ds_ch01', titulo: 'A Família Assassinada',
+    descricao: 'Tanjiro encontra a família morta. Nezuko torna-se demónio.',
+    nivel: 8, xp: 150, coins: 400,
+    nodes: [
+      { id: 'ds1_01', texto: '❄️ *Montanha Neve*\n\nTanjiro Kamado volta para casa... e encontra a família inteira morta.\n\nSangue por todo o lado.\n\nMas... Nezuko ainda respira!\n\n"NEZUKO! AGUENTA!"', falante: 'Tanjiro' },
+      { id: 'ds1_02', texto: '👹 *Nezuko Transforma-se!*\n\nNezuko torna-se demónio!\n\nMas... ela não ataca Tanjiro!\n\n"Nezuko... tu ainda és a minha irmã!"\n\nGiyu Tomioka aparece. "Mate-a."\n\n"NUNCA!"', xp: 100, coins: 200 },
+      { id: 'ds1_03', texto: '⚔️ *Giyu Tomioka — Pilar da Água!*\n\nGiyu quer matar Nezuko. Tanjiro protege-a.\n\n"Se a minha irmã matar alguém, eu vou junto!"\n\nGiyu hesita. Pela primeira vez, vê algo diferente.', xp: 80 },
+      { id: 'ds1_04', texto: '🏔️ *Urokodaki — O Treino!*\n\nGiyu envia Tanjiro para Urokodaki, o antigo Pilar da Água.\n\n"Treina durante 2 anos. Depois enfrenta a seleção."\n\nTanjiro aprende a Respiração da Água!\n\n> ❄️ *O caminho do Caçador de Demónios começa!*', xp: 200, coins: 500, skill: 'Respiração da Água' },
+    ],
+    recompensas: { xp: 500, coins: 1200, skill: 'Respiração da Água', title: 'Caçador Iniciante' },
+  },
+  {
+    id: 'ds_ch02', titulo: 'A Seleção Final',
+    descricao: 'Monte Fujikasane. Sobreviver ao amanhecer entre demónios.',
+    nivel: 9, xp: 200, coins: 500,
+    nodes: [
+      { id: 'ds2_01', texto: '🌸 *Monte Fujikasane*\n\n100 candidatos. Demónios por todo o lado.\n\nSobrevivam até ao amanhecer!\n\nTanjiro luta com a espada de Urokodaki.', xp: 100 },
+      { id: 'ds2_02', texto: '⚡ *Zenitsu Agatsuma!*\n\nUm rapaz medroso que só luta a dormir!\n\n"Eu não quero morrer! Quero casar!"\n\nMas quando adormece... usa a Respiração do Trovão!', falante: 'Zenitsu' },
+      { id: 'ds2_03', texto: '🐗 *Inosuke Hashibira!*\n\nUm rapaz com cabeça de javali!\n\n"EU SOU O REI DA MONTANHA!"\n\nUsa duas espadas e Respiração da Besta!', falante: 'Inosuke' },
+      { id: 'ds2_04', texto: '⚔️ *A Manhã Chega!*\n\nOs sobreviventes são aceites como Caçadores de Demónios!\n\nTanjiro, Zenitsu e Inosuke tornam-se uma equipa!\n\n> ⚔️ *Seleção Final completa!*', xp: 150, coins: 300, title: 'Caçador de Demónios' },
+    ],
+    recompensas: { xp: 600, coins: 1500, title: 'Caçador de Demónios' },
+  },
+  {
+    id: 'ds_ch03', titulo: 'O Comboio Infinito',
+    descricao: 'Enmu, um Lua Inferior, controla um comboio de sonhos!',
+    nivel: 11, xp: 300, coins: 800,
+    nodes: [
+      { id: 'ds3_01', texto: '🚂 *O Comboio Infinito!*\n\nUm comboio onde todos adormecem!\n\nEnmu controla os sonhos!\n\nTanjiro está preso num sonho feliz... com a família viva...', xp: 150, coins: 300 },
+      { id: 'ds3_02', texto: '😴 *O Sonho de Tanjiro*\n\nA família está viva. Nezuko é humana. Tudo é perfeito.\n\nMas Tanjiro sabe que não é real.\n\n"Eu preciso de acordar... há pessoas para proteger!"\n\n*Corta o próprio pescoço no sonho!*', xp: 200, coins: 400 },
+      { id: 'ds3_03', texto: '🌙 *Enmu — Lua Inferior 1!*', boss: { nome: 'Enmu', emoji: '😴', hp: 3000, atk: 120, def: 50, xp: 600, coins: 1500, habilidades: ['Manipulação de Sonhos', 'Sono Eterno', 'Fusão com Comboio'], descricao: 'O demónio que controla sonhos.' }},
+      { id: 'ds3_04', texto: '🔥 *Rengoku — O Pilar da Chama!*\n\nKyojuro Rengoku aparece!\n\n"Não se preocupem! Estou aqui!"\n\nA Respiração da Chama destrói Enmu!', xp: 300, coins: 600, skill: 'Respiração da Chama' },
+      { id: 'ds3_05', texto: '🔥 *Rengoku vs Akaza!*\n\nAkaza — Lua Superior 3 — aparece!\n\n"Rengoku! Junta-te a mim!"\n\n"NUNCA! Eu protejo os meus!"', boss: { nome: 'Akaza', emoji: '🔥', hp: 8000, atk: 250, def: 100, xp: 2000, coins: 5000, habilidades: ['Destructive Death', 'Compass Needle', 'Air Type'], descricao: 'Lua Superior 3. O demónio que respeita os guerreiros fortes.' }},
+      { id: 'ds3_06', texto: '🔥 *O Sacrifício de Rengoku!*\n\nRengoku luta até ao amanhecer!\n\n"Tanjiro... protege as pessoas!"\n\nRengoku morre de pé. Os olhos abertos.\n\n> 🔥 *Kyojuro Rengoku... o herói que nunca se rendeu.*', xp: 500, coins: 1500, title: 'Herdeiro da Chama' },
+    ],
+    recompensas: { xp: 2000, coins: 5000, skill: 'Respiração da Chama', title: 'Herdeiro da Chama' },
+  },
+  {
+    id: 'ds_ch04', titulo: 'A Vila dos Ferreiros',
+    descricao: 'Espadas novas. Novos poderes. As Prostitutas vêm aí.',
+    nivel: 14, xp: 400, coins: 1000,
+    nodes: [
+      { id: 'ds4_01', texto: '🔨 *Vila dos Ferreiros!*\n\nTanjiro precisa de uma nova espada!\n\nHaganezuka, o ferreiro, está furioso.\n\n"PARA DE PARTIR AS ESPADAS!"', falante: 'Haganezuka' },
+      { id: 'ds4_02', texto: '⚔️ *A Espada Negra-Verde!*\n\nTanjiro recebe uma espada especial!\n\nCor: Negro-Verde. Rara como a de Yoriichi!\n\n"Esta espada... escolheu-te."', xp: 200, coins: 500, item: 'Espada Nichirin Negra-Verde' },
+      { id: 'ds4_03', texto: '🌊 *Treino com Tengen!*\n\nTengen Uzui, o Pilar do Som, treina Tanjiro!\n\n"Eu sou o mais extravagante! O mais bonito!"\n\nA Respiração do Som é única!', xp: 300, coins: 700, skill: 'Respiração do Som' },
+      { id: 'ds4_04', texto: '⚔️ *As Prostitutas Chegam!*\n\nDaki e Gyutaro — Luas Superiores 6!\n\nVão destruir o Distrito Vermelho!\n\n> 🔨 *Missão: Destruir as Luas Superiores!*', xp: 250, coins: 600 },
+    ],
+    recompensas: { xp: 1200, coins: 3000, item: 'Espada Nichirin', skill: 'Respiração do Som' },
+  },
+  {
+    id: 'ds_ch05', titulo: 'O Distrito Vermelho — Daki e Gyutaro',
+    descricao: 'As prostitutas mais belas e mortais.',
+    nivel: 16, xp: 500, coins: 1500,
+    nodes: [
+      { id: 'ds5_01', texto: '🌙 *Distrito do Entretenimento!*\n\nTanjiro, Zenitsu e Inosuke infiltram-se!\n\nDaki é a geisha mais bela... e mais mortífera!\n\n"Vocês são tão feios... vou matar-vos."', falante: 'Daki' },
+      { id: 'ds5_02', texto: '🌙 *Daki — Lua Superior 6!*', boss: { nome: 'Daki', emoji: '🌙', hp: 5000, atk: 180, def: 70, xp: 1200, coins: 3000, habilidades: ['Obi Demoníaco', 'Blood Demon Art', 'Regeneracao'], descricao: 'Lua Superior 6. A geisha demoníaca.' }},
+      { id: 'ds5_03', texto: '👹 *Gyutaro — O Verdadeiro Lua Superior 6!*\n\nDaki é só metade! Gyutaro é o verdadeiro!\n\n"Eu sou o irmão mais velho! Ninguém toca na minha irmã!"', boss: { nome: 'Gyutaro', emoji: '👹', hp: 7000, atk: 220, def: 90, xp: 2000, coins: 5000, habilidades: ['Blood Sickles', 'Poison Blood', 'Rotating Circular Slashes'], descricao: 'O verdadeiro Lua Superior 6.' }},
+      { id: 'ds5_04', texto: '🔥 *Tengen vs Gyutaro!*\n\nTengen luta com as duas espadas!\n\n"EU SOU O MAIS EXTRAVAGANTE!"\n\nMas Gyutaro é forte demais! Tengen perde uma mão!', xp: 400, coins: 1000 },
+      { id: 'ds5_05', texto: '⚡ *Tanjiro + Tengen vs Gyutaro — FINAL!*\n\nTanjiro corta a cabeça de Gyutaro!\n\nTengen corta a de Daki!\n\nAo mesmo tempo!\n\n*AS LUAS SUPERIORES 6 CAEM!*\n\n> 🌙 *Distrito Vermelho salvo!*', xp: 600, coins: 2000, title: 'Caçador de Luas' },
+    ],
+    recompensas: { xp: 2500, coins: 7000, title: 'Caçador de Luas' },
+  },
+  {
+    id: 'ds_ch06', titulo: 'A Casa das Borboletas — Treino Hashira',
+    descricao: 'Tanjiro treina com os Pilares para ficar mais forte.',
+    nivel: 18, xp: 600, coins: 1500,
+    nodes: [
+      { id: 'ds6_01', texto: '🦋 *Casa das Borboletas!*\n\nTanjiro treina com Shinobu Kocho, o Pilar dosInsetos!\n\n"Eu vou matar todos os demónios... com um sorriso!"', falante: 'Shinobu' },
+      { id: 'ds6_02', texto: '⚡ *A Marca do Caçador!*\n\nTanjiro desbloqueia a Marca!\n\nAparece na testa como uma cicatriz flamejante!\n\n"Este poder... é de outro nível!"', xp: 300, coins: 800, skill: 'Marca do Caçador' },
+      { id: 'ds6_03', texto: '⚡ *Respiração Trovejante — Forma 7!*\n\nTanjiro combina Água + Trovão!\n\nCria a sua própria técnica!\n\n> ⚡ *Tanjiro evoluiu!*', xp: 400, coins: 1000, skill: 'Respiração Trovejante' },
+      { id: 'ds6_04', texto: '⚔️ *Reunião dos Pilares!*\n\nOs 9 Pilares juntos!\n\n"Tanjiro... vais enfrentar Muzan em breve."\n\n> 🦋 *Preparação para a batalha final!*', xp: 300, coins: 700, title: 'Guerreiro Hashira' },
+    ],
+    recompensas: { xp: 1800, coins: 4500, skill: 'Marca do Caçador', title: 'Guerreiro Hashira' },
+  },
+  {
+    id: 'ds_ch07', titulo: 'A Fortaleza Infinita — Kokushibo',
+    descricao: 'A lua superior mais forte. O demónio que foi humano.',
+    nivel: 22, xp: 800, coins: 2000,
+    nodes: [
+      { id: 'ds7_01', texto: '🏯 *A Fortaleza Infinita!*\n\nA base de Muzan! Uma dimensão onde nada morre!\n\nCada sala é uma armadilha!\n\nOs Pilares entram!', xp: 200, coins: 500 },
+      { id: 'ds7_02', texto: '⚔️ *Kokushibo — Lua Superior 1!*\n\nO demónio mais forte abaixo de Muzan!\n\nEra humano... irmão de Yoriichi!\n\n"Eu escolhi ser demónio... para superar o meu irmão!"', boss: { nome: 'Kokushibo', emoji: '⚔️', hp: 12000, atk: 300, def: 130, xp: 3000, coins: 8000, habilidades: ['Respiração Lunar', 'Blood Demon Art', 'See-Through World', 'Six Eyes'], descricao: 'Lua Superior 1. O demónio mais forte.' }},
+      { id: 'ds7_03', texto: '⚔️ *Os Pilares vs Kokushibo!*\n\nMuichiro, Sanemi, Gyomei — os mais fortes!\n\nKokushibo é impossível!\n\nMas Muichiro usa o selo do Criador!', xp: 500, coins: 1500 },
+      { id: 'ds7_04', texto: '⚔️ *Kokushibo Cai!*\n\nGyomei, o Pilar da Rocha, dá o golpe final!\n\n"Eu... finalmente... posso descansar?"\n\n> ⚔️ *Lua Superior 1 derrotado!*', xp: 800, coins: 2500, title: 'Destruidor de Luas' },
+    ],
+    recompensas: { xp: 3000, coins: 8000, title: 'Destruidor de Luas' },
+  },
+  {
+    id: 'ds_ch08', titulo: 'Muzan Kibutsuji — O Progenitor',
+    descricao: 'O demónio original. O que criou todos os demónios.',
+    nivel: 26, xp: 1200, coins: 3000,
+    nodes: [
+      { id: 'ds8_01', texto: '👹 *Muzan Kibutsuji!*\n\nO progenitor de todos os demónios!\n\n"Eu sou perfeito. Imortal. Ninguém me pode matar!"\n\nMuzan transforma Nezuko em humano... ou tenta!', falante: 'Muzan' },
+      { id: 'ds8_02', texto: '🔥 *Tanjiro vs Muzan!*', boss: { nome: 'Muzan Kibutsuji', emoji: '👹', hp: 25000, atk: 500, def: 200, xp: 8000, coins: 20000, habilidades: ['Demon Blood', 'Thousand Arms', 'Regeneracao Absoluta', 'Demon Transformation'], descricao: 'O progenitor de todos os demónios.' }},
+      { id: 'ds8_03', texto: '🔥 *Todos os Pilares vs Muzan!*\n\nOs 9 Pilares restantes atacam juntos!\n\nMuzan é forte demais! Mata Pilares com um golpe!\n\nMas Tanjiro não desiste!', xp: 600, coins: 1500 },
+      { id: 'ds8_04', texto: '☀️ *O Amanhecer!*\n\nTanjiro luta até o sol nascer!\n\nMuzan começa a derreter!\n\n"IMPOSSÍVEL! EU SOU PERFEITO!"\n\nMas o sol é o seu inimigo final!', xp: 1000, coins: 3000, title: 'Destruidor de Muzan' },
+    ],
+    recompensas: { xp: 4500, coins: 12000, title: 'Destruidor de Muzan' },
+  },
+  {
+    id: 'ds_ch09', titulo: 'O Amanhecer Eterno',
+    descricao: 'Muzan cai. O mundo é livre. Nezuko torna-se humana.',
+    nivel: 30, xp: 1500, coins: 4000,
+    nodes: [
+      { id: 'ds9_01', texto: '☀️ *Muzan Morre!*\n\nO sol consome Muzan!\n\n"EU... NÃO... POSSO... MORRER!"\n\nMas morre. Os demónios desaparecem.\n\nO mundo é livre!', xp: 500, coins: 1500 },
+      { id: 'ds9_02', texto: '🌸 *Nezuko é Humana!*\n\nNezuko acorda humana!\n\n"Tanjiro... irmão..."\n\nTanjiro chora. A sua irmã voltou.', xp: 500, coins: 1500 },
+      { id: 'ds9_03', texto: '🌅 *O Mundo sem Demónios!*\n\nOs sobreviventes celebram!\n\nZenitsu casa com Nezuko (finalmente!).\n\nInosuke continua a ser selvagem.\n\nTanjiro olha para o céu.\n\n"Rengoku... cumprimos a missão."\n\n> 🌅 *FIM — Demon Slayer completo!*\n> 🏆 *O sol nasceu sobre um mundo sem demónios.*', xp: 3000, coins: 10000, title: 'Lenda dos Caçadores', item: 'Espada Nichirin Dourada' },
+    ],
+    recompensas: { xp: 8000, coins: 25000, title: 'Lenda dos Caçadores', item: 'Espada Nichirin Dourada' },
+  },
+];
+
+const DMC_CHAPTERS = [
+  {
+    id: 'dmc_ch01', titulo: 'O Sangue de Sparda',
+    descricao: 'Dante, o filho do cavaleiro demoníaco. Meio-humano, meio-demónio.',
+    nivel: 12, xp: 200, coins: 500,
+    nodes: [
+      { id: 'dm1_01', texto: '😈 *Devil May Cry — A Loja*\n\n"Dante. Caçador de demónios."\n\nUma loja escura. Pizza. Whisky. E muitas armas.\n\nDante é filho de Sparda — o cavaleiro demoníaco que salvou a humanidade.', falante: 'Dante' },
+      { id: 'dm1_02', texto: '💃 *Trish Aparece!*\n\nUma mulher loira entra na loja.\n\n"Eu tenho um trabalho para ti... em Mallet Island."\n\nDante aceita. O dinheiro é bom.', falante: 'Trish' },
+      { id: 'dm1_03', texto: '👹 *Demónios por Todo o Lado!*\n\nMallet Island está infestada de demónios!\n\nDante usa Ebony & Ivory — as pistolas duplas!\n\n*BANG BANG BANG!*\n\n"Vamos lá... isto vai ser divertido!"', xp: 150, coins: 300, item: 'Ebony & Ivory' },
+      { id: 'dm1_04', texto: '⚔️ *Rebellion — A Espada de Sparda!*\n\nDante empunha a Rebellion — a espada do pai!\n\n"O sangue de Sparda corre em mim!"\n\n> ⚔️ *Dante desperta o poder demoníaco!*', xp: 200, coins: 500, skill: 'Devil Trigger', title: 'Caçador de Demónios' },
+    ],
+    recompensas: { xp: 600, coins: 1500, skill: 'Devil Trigger', title: 'Caçador de Demónios' },
+  },
+  {
+    id: 'dmc_ch02', titulo: 'Vergil — O Irmão Gémeo',
+    descricao: 'O irmão de Dante. O que escolheu o poder.',
+    nivel: 15, xp: 300, coins: 800,
+    nodes: [
+      { id: 'dm2_01', texto: '⚔️ *Vergil!*\n\nO irmão gémeo de Dante!\n\n"Eu quero o poder do pai... a qualquer preço!"\n\nVergil é o oposto de Dante — frio, calculista, obcecado.', falante: 'Vergil' },
+      { id: 'dm2_02', texto: '⚔️ *Dante vs Vergil!*', boss: { nome: 'Vergil', emoji: '⚔️', hp: 5000, atk: 200, def: 80, xp: 1500, coins: 3000, habilidades: ['Yamato', 'Judgement Cut', 'Rapid Slash', 'Devil Trigger'], descricao: 'O irmão gémeo de Dante. Mestre da Yamato.' }},
+      { id: 'dm2_03', texto: '⚔️ *Irmãos Separados!*\n\nDante e Vergil lutam no topo da torre!\n\n"Vergil! Não precisas de ser como o pai!"\n\n"Eu SUPERO o pai!"\n\nVergil cai no abismo demoníaco...\n\n> ⚔️ *Vergil desaparece... por agora.*', xp: 400, coins: 1000, title: 'Filho de Sparda' },
+    ],
+    recompensas: { xp: 1200, coins: 3000, title: 'Filho de Sparda' },
+  },
+  {
+    id: 'dmc_ch03', titulo: 'A Demónio que Tornou-se Humana',
+    descricao: 'Trish trai Dante... ou não?',
+    nivel: 17, xp: 350, coins: 900,
+    nodes: [
+      { id: 'dm3_01', texto: '💀 *Trish Traz Dante!*\n\nTrish é uma demónio criada por Mundus!\n\nEla trai Dante! Mas...\n\nDante salva-a mesmo assim!', xp: 200, coins: 500 },
+      { id: 'dm3_02', texto: '👹 *Mundus — O Imperador dos Demónios!*', boss: { nome: 'Mundus', emoji: '👹', hp: 8000, atk: 280, def: 120, xp: 3000, coins: 8000, habilidades: ['Orbs Demoníacos', 'Inferno', 'Chuva de Meteoros', 'Mundo Demoníaco'], descricao: 'O imperador do mundo demoníaco.' }},
+      { id: 'dm3_03', texto: '😈 *Devil Trigger Total!*\n\nDante ativa o Devil Trigger completo!\n\nAsas demoníacas! Poder supremo!\n\n"EU SOU O FILHO DE SPARDA!"\n\nMundus é derrotado!', xp: 500, coins: 1500, skill: 'Devil Trigger Perfeito' },
+      { id: 'dm3_04', texto: '😈 *Devil May Cry — O Fim!*\n\nTrish torna-se humana. Dante continua a caçar.\n\n"O trabalho nunca acaba..."\n\n> 😈 *Fim do primeiro capítulo!*', xp: 300, coins: 800, title: 'Lenda de Sparda' },
+    ],
+    recompensas: { xp: 2000, coins: 5000, skill: 'Devil Trigger Perfeito', title: 'Lenda de Sparda' },
+  },
+  {
+    id: 'dmc_ch04', titulo: 'DMC3 — A Origem',
+    descricao: 'O jovem Dante. A torre de Temen-Ni-Gru. A rivalidade com Vergil.',
+    nivel: 20, xp: 500, coins: 1200,
+    nodes: [
+      { id: 'dm4_01', texto: '🍕 *O Jovem Dante!*\n\nDante tem 19 anos. Pizza e atitude!\n\n"Eu não me importo com nada!"\n\nMas Vergil quer abrir a torre demoníaca!', falante: 'Dante' },
+      { id: 'dm4_02', texto: '⚔️ *Dante vs Vergil — Round 1!*', boss: { nome: 'Vergil (Jovem)', emoji: '⚔️', hp: 4000, atk: 180, def: 70, xp: 1200, coins: 2500, habilidades: ['Yamato', 'Judgement Cut', 'Rapid Slash'], descricao: 'Vergil no seu auge.' }},
+      { id: 'dm4_03', texto: '⚡ *Os Estilos de Combate!*\n\nDante desbloqueia os estilos!\n- Swordmaster (espadas)\n- Gunslinger (armas)\n- Trickster (agilidade)\n- Royalguard (defesa)\n\n> ⚡ *Dante torna-se completo!*', xp: 400, coins: 1000, skill: 'Estilos de Combate' },
+      { id: 'dm4_04', texto: '⚔️ *Dante vs Vergil — Final!*\n\nNo topo da torre! Sangue e honra!\n\n"Eu protejo o que o pai protegeu!"\n\nVergil cai. Dante chora.\n\n> ⚔️ *Os irmãos separados... novamente.*', xp: 500, coins: 1500, title: 'Estiloso' },
+    ],
+    recompensas: { xp: 2000, coins: 5000, skill: 'Estilos de Combate', title: 'Estiloso' },
+  },
+  {
+    id: 'dmc_ch05', titulo: 'DMC4 — Nero',
+    descricao: 'Um novo herói. Nero. O sobrinho de Dante.',
+    nivel: 22, xp: 600, coins: 1500,
+    nodes: [
+      { id: 'dm5_01', texto: '⚔️ *Nero — O Novo Herói!*\n\nNero é um caçador da Ordem da Espada!\n\nTem um braço demoníaco — o Devil Bringer!\n\n"Eu vou proteger Kyrie!"', falante: 'Nero' },
+      { id: 'dm5_02', texto: '😈 *Dante vs Nero!*\n\nDante ataca a Ordem! Nero defende!\n\n"Quem és tu?!"\n\n"Eu sou Dante. Prazer."', boss: { nome: 'Dante (DMC4)', emoji: '😈', hp: 6000, atk: 220, def: 90, xp: 1500, coins: 3500, habilidades: ['Rebellion', 'Ebony & Ivory', 'Trickster', 'Royalguard'], descricao: 'Dante no seu auge.' }},
+      { id: 'dm5_03', texto: '⚔️ *Sanctus — O Falso Deus!*\n\nSanctus usa o poder de Sparda!\n\n"Eu sou o novo Deus!"\n\nNero: "Tu não és Deus! És um farsante!"', boss: { nome: 'Sanctus', emoji: '💀', hp: 7000, atk: 240, def: 100, xp: 2000, coins: 5000, habilidades: ['Sparda Sword', 'Ascension', 'Divine Armour'], descricao: 'O líder da Ordem que roubou o poder de Sparda.' }},
+      { id: 'dm5_04', texto: '⚔️ *Nero vence! Dante sorri.*\n\n"Nero... tu tens o sangue de Sparda."\n\n"Eu sei... e vou honrar esse nome."\n\n> ⚔️ *DMC4 completo! Nero é o novo herói!*', xp: 600, coins: 2000, title: 'Novo Filho de Sparda' },
+    ],
+    recompensas: { xp: 2500, coins: 6000, skill: 'Devil Bringer', title: 'Novo Filho de Sparda' },
+  },
+  {
+    id: 'dmc_ch06', titulo: 'DMC5 — O Regresso de Vergil',
+    descricao: 'Vergil volta. Nero descobre a verdade. Dante e Vergil — a batalha final.',
+    nivel: 25, xp: 800, coins: 2000,
+    nodes: [
+      { id: 'dm6_01', texto: '💀 *V é Vergil!*\n\nO misterioso "V" é a metade humana de Vergil!\n\n"Eu sou uma parte dele... a parte que queria redenção."', falante: 'V' },
+      { id: 'dm6_02', texto: '⚔️ *Vergil Regressa!*\n\nVergil reúne as duas metades!\n\n"Eu quero uma revanche, Dante."\n\nA Qliphoth cresce! Demónios invadem!', xp: 400, coins: 1000 },
+      { id: 'dm6_03', texto: '⚔️ *Dante vs Vergil — A Batalha Definitiva!*', boss: { nome: 'Vergil (Completo)', emoji: '⚔️', hp: 12000, atk: 350, def: 150, xp: 4000, coins: 10000, habilidades: ['Yamato Perfeita', 'Judgement Cut End', 'Devil Trigger', 'Beowulf'], descricao: 'Vergil no seu poder máximo.' }},
+      { id: 'dm6_04', texto: '⚔️ *Nero Desperta!*\n\nNero: "PAREM! VOCÊS SÃO FAMÍLIA!"\n\nNero ativa o Devil Trigger!\n\nAsas de energia! Poder divino!\n\n"Eu não vou deixar vocês se matarem!"', xp: 800, coins: 2500, skill: 'Devil Trigger Nero' },
+      { id: 'dm6_05', texto: '😈 *Dante e Vergil — Irmãos de Novo!*\n\nNero separa Dante e Vergil!\n\n"Vocês são irmãos... parem de lutar!"\n\nVergil sorri. Pela primeira vez.\n\n"Obrigado... Nero."\n\n> 😈 *DMC5 completo! Família reunida!*', xp: 1000, coins: 3000, title: 'Lenda de Sparda' },
+    ],
+    recompensas: { xp: 4000, coins: 10000, skill: 'Devil Trigger Nero', title: 'Lenda de Sparda' },
+  },
+  {
+    id: 'dmc_ch07', titulo: 'O Inferno Profundo',
+    descricao: 'Dante e Vergil descem ao inferno para lutar para sempre.',
+    nivel: 28, xp: 1000, coins: 2500,
+    nodes: [
+      { id: 'dm7_01', texto: '🔥 *O Abismo Demoníaco!*\n\nDante e Vergil descem ao inferno!\n\nDemónios sem fim! Mas os irmãos lutam juntos!\n\n"FINALMENTE... JUNTOS!"', xp: 300, coins: 800 },
+      { id: 'dm7_02', texto: '👹 *O Demónio Antigo!*', boss: { nome: 'Rei do Inferno', emoji: '👹', hp: 10000, atk: 300, def: 130, xp: 3000, coins: 8000, habilidades: ['Inferno Eterno', 'Chama Demoníaca', 'Exército Infernal'], descricao: 'O rei dos demónios infernais.' }},
+      { id: 'dm7_03', texto: '⚔️ *Dante + Vergil vs O Rei!*\n\nOs irmãos Sparda lutam juntos!\n\nA combinação perfeita!\n\n*SLASH SLASH SLASH!*\n\nO Rei do Inferno cai!', xp: 800, coins: 2000, title: 'Guerreiro do Inferno' },
+      { id: 'dm7_04', texto: '😈 *O Novo Capítulo!*\n\nDante fica no inferno. Vergil também.\n\n"Vamos ver quem é o mais forte!"\n\nNero fica na Terra. O novo protetor.\n\n> 😈 *O ciclo de Sparda continua...*', xp: 500, coins: 1500, title: 'Guardião do Inferno' },
+    ],
+    recompensas: { xp: 3000, coins: 8000, title: 'Guardião do Inferno' },
+  },
+  {
+    id: 'dmc_ch08', titulo: 'O Estilo SSS',
+    descricao: 'Dante no seu auge. O estilo supremo.',
+    nivel: 30, xp: 1200, coins: 3000,
+    nodes: [
+      { id: 'dm8_01', texto: '🔥 *SSS — Triple S!*\n\nDante atinge o estilo supremo!\n\nCada golpe é perfeito! Cada combo é divino!\n\n"VOCÊS NÃO SÃO PARES PARA MIM!"', xp: 400, coins: 1000, skill: 'SSS Style' },
+      { id: 'dm8_02', texto: '⚔️ *Os Demónios Fogem!*\n\nDante é tão forte que os demónios fogem!\n\n"Onde estão?! Eu quero mais!"\n\nTrish: "Dante... já não há mais demónios."', xp: 300, coins: 800 },
+      { id: 'dm8_03', texto: '🍕 *A Pizza Final!*\n\nDante come uma pizza. Bebe whisky.\n\n"O trabalho acabou... por agora."\n\nMas um novo cliente entra na loja.\n\n"Dante? Preciso da tua ajuda."\n\n"Quanto pagas?"\n\n> 🍕 *Devil May Cry nunca acaba...*', xp: 500, coins: 1500, title: 'Estilo SSS' },
+    ],
+    recompensas: { xp: 2000, coins: 5000, skill: 'SSS Style', title: 'Estilo SSS' },
+  },
+  {
+    id: 'dmc_ch09', titulo: 'O Legado de Sparda',
+    descricao: 'A história completa de Sparda revelada.',
+    nivel: 32, xp: 1500, coins: 4000,
+    nodes: [
+      { id: 'dm9_01', texto: '⚔️ *Sparda — O Cavaleiro Demoníaco!*\n\nHá 2000 anos, Sparda rebelou-se contra os demónios!\n\n"Eu vou proteger os humanos!"\n\nSelou o mundo demoníaco e viveu como humano.', xp: 500, coins: 1500 },
+      { id: 'dm9_02', texto: '⚔️ *O Sacrifício de Sparda!*\n\nSparda deu a vida pelos filhos!\n\n"Dante... Vergil... protejam o mundo."\n\nA espada Rebellion e a Yamato são as suas heranças.', xp: 500, coins: 1500, item: 'Espada de Sparda' },
+      { id: 'dm9_03', texto: '😈 *O Legado Continua!*\n\nDante, Vergil e Nero.\n\nTrês gerações de Sparda.\n\nO sangue demoníaco que protege a humanidade.\n\n> 😈 *FIM — Devil May Cry completo!*\n> 🏆 *O legado de Sparda é eterno.*', xp: 2000, coins: 6000, title: 'Herdeiro de Sparda', item: 'Rebellion Awakened' },
+    ],
+    recompensas: { xp: 6000, coins: 18000, title: 'Herdeiro de Sparda', item: 'Rebellion Awakened' },
+  },
+];
+
+const BLEACH_CHAPTERS = [
+  {
+    id: 'bl_ch01', titulo: 'O Shinigami Substituto',
+    descricao: 'Ichigo Kurosaki vê espíritos. Rukia Kuchiki dá-lhe os poderes de Shinigami.',
+    nivel: 18, xp: 250, coins: 600,
+    nodes: [
+      { id: 'b1_01', texto: '👻 *Karakura Town*\n\nIchigo Kurosaki, 15 anos. Vê fantasmas.\n\nUma mulher de preto aparece!\n\n"Eu sou Rukia Kuchiki. Shinigami. Caçadora de almas malignas."', falante: 'Rukia' },
+      { id: 'b1_02', texto: '👻 *O Hollow Ataca!*\n\nUma máscara branca! Uma criatura que devora almas!\n\n"HOLLOW!"\n\nMas Ichigo não foge! Protege a família!', xp: 100, coins: 200 },
+      { id: 'b1_03', texto: '⚔️ *Ichigo Torna-se Shinigami!*\n\nRukia transfere os seus poderes!\n\nIchigo empunha uma Zanpakutō gigante!\n\n"Eu vou proteger todos!"\n\nO Hollow é destruído!', xp: 200, coins: 500, skill: 'Zanpakutō', title: 'Shinigami Substituto' },
+      { id: 'b1_04', texto: '⚔️ *O Treino de Urahara!*\n\nKisuke Urahara, o génio, treina Ichigo!\n\n"Para ser Shinigami, precisas de morrer primeiro!"\n\nIchigo entra na Soul Society!\n\n> ⚔️ *O caminho do Shinigami começa!*', xp: 150, coins: 400, skill: 'Getsuga Tensho' },
+    ],
+    recompensas: { xp: 700, coins: 1800, skill: 'Zanpakutō', title: 'Shinigami Substituto' },
+  },
+  {
+    id: 'bl_ch02', titulo: 'Soul Society — A Invasão',
+    descricao: 'Rukia é condenada à morte. Ichigo invade a Soul Society para a salvar!',
+    nivel: 20, xp: 400, coins: 1000,
+    nodes: [
+      { id: 'b2_01', texto: '🏛️ *Soul Society!*\n\nO mundo dos mortos! Onde vivem os Shinigamis!\n\n13 Companhias! Capitães lendários!\n\nRukia vai ser executada!', xp: 200, coins: 500 },
+      { id: 'b2_02', texto: '⚡ *Ichigo vs Renji!*\n\nRenji Abarai, Vice-Capitão, bloqueia o caminho!\n\n"Não passes! Rukia morrerá!"\n\nMas Ichigo é mais forte!', boss: { nome: 'Renji Abarai', emoji: '⚡', hp: 3000, atk: 140, def: 60, xp: 600, coins: 1500, habilidades: ['Zabimaru', 'Hado #31', 'Shikai'], descricao: 'Vice-Capitão da 6ª Companhia.' }},
+      { id: 'b2_03', texto: '⚡ *Ichigo vs Byakuya!*\n\nByakuya Kuchiki, o Capitão mais frio!\n\n"Tu és um substituto. Morre."', boss: { nome: 'Byakuya Kuchiki', emoji: '⚡', hp: 5000, atk: 200, def: 80, xp: 1200, coins: 3000, habilidades: ['Senbonzakura', 'Senkei', 'Gokei'], descricao: 'O Capitão da 6ª Companhia. O mais elegante.' }},
+      { id: 'b2_04', texto: '⚡ *Ichigo Ativa o Bankai!*\n\n"ZANGETSU!"\n\nA espada muda! Fica preta e vermelha!\n\nTensa Zangetsu!\n\nByakuya está espantado!\n\n> ⚡ *Bankai desbloqueado!*', xp: 500, coins: 1500, skill: 'Bankai: Tensa Zangetsu' },
+    ],
+    recompensas: { xp: 1800, coins: 4500, skill: 'Bankai: Tensa Zangetsu', title: 'Bankai User' },
+  },
+  {
+    id: 'bl_ch03', titulo: 'A Traição de Aizen',
+    descricao: 'O Capitão mais amado trai a Soul Society!',
+    nivel: 22, xp: 500, coins: 1200,
+    nodes: [
+      { id: 'b3_01', texto: '👁️ *Aizen Sousuke — O Traiçoeiro!*\n\nAizen não morreu! Tudo foi um plano!\n\n"Eu sou o génio supremo. Ninguém me pode parar."\n\nEle roubou o Hogyoku!', falante: 'Aizen' },
+      { id: 'b3_02', texto: '👁️ *Aizen vs Todos!*', boss: { nome: 'Aizen Sousuke', emoji: '👁️', hp: 10000, atk: 300, def: 130, xp: 3000, coins: 8000, habilidades: ['Kyoka Suigetsu', 'Hogyoku', 'Hado #90', 'Complete Hypnosis'], descricao: 'O génio supremo. Controla os 5 sentidos.' }},
+      { id: 'b3_03', texto: '⚡ *Ichigo vs Aizen!*\n\nIchigo usa o Final Getsuga Tensho!\n\n"EU SOU... O GETSUGA!"\n\nO poder supremo! Mas a que preço?', xp: 800, coins: 2000, skill: 'Final Getsuga Tensho' },
+      { id: 'b3_04', texto: '👁️ *Aizen é Selado!*\n\nUrahara sela Aizen!\n\n"Obrigado, Ichigo..."\n\nMas Ichigo perde os poderes de Shinigami!\n\n> 👁️ *Aizen selado. Ichigo perde os poderes.*', xp: 500, coins: 1500, title: 'Herói de Karakura' },
+    ],
+    recompensas: { xp: 2500, coins: 6000, skill: 'Final Getsuga Tensho', title: 'Herói de Karakura' },
+  },
+  {
+    id: 'bl_ch04', titulo: 'Os Quincy — A Nova Ameaça',
+    descricao: 'Os Quincy regressam. Yhwach, o pai dos Quincy, quer destruir tudo.',
+    nivel: 25, xp: 600, coins: 1500,
+    nodes: [
+      { id: 'b4_01', texto: '⚔️ *A Invasão Quincy!*\n\nYhwach invade a Soul Society!\n\n"Eu sou o pai dos Quincy. Vou destruir tudo."\n\nOs Capitães caem um a um!', xp: 200, coins: 500 },
+      { id: 'b4_02', texto: '💀 *O Massacre dos Shinigamis!*\n\nYhwach mata Yamamoto, o Capitão-General!\n\n"O mais forte... caiu."\n\nA Soul Society está em ruínas!', xp: 300, coins: 800 },
+      { id: 'b4_03', texto: '⚡ *Ichigo Desperta de Novo!*\n\nIchigo recupera os poderes! Mais forte que nunca!\n\n"ZANGETSU! ESTOU DE VOLTA!"\n\nA Zanpakutō muda! Dupla!', xp: 400, coins: 1000, skill: 'Zangetsu Dupla' },
+      { id: 'b4_04', texto: '⚔️ *Ichigo vs Yhwach — Round 1!*', boss: { nome: 'Yhwach', emoji: '⚔️', hp: 15000, atk: 400, def: 170, xp: 4000, coins: 10000, habilidades: ['The Almighty', 'Sankt Altar', 'Auswahlen', 'Reishi Absorption'], descricao: 'O pai dos Quincy. Vê todos os futuros.' }},
+      { id: 'b4_05', texto: '⚔️ *Ichigo é derrotado... por agora.*\n\nYhwach é forte demais!\n\nMas Ichigo promete: "Eu vou voltar mais forte!"\n\n> ⚔️ *A guerra dos Quincy começou...*', xp: 500, coins: 1500, title: 'Guerreiro Quincy' },
+    ],
+    recompensas: { xp: 2500, coins: 6500, skill: 'Zangetsu Dupla', title: 'Guerreiro Quincy' },
+  },
+  {
+    id: 'bl_ch05', titulo: 'O Rei Quincy — Yhwach',
+    descricao: 'A batalha final contra o inimigo mais poderoso.',
+    nivel: 28, xp: 800, coins: 2000,
+    nodes: [
+      { id: 'b5_01', texto: '⚔️ *A Contra-Invasão!*\n\nIchigo + Uryu + Renji + todos!\n\nInfiltram o Palácio Real de Yhwach!\n\n"A VINGANÇA COMEÇA AGORA!"', xp: 300, coins: 800 },
+      { id: 'b5_02', texto: '⚔️ *Yhwach vs Ichigo — A Batalha Suprema!*', boss: { nome: 'Yhwach (Final)', emoji: '⚔️', hp: 25000, atk: 600, def: 250, xp: 8000, coins: 20000, habilidades: ['The Almighty Perfeito', 'Sankt Zwinger', 'Auswahlen Supremo', 'Rei do Mundo'], descricao: 'Yhwach no seu poder supremo.' }},
+      { id: 'b5_03', texto: '⚔️ *O Getsuga Final!*\n\nIchigo usa o Getsuga Tensho final!\n\nUryu atira a seta de prata!\n\n*YHWACH É DERROTADO!*\n\nA Soul Society é salva!', xp: 1500, coins: 5000, skill: 'Getsuga Final' },
+      { id: 'b5_04', texto: '⚔️ *O Fim da Guerra!*\n\nO mundo é restaurado. Os Quincy desaparecem.\n\nIchigo olha para o céu.\n\n"Obrigado... Zangetsu."\n\n> ⚔️ *Guerra dos Quincy terminou!*', xp: 800, coins: 2500, title: 'Salvador da Soul Society' },
+    ],
+    recompensas: { xp: 4000, coins: 10000, skill: 'Getsuga Final', title: 'Salvador da Soul Society' },
+  },
+  {
+    id: 'bl_ch06', titulo: 'A Verdade sobre Zangetsu',
+    descricao: 'Ichigo descobre a verdade sobre o seu poder.',
+    nivel: 30, xp: 1000, coins: 2500,
+    nodes: [
+      { id: 'b6_01', texto: '👁️ *O Verdadeiro Zangetsu!*\n\nO velho na mente de Ichigo... é Yhwach!\n\n"Eu sou a parte Quincy do teu poder!"\n\nMas o verdadeiro Zangetsu é o Hollow!', xp: 500, coins: 1500 },
+      { id: 'b6_02', texto: '⚔️ *Ichigo Aceita Tudo!*\n\n"Eu sou Shinigami. Sou Quincy. Sou Hollow.\nSou Humano. Sou TUDO!"\n\nA Zangetsu final nasce!', xp: 800, coins: 2000, skill: 'Zangetsu Verdadeira' },
+      { id: 'b6_03', texto: '⚔️ *O Poder Completo!*\n\nIchigo atinge o poder supremo!\n\nTodos os caminhos num só!\n\n> ⚔️ *Ichigo é o guerreiro mais completo da história!*', xp: 600, coins: 1500, title: 'Shinigami Quincy Hollow' },
+    ],
+    recompensas: { xp: 3000, coins: 7000, skill: 'Zangetsu Verdadeira', title: 'Shinigami Quincy Hollow' },
+  },
+  {
+    id: 'bl_ch07', titulo: 'O Novo Mundo',
+    descricao: 'A paz regressa. Ichigo e os amigos. O mundo é salvo.',
+    nivel: 32, xp: 1500, coins: 4000,
+    nodes: [
+      { id: 'b7_01', texto: '🌅 *Karakura Town — Amanhecer!*\n\nIchigo volta para casa.\n\nOrihime sorri. Chad acena. Uryu ignora (mas sorri por dentro).\n\nTudo voltou ao normal.', xp: 500, coins: 1500 },
+      { id: 'b7_02', texto: '⚔️ *O Espírito Continua!*\n\nIchigo continua a proteger Karakura!\n\nMas agora... com amigos ao lado.\n\n"Eu não preciso de lutar sozinho!"', xp: 500, coins: 1500 },
+      { id: 'b7_03', texto: '👻 *FIM — Bleach completo!*\n\nIchigo Kurosaki. O Shinigami Substituto.\n\nO que mudou o destino de dois mundos.\n\n> 👻 *Parabéns! Completaste Bleach!*\n> 🏆 *Ichigo — O Herói dos Dois Mundos!*\n> ⭐ *Bankai... é apenas o começo.*', xp: 5000, coins: 15000, title: 'Herói dos Dois Mundos', item: 'Zangetsu Final' },
+    ],
+    recompensas: { xp: 10000, coins: 30000, title: 'Herói dos Dois Mundos', item: 'Zangetsu Final' },
+  },
+];
+
+
+
+WORLDS.naruto.capitulos = NARUTO_CHAPTERS.length;
+WORLDS.onepiece.capitulos = ONEPIECE_CHAPTERS.length;
 WORLDS.sololeveling.capitulos = SOLOLEVELING_CHAPTERS.length;
+WORLDS.jjk.capitulos = JJK_CHAPTERS.length;
 WORLDS.dragonball.capitulos = DRAGONBALL_CHAPTERS.length;
+WORLDS.demonslayer.capitulos = DEMONSLAYER_CHAPTERS.length;
+WORLDS.dmc.capitulos = DMC_CHAPTERS.length;
+WORLDS.bleach.capitulos = BLEACH_CHAPTERS.length;
 
 function _getChapters(worldId) {
   const map = {
     naruto: NARUTO_CHAPTERS,
     onepiece: ONEPIECE_CHAPTERS,
     sololeveling: SOLOLEVELING_CHAPTERS,
-    dragonball: DRAGONBALL_CHAPTERS,
     jjk: JJK_CHAPTERS,
+    dragonball: DRAGONBALL_CHAPTERS,
     demonslayer: DEMONSLAYER_CHAPTERS,
     dmc: DMC_CHAPTERS,
     bleach: BLEACH_CHAPTERS,
@@ -1881,15 +1502,567 @@ function _getChapters(worldId) {
   return map[worldId] || [];
 }
 
+// ══════════════════════════════════════════════════════════════
+// REGISTO DE PROGRESSO DO JOGADOR
+// ══════════════════════════════════════════════════════════════
+
+async function getProgress(p, worldId) {
+  if (!p.storyProgress) p.storyProgress = {};
+  if (!p.storyProgress[worldId]) {
+    p.storyProgress[worldId] = { capitulo: 0, node: null, completos: [], testePassado: false, testePontos: 0 };
+  }
+  if (p.storyProgress[worldId].testePassado === undefined) p.storyProgress[worldId].testePassado = false;
+  if (p.storyProgress[worldId].testePontos === undefined) p.storyProgress[worldId].testePontos = 0;
+  return p.storyProgress[worldId];
+}
+
+// ══════════════════════════════════════════════════════════════
+// FUNÇÕES DE UI
+// ══════════════════════════════════════════════════════════════
+
+async function tReply(sock, msg, ctx, title, lines) {
+  const RE = require('../renderEngine');
+  const t = await RE.getTheme(ctx.remoteJid).catch(() => null);
+  return sock.sendMessage(ctx.remoteJid, {
+    text: RE.renderBlock(t, title, lines, { botName: config.bot.name })
+  }, { quoted: msg });
+}
+
+async function enviarBotoes(sock, msg, ctx, corpo, botoes) {
+  try {
+    const { generateWAMessageFromContent, proto } = require('@systemzero/baileys');
+    const m = generateWAMessageFromContent(ctx.remoteJid, {
+      interactiveMessage: proto.Message.InteractiveMessage.fromObject({
+        body: { text: corpo },
+        footer: { text: '\u{1f4d6} RPG Story Mode v11' },
+        header: { title: '', hasMediaAttachment: false },
+        nativeFlowMessage: {
+          buttons: botoes.map(b => ({
+            name: 'quick_reply',
+            buttonParamsJson: JSON.stringify({ display_text: b.text, id: b.id }),
+          })),
+        },
+      }),
+    }, { userJid: sock.user?.id, quoted: msg });
+    await sock.relayMessage(ctx.remoteJid, m.message, {
+      messageId: m.key.id,
+      additionalNodes: [{ tag: 'biz', attrs: {}, content: [{
+        tag: 'interactive', attrs: { type: 'native_flow', v: '1' },
+        content: [{ tag: 'native_flow', attrs: { v: '9', name: 'mixed' } }],
+      }] }],
+    });
+    return true;
+  } catch { return false; }
+}
+
+async function enviarLista(sock, msg, ctx, titulo, rows, corpo) {
+  try {
+    const { generateWAMessageFromContent, proto } = require('@systemzero/baileys');
+    const m = generateWAMessageFromContent(ctx.remoteJid, {
+      interactiveMessage: proto.Message.InteractiveMessage.fromObject({
+        body: { text: corpo },
+        footer: { text: '\u{1f4d6} RPG Story Mode v11' },
+        header: { title: '', hasMediaAttachment: false },
+        nativeFlowMessage: {
+          buttons: [{
+            name: 'single_select',
+            buttonParamsJson: JSON.stringify({ title: titulo, sections: [{ title: titulo, rows }] }),
+          }],
+        },
+      }),
+    }, { userJid: sock.user?.id, quoted: msg });
+    await sock.relayMessage(ctx.remoteJid, m.message, {
+      messageId: m.key.id,
+      additionalNodes: [{ tag: 'biz', attrs: {}, content: [{
+        tag: 'interactive', attrs: { type: 'native_flow', v: '1' },
+        content: [{ tag: 'native_flow', attrs: { v: '9', name: 'mixed' } }],
+      }] }],
+    });
+    return true;
+  } catch { return false; }
+}
+
+// ══════════════════════════════════════════════════════════════
+// CARROSSEL DE MUNDOS COM IMAGENS
+// ══════════════════════════════════════════════════════════════
+
+async function enviarCarrossel(sock, msg, ctx, cards) {
+  try {
+    const { generateWAMessageFromContent, proto, prepareWAMessageMedia } = require('@systemzero/baileys');
+    const carouselCards = [];
+    for (const card of cards) {
+      let headerObj = { title: card.title, hasMediaAttachment: false };
+      if (card.imagePath && fs.existsSync(card.imagePath)) {
+        try {
+          const imgBuffer = fs.readFileSync(card.imagePath);
+          const mediaMsg = await prepareWAMessageMedia(
+            { image: imgBuffer },
+            { upload: sock.waUploadToServer }
+          );
+          if (mediaMsg && mediaMsg.imageMessage) {
+            headerObj = {
+              title: card.title,
+              hasMediaAttachment: true,
+              imageMessage: mediaMsg.imageMessage,
+            };
+          }
+        } catch (e) { /* fallback */ }
+      }
+      carouselCards.push(
+        proto.Message.InteractiveMessage.CarouselCard.fromObject({
+          header: proto.Message.InteractiveMessage.Header.fromObject(headerObj),
+          body: proto.Message.InteractiveMessage.Body.fromObject({ text: card.body }),
+          footer: card.footer ? proto.Message.InteractiveMessage.Footer.fromObject({ text: card.footer }) : undefined,
+          nativeFlowMessage: {
+            buttons: (card.buttons || []).map(b => ({
+              name: 'quick_reply',
+              buttonParamsJson: JSON.stringify({ display_text: b.text, id: b.id }),
+            })),
+          },
+        })
+      );
+    }
+    const m = generateWAMessageFromContent(ctx.remoteJid, {
+      interactiveMessage: proto.Message.InteractiveMessage.fromObject({
+        carouselMessage: { cards: carouselCards },
+      }),
+    }, { userJid: sock.user?.id, quoted: msg });
+    await sock.relayMessage(ctx.remoteJid, m.message, {
+      messageId: m.key.id,
+      additionalNodes: [{ tag: 'biz', attrs: {}, content: [{
+        tag: 'interactive', attrs: { type: 'native_flow', v: '1' },
+        content: [{ tag: 'native_flow', attrs: { v: '9', name: 'mixed' } }],
+      }] }],
+    });
+    return true;
+  } catch (e) {
+    console.error('[STORY] Carousel error:', e.message);
+    return false;
+  }
+}
+
+async function enviarImagem(sock, msg, ctx, imagePath, caption, botoes) {
+  try {
+    if (fs.existsSync(imagePath)) {
+      const buffer = fs.readFileSync(imagePath);
+      await sock.sendMessage(ctx.remoteJid, { image: buffer, caption }, { quoted: msg });
+      if (botoes && botoes.length) {
+        await enviarBotoes(sock, msg, ctx, '\u{1f446} Escolhe:', botoes);
+      }
+      return true;
+    }
+  } catch {}
+  await tReply(sock, msg, ctx, '\u{1f4d6}', [caption]);
+  if (botoes && botoes.length) await enviarBotoes(sock, msg, ctx, '\u{1f446} Escolhe:', botoes);
+  return false;
+}
+
+// ══════════════════════════════════════════════════════════════
+// STATUS COMPLETO DO JOGADOR
+// ══════════════════════════════════════════════════════════════
+
+async function mostrarStatus(sock, msg, ctx) {
+  const p = await rpg.getPlayer(ctx.senderNumber);
+  const race = rpg.RACES[p.race] || rpg.RACES.humano;
+  const cls = rpg.CLASSES[p.class] || rpg.CLASSES.guerreiro;
+  const barra = (cur, max) => {
+    const n = Math.max(0, Math.min(10, Math.ceil((cur || 0) / (max || 1) * 10)));
+    return '\u{1f7e9}'.repeat(n) + '\u2B1B'.repeat(10 - n);
+  };
+  const worldLinhas = [];
+  for (const [id, w] of Object.entries(WORLDS)) {
+    const prog = await getProgress(p, id);
+    const capAtual = prog.capitulo || 0;
+    const total = w.capitulos;
+    const pct = total > 0 ? Math.round((capAtual / total) * 100) : 0;
+    const teste = prog.testePassado ? '\u2705' : '\u{1f512}';
+    const evo = w.evolucoes.reduce((acc, e) => capAtual >= e.nivel ? e : acc, w.evolucoes[0]);
+    const desbloqueado = p.level >= w.nivelMin;
+    if (desbloqueado) {
+      worldLinhas.push(w.emoji + ' *' + w.name + '* ' + teste + ' ' + evo.emoji + ' ' + evo.titulo);
+      worldLinhas.push('   ' + barra(capAtual, total) + ' ' + capAtual + '/' + total + ' (' + pct + '%)');
+    } else {
+      worldLinhas.push(w.emoji + ' *' + w.name + '* \u{1f512} Nv.' + w.nivelMin);
+    }
+  }
+  let totalCaps = 0, totalCompletos = 0;
+  for (const [id, w] of Object.entries(WORLDS)) {
+    const prog = await getProgress(p, id);
+    totalCaps += (prog.completos ? prog.completos.length : 0);
+    if (prog.capitulo >= w.capitulos && w.capitulos > 0) totalCompletos++;
+  }
+  const gEmoji = p.gender === 'feminino' ? '\u{1f469}' : p.gender === 'masculino' ? '\u{1f468}' : '\u{1f9d1}';
+  return tReply(sock, msg, ctx, race.emoji + ' ' + p.name.toUpperCase() + ' \u2014 STATUS', [
+    gEmoji + ' *' + p.name + '* \u2014 ' + p.race + ' ' + cls.emoji + ' ' + p.class,
+    p.title ? '\u{1f3c5} ' + p.title : '',
+    '', '\u{1f4ca} *ESTATISTICAS*',
+    '\u2B50 Nivel ' + p.level + ' | XP: ' + p.xp + '/' + p.xpNext,
+    '\u2764\uFE0F HP: ' + p.hp + '/' + p.maxHp + ' | \u{1f499} MP: ' + p.mp + '/' + p.maxMp,
+    '\u2694\uFE0F STR:' + p.stats.str + ' \u{1f3c3} DEX:' + p.stats.dex + ' \u{1f52e} INT:' + p.stats.int + ' \u{1f6e1}\uFE0F VIT:' + p.stats.vit + ' \u{1f340} LUK:' + p.stats.luk,
+    '\u{1f4b0} ' + p.coins + ' coins | \u2764\uFE0F Vidas: ' + '\u2665\uFE0F'.repeat(p.lives) + '\u{1f5a4}'.repeat(Math.max(0, 3 - p.lives)),
+    '', '\u{1f4d6} *MODO HISTORIA*',
+    '\u{1f3c6} Mundos completos: ' + totalCompletos + '/' + Object.keys(WORLDS).length,
+    '\u{1f4da} Capitulos concluidos: ' + totalCaps,
+    '\u2728 Skills: ' + (p.skills || []).length + ' | \u{1f392} Itens: ' + (p.inventory || []).length,
+    '', '*\u2500\u2500 PROGRESSO POR MUNDO \u2500\u2500*',
+    ...worldLinhas,
+    '', '\u2694\uFE0F *COMBATE*',
+    '\u{1f480} ' + p.kills + ' kills | \u2620\uFE0F ' + p.deaths + ' mortes | \u{1f451} ' + p.bossKills + ' bosses',
+    '\u{1f525} Streak: ' + p.streak + ' | Melhor: ' + p.bestStreak,
+  ].filter(Boolean));
+}
+
+// ══════════════════════════════════════════════════════════════
+// LISTAR MUNDOS \u2014 CARROSSEL COM IMAGENS
+// ══════════════════════════════════════════════════════════════
+
+async function listarMundos(sock, msg, ctx) {
+  const p = await rpg.getPlayer(ctx.senderNumber);
+  if (!p.storyProgress) p.storyProgress = {};
+  const cards = [];
+  for (const [id, w] of Object.entries(WORLDS)) {
+    const prog = await getProgress(p, id);
+    const capAtual = prog.capitulo || 0;
+    const total = w.capitulos;
+    const pct = total > 0 ? Math.round((capAtual / total) * 100) : 0;
+    const desbloqueado = p.level >= w.nivelMin;
+    const testePassado = prog.testePassado;
+    const evo = w.evolucoes.reduce((acc, e) => capAtual >= e.nivel ? e : acc, w.evolucoes[0]);
+    const status = !desbloqueado ? '\u{1f512} Bloqueado' : pct >= 100 ? '\u2705 Completo' : testePassado ? '\u{1f3ae} Em progresso' : '\u{1f4dd} Teste pendente';
+    const barraStr = '\u{1f7e9}'.repeat(Math.min(10, Math.round(pct / 10))) + '\u2B1B'.repeat(10 - Math.min(10, Math.round(pct / 10)));
+    const body = [
+      w.desc, '', status,
+      '\u{1f4ca} Nivel min: ' + w.nivelMin + ' | \u{1f3af} ' + capAtual + '/' + total + ' capitulos',
+      barraStr,
+      testePassado ? evo.emoji + ' Rank: ' + evo.titulo : '\u{1f512} Passa o teste primeiro!',
+      '',
+      desbloqueado ? '\u{1f3ae} Toca para entrar!' : '\u2B06\uFE0F Sobe para nivel ' + w.nivelMin,
+    ].join('\n');
+    const buttons = [];
+    if (desbloqueado) {
+      buttons.push(testePassado
+        ? { text: '\u{1f3ae} Entrar', id: 'STORY_' + id }
+        : { text: '\u{1f4dd} Teste Iniciante', id: 'STESTE_' + id });
+    }
+    buttons.push({ text: '\u{1f4ca} Info', id: 'SINFO_' + id });
+    const imagePath = path.join(IMAGES_DIR, w.image);
+    cards.push({
+      title: w.emoji + ' ' + w.name,
+      body, footer: desbloqueado ? (testePassado ? '\u{1f3ae} Pronto!' : '\u{1f4dd} Faz o teste!') : '\u{1f512} Bloqueado',
+      imagePath, buttons,
+    });
+  }
+  const headerText = [
+    '\u{1f4d6} *MODO HISTORIA v11*',
+    '\u{1f4ca} Nv.' + p.level + ' \u00B7 ' + Object.keys(WORLDS).length + ' mundos e',
+    '', '> Desliza para ver todos os mundos! \u{1f447}',
+  ].join('\n');
+  const sent = await enviarCarrossel(sock, msg, ctx, cards);
+  if (!sent) {
+    const rows = [];
+    for (const [id, w] of Object.entries(WORLDS)) {
+      const prog = await getProgress(p, id);
+      const desbloqueado = p.level >= w.nivelMin;
+      const testePassado = prog.testePassado;
+      if (desbloqueado) {
+        rows.push({
+          title: w.emoji + ' ' + w.name,
+          description: testePassado ? prog.capitulo + '/' + w.capitulos + ' cap' : '\u{1f4dd} Teste',
+          id: testePassado ? 'STORY_' + id : 'STESTE_' + id,
+        });
+      }
+    }
+    if (rows.length) await enviarLista(sock, msg, ctx, '\u{1f4d6} MUNDOS', rows, headerText);
+    else await tReply(sock, msg, ctx, '\u{1f4d6} MODO HISTORIA', [headerText, '', '\u{1f512} Nenhum mundo desbloqueado.']);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// TESTE DE INICIANTE
+// ══════════════════════════════════════════════════════════════
+
+async function iniciarTeste(sock, msg, ctx, worldId) {
+  const p = await rpg.getPlayer(ctx.senderNumber);
+  const w = WORLDS[worldId];
+  if (!w) return tReply(sock, msg, ctx, '\u274C', ['Mundo nao encontrado.']);
+  if (p.level < w.nivelMin) return tReply(sock, msg, ctx, '\u{1f512} MUNDO BLOQUEADO', [w.emoji + ' *' + w.name + '*', 'Precisas de nivel *' + w.nivelMin + '*']);
+  const prog = await getProgress(p, worldId);
+  if (prog.testePassado) return tReply(sock, msg, ctx, w.emoji + ' ' + w.name, ['\u2705 Ja passaste o teste!']);
+  if (!p._testState) p._testState = {};
+  p._testState[worldId] = { pergunta: 0, acertos: 0 };
+  await rpg.savePlayer(p);
+  const imagePath = path.join(IMAGES_DIR, w.image);
+  const intro = [w.emoji + ' *' + w.teste.titulo + '*', w.teste.descricao, '', '\u{1f4dd} *4 perguntas sobre ' + w.name + '*', '\u{1f3af} Precisas de acertar 3 para passar!', '', '> Vamos comecar!'].join('\n');
+  await enviarImagem(sock, msg, ctx, imagePath, intro, [{ text: '\u{1f4dd} Comecar Teste', id: 'STESTQ_' + worldId + '_0' }]);
+}
+
+async function mostrarPergunta(sock, msg, ctx, worldId, perguntaIdx) {
+  const p = await rpg.getPlayer(ctx.senderNumber);
+  const w = WORLDS[worldId];
+  if (!w || !w.teste || !w.teste.perguntas || !w.teste.perguntas[perguntaIdx]) return;
+  const pergunta = w.teste.perguntas[perguntaIdx];
+  const botoes = pergunta.opcoes.map((op, i) => ({ text: op.slice(0, 25), id: 'STESTA_' + worldId + '_' + perguntaIdx + '_' + i }));
+  const corpo = [w.emoji + ' *' + w.teste.titulo + '*', '\u{1f4dd} Pergunta ' + (perguntaIdx + 1) + ' de ' + w.teste.perguntas.length, '', pergunta.q].join('\n');
+  await enviarBotoes(sock, msg, ctx, corpo, botoes);
+}
+
+async function responderPergunta(sock, msg, ctx, worldId, perguntaIdx, respostaIdx) {
+  const p = await rpg.getPlayer(ctx.senderNumber);
+  const w = WORLDS[worldId];
+  if (!w || !w.teste || !w.teste.perguntas || !w.teste.perguntas[perguntaIdx]) return;
+  const pergunta = w.teste.perguntas[perguntaIdx];
+  const correto = parseInt(respostaIdx) === pergunta.correta;
+  if (!p._testState) p._testState = {};
+  if (!p._testState[worldId]) p._testState[worldId] = { pergunta: 0, acertos: 0 };
+  if (correto) p._testState[worldId].acertos++;
+  const acertos = p._testState[worldId].acertos;
+  const total = w.teste.perguntas.length;
+  const proxima = perguntaIdx + 1;
+  if (proxima < total) {
+    const feedback = correto ? '\u2705 Correto!' : '\u274C Errado!';
+    await enviarBotoes(sock, msg, ctx, feedback + '\n\n\u{1f4ca} Acertos: ' + acertos + '/' + total, [{ text: '\u25B6\uFE0F Proxima', id: 'STESTQ_' + worldId + '_' + proxima }]);
+  } else {
+    const passou = acertos >= Math.ceil(total * 0.75);
+    const prog = await getProgress(p, worldId);
+    if (passou) {
+      prog.testePassado = true;
+      prog.testePontos = acertos;
+      rpg.addXP(p, 200);
+      await rpg.savePlayer(p);
+      const imagePath = path.join(IMAGES_DIR, w.image);
+      await enviarImagem(sock, msg, ctx, imagePath, [w.emoji + ' *TESTE PASSADO!*', '\u2705 Acertos: ' + acertos + '/' + total, '\u2B50 +200 XP', '', '\u{1f389} Agora podes entrar no mundo de ' + w.name + '!'].join('\n'), [{ text: '\u{1f3ae} Entrar no Mundo', id: 'STORY_' + worldId }]);
+    } else {
+      await rpg.savePlayer(p);
+      await enviarBotoes(sock, msg, ctx, [w.emoji + ' *TESTE REPROVADO*', '\u274C Acertos: ' + acertos + '/' + total + ' (min: ' + Math.ceil(total * 0.75) + ')', '', '\u{1f4aa} Estuda mais e tenta novamente!'].join('\n'), [
+        { text: '\u{1f4dd} Tentar Novamente', id: 'STESTE_' + worldId },
+        { text: '\u{1f4d6} Voltar aos Mundos', id: 'STORY_MENU' },
+      ]);
+    }
+  }
+}
+
+async function mostrarInfoMundo(sock, msg, ctx, worldId) {
+  const p = await rpg.getPlayer(ctx.senderNumber);
+  const w = WORLDS[worldId];
+  if (!w) return;
+  const prog = await getProgress(p, worldId);
+  const capAtual = prog.capitulo || 0;
+  const total = w.capitulos;
+  const pct = total > 0 ? Math.round((capAtual / total) * 100) : 0;
+  const testePassado = prog.testePassado;
+  const desbloqueado = p.level >= w.nivelMin;
+  const evo = w.evolucoes.reduce((acc, e) => capAtual >= e.nivel ? e : acc, w.evolucoes[0]);
+  const evoLinhas = w.evolucoes.map(e => (capAtual >= e.nivel ? '\u2705' : '\u{1f512}') + ' ' + e.emoji + ' ' + e.titulo + ' (Cap. ' + e.nivel + ')');
+  const imagePath = path.join(IMAGES_DIR, w.image);
+  const info = [
+    w.emoji + ' *' + w.name.toUpperCase() + '*', w.desc, '',
+    '\u{1f4ca} Nivel min: ' + w.nivelMin + ' | ' + (desbloqueado ? '\u2705 Desbloqueado' : '\u{1f512} Bloqueado'),
+    '\u{1f4dd} Teste: ' + (testePassado ? '\u2705 Passado' : '\u274C Nao feito'),
+    '\u{1f4da} Progresso: ' + capAtual + '/' + total + ' (' + pct + '%)',
+    evo ? evo.emoji + ' Rank: ' + evo.titulo : '',
+    '', '*\u2500\u2500 EVOLUCAO \u2500\u2500*', ...evoLinhas, '',
+    '\u{1f3c6} Recompensa: ' + w.recompensaFinal.title,
+    '\u{1f4b0} ' + w.recompensaFinal.coins + ' coins | \u2B50 ' + w.recompensaFinal.xp + ' XP',
+    '\u{1f381} Item: ' + w.recompensaFinal.item,
+  ].filter(Boolean);
+  const botoes = [];
+  if (desbloqueado && testePassado) botoes.push({ text: '\u{1f3ae} Entrar', id: 'STORY_' + worldId });
+  else if (desbloqueado && !testePassado) botoes.push({ text: '\u{1f4dd} Fazer Teste', id: 'STESTE_' + worldId });
+  botoes.push({ text: '\u{1f4d6} Voltar', id: 'STORY_MENU' });
+  await enviarImagem(sock, msg, ctx, imagePath, info.join('\n'), botoes);
+}
+
+// ══════════════════════════════════════════════════════════════
+// JOGAR UM MUNDO
+// ══════════════════════════════════════════════════════════════
+
+async function jogarMundo(sock, msg, ctx, worldId) {
+  const p = await rpg.getPlayer(ctx.senderNumber);
+  const w = WORLDS[worldId];
+  if (!w) return tReply(sock, msg, ctx, '\u274C', ['Mundo nao encontrado.']);
+  if (p.level < w.nivelMin) return tReply(sock, msg, ctx, '\u{1f512} BLOQUEADO', [w.emoji + ' *' + w.name + '*', 'Nivel *' + w.nivelMin + '* necessario. Tens *' + p.level + '*']);
+  const prog = await getProgress(p, worldId);
+  if (!prog.testePassado) return iniciarTeste(sock, msg, ctx, worldId);
+  const chapters = _getChapters(worldId);
+  if (!chapters.length) return tReply(sock, msg, ctx, w.emoji + ' ' + w.name, ['Sem capitulos.']);
+  const capIdx = Math.min(prog.capitulo || 0, chapters.length - 1);
+  return _mostrarCapitulo(sock, msg, ctx, p, w, chapters[capIdx], capIdx);
+}
+
+// ══════════════════════════════════════════════════════════════
+// MOSTRAR CAPITULO
+// ══════════════════════════════════════════════════════════════
+
+async function _mostrarCapitulo(sock, msg, ctx, p, w, chapter, capIdx) {
+  const prog = p.storyProgress[w.id];
+  const nodeId = prog.node || (chapter.nodes[0] ? chapter.nodes[0].id : null);
+  const node = chapter.nodes.find(n => n.id === nodeId) || chapter.nodes[0];
+  if (!node) return tReply(sock, msg, ctx, w.emoji + ' ' + chapter.titulo, ['Capitulo vazio.']);
+  const capituloLinhas = [w.emoji + ' *' + chapter.titulo + '*', '\u{1f4d6} Capitulo ' + (capIdx + 1) + ' de ' + w.capitulos, '\u{1f4ca} Nivel: ' + chapter.nivel, ''];
+  const evo = w.evolucoes.reduce((acc, e) => capIdx >= e.nivel ? e : acc, w.evolucoes[0]);
+  if (evo) capituloLinhas.push(evo.emoji + ' *Rank:* ' + evo.titulo, '');
+  const corpo = capituloLinhas.join('\n') + node.texto;
+  const imagePath = path.join(IMAGES_DIR, w.image);
+  if (capIdx === 0 || node.boss || node.escolhas) {
+    await enviarImagem(sock, msg, ctx, imagePath, corpo).catch(() => {});
+  }
+  if (node.escolhas && node.escolhas.length) {
+    const botoes = node.escolhas.map((e, i) => ({ id: 'STORYC_' + w.id + '_' + chapter.id + '_' + node.id + '_' + i, text: e.txt.slice(0, 25) }));
+    return enviarBotoes(sock, msg, ctx, corpo, botoes);
+  }
+  if (node.boss) {
+    await tReply(sock, msg, ctx, w.emoji + ' ' + chapter.titulo, [corpo]);
+    return _iniciarBossFight(sock, msg, ctx, p, w, chapter, node);
+  }
+  if (!node.next && !node.escolhas) {
+    await tReply(sock, msg, ctx, w.emoji + ' ' + chapter.titulo, [corpo]);
+    if (node.xp) rpg.addXP(p, node.xp);
+    if (node.coins) p.coins += node.coins;
+    if (node.item && !p.inventory.includes(node.item)) p.inventory.push(node.item);
+    if (node.skill && !p.skills.includes(node.skill)) p.skills.push(node.skill);
+    if (node.title) p.title = node.title;
+    prog.capitulo = (prog.capitulo || 0) + 1;
+    prog.node = null;
+    if (!prog.completos) prog.completos = [];
+    prog.completos.push(chapter.id);
+    if (chapter.recompensas) {
+      const r = chapter.recompensas;
+      if (r.xp) rpg.addXP(p, r.xp);
+      if (r.coins) p.coins += r.coins;
+      if (r.item && !p.inventory.includes(r.item)) p.inventory.push(r.item);
+      if (r.skill && !p.skills.includes(r.skill)) p.skills.push(r.skill);
+      if (r.title) p.title = r.title;
+    }
+    await rpg.savePlayer(p);
+    const chapters = _getChapters(w.id);
+    if (prog.capitulo < chapters.length) {
+      const proximo = chapters[prog.capitulo];
+      const evo2 = w.evolucoes.reduce((acc, e) => prog.capitulo >= e.nivel ? e : acc, w.evolucoes[0]);
+      await enviarBotoes(sock, msg, ctx, '\u2705 *' + chapter.titulo + '* completo!\n\n' + (evo2 ? evo2.emoji + ' *Rank:* ' + evo2.titulo + '\n' : '') + '\u{1f4d6} Proximo: *' + proximo.titulo + '*', [{ id: 'STORY_' + w.id, text: '\u{1f4d6} Proximo Capitulo' }]);
+    } else {
+      await enviarImagem(sock, msg, ctx, imagePath, '\u{1f3c6} *' + w.name + ' COMPLETO!*\n\n\u{1f389} PARABENS!\n\u{1f3c6} ' + w.recompensaFinal.title + '\n\u{1f381} ' + w.recompensaFinal.item + '\n\u{1f4b0} ' + w.recompensaFinal.coins + ' coins', [{ id: 'STORY_MENU', text: '\u{1f4d6} Outros Mundos' }]);
+      const rf = w.recompensaFinal;
+      if (rf.xp) rpg.addXP(p, rf.xp);
+      if (rf.coins) p.coins += rf.coins;
+      if (rf.item) p.inventory.push(rf.item);
+      if (rf.title) p.title = rf.title;
+      await rpg.savePlayer(p);
+    }
+    return;
+  }
+  if (node.next) {
+    await enviarBotoes(sock, msg, ctx, corpo, [{ id: 'STORYN_' + w.id + '_' + chapter.id + '_' + node.next, text: '\u25B6\uFE0F Continuar' }]);
+    return;
+  }
+  await tReply(sock, msg, ctx, w.emoji + ' ' + chapter.titulo, [corpo]);
+}
+
+async function _iniciarBossFight(sock, msg, ctx, p, w, chapter, node) {
+  const boss = node.boss;
+  await enviarBotoes(sock, msg, ctx, ['\u{1f451} *BOSS: ' + boss.nome + '*', boss.descricao, '', '\u2764\uFE0F HP: ' + boss.hp + ' | \u2694\uFE0F ATK: ' + boss.atk + ' | \u{1f6e1}\uFE0F DEF: ' + boss.def, '\u2728 ' + boss.habilidades.join(', '), '', '\u{1f3af} Escolhe:'].join('\n'), [
+    { id: 'RPGFIGHT_' + boss.nome.replace(/ /g, '_'), text: '\u2694\uFE0F Lutar!' },
+    { id: 'STORY_' + w.id, text: '\u{1f3c3} Fugir' },
+  ]);
+}
+
+// ══════════════════════════════════════════════════════════════
+// PROCESSAR CLIQUES
+// ══════════════════════════════════════════════════════════════
+
+async function resolverClique(sock, msg, ctx, token) {
+  const tk = String(token || '');
+  if (tk === 'STORY_MENU') { await listarMundos(sock, msg, ctx); return true; }
+  let m = tk.match(/^STORY_([a-z]+)$/i);
+  if (m) { await jogarMundo(sock, msg, ctx, m[1].toLowerCase()); return true; }
+  m = tk.match(/^STESTE_([a-z]+)$/i);
+  if (m) { await iniciarTeste(sock, msg, ctx, m[1].toLowerCase()); return true; }
+  m = tk.match(/^STESTQ_([a-z]+)_(\d+)$/i);
+  if (m) { await mostrarPergunta(sock, msg, ctx, m[1].toLowerCase(), parseInt(m[2])); return true; }
+  m = tk.match(/^STESTA_([a-z]+)_(\d+)_(\d+)$/i);
+  if (m) { await responderPergunta(sock, msg, ctx, m[1].toLowerCase(), parseInt(m[2]), parseInt(m[3])); return true; }
+  m = tk.match(/^SINFO_([a-z]+)$/i);
+  if (m) { await mostrarInfoMundo(sock, msg, ctx, m[1].toLowerCase()); return true; }
+  m = tk.match(/^STORYC_([a-z]+)_([^_]+)_([^_]+)_(\d+)$/i);
+  if (m) { await _processarEscolha(sock, msg, ctx, m[1], m[2], m[3], parseInt(m[4])); return true; }
+  m = tk.match(/^STORYN_([a-z]+)_([^_]+)_([^_]+)$/i);
+  if (m) { await _processarProximo(sock, msg, ctx, m[1], m[2], m[3]); return true; }
+  return false;
+}
+
+async function _processarEscolha(sock, msg, ctx, worldId, chapterId, nodeId, choiceIdx) {
+  const p = await rpg.getPlayer(ctx.senderNumber);
+  const w = WORLDS[worldId];
+  const chapters = _getChapters(worldId);
+  const chapter = chapters.find(c => c.id === chapterId);
+  if (!chapter) return tReply(sock, msg, ctx, '\u274C', ['Capitulo nao encontrado.']);
+  const node = chapter.nodes.find(n => n.id === nodeId);
+  if (!node || !node.escolhas || !node.escolhas[choiceIdx]) return tReply(sock, msg, ctx, '\u274C', ['Escolha invalida.']);
+  const choice = node.escolhas[choiceIdx];
+  if (choice.xp) rpg.addXP(p, choice.xp);
+  if (choice.coins) p.coins += choice.coins;
+  if (choice.item && !p.inventory.includes(choice.item)) p.inventory.push(choice.item);
+  if (choice.skill && !p.skills.includes(choice.skill)) p.skills.push(choice.skill);
+  if (choice.title) p.title = choice.title;
+  const prog = await getProgress(p, worldId);
+  prog.node = choice.next || null;
+  if (choice.next) {
+    const nextNode = chapter.nodes.find(n => n.id === choice.next);
+    if (nextNode) {
+      await rpg.savePlayer(p);
+      const corpo = w.emoji + ' *' + chapter.titulo + '*\n\n' + nextNode.texto;
+      if (nextNode.escolhas && nextNode.escolhas.length) {
+        const botoes = nextNode.escolhas.map((e, i) => ({ id: 'STORYC_' + worldId + '_' + chapterId + '_' + nextNode.id + '_' + i, text: e.txt.slice(0, 25) }));
+        await enviarBotoes(sock, msg, ctx, corpo, botoes);
+      } else if (nextNode.next) {
+        await enviarBotoes(sock, msg, ctx, corpo, [{ id: 'STORYN_' + worldId + '_' + chapterId + '_' + nextNode.next, text: '\u25B6\uFE0F Continuar' }]);
+      } else {
+        await tReply(sock, msg, ctx, w.emoji + ' ' + chapter.titulo, [corpo]);
+        prog.capitulo = (prog.capitulo || 0) + 1; prog.node = null;
+        if (!prog.completos) prog.completos = [];
+        prog.completos.push(chapterId);
+        await rpg.savePlayer(p);
+        if (prog.capitulo < chapters.length) {
+          await enviarBotoes(sock, msg, ctx, '\u2705 Capitulo completo!', [{ id: 'STORY_' + worldId, text: '\u{1f4d6} Proximo' }]);
+        }
+      }
+      return;
+    }
+  }
+  prog.capitulo = (prog.capitulo || 0) + 1; prog.node = null;
+  if (!prog.completos) prog.completos = [];
+  prog.completos.push(chapterId);
+  await rpg.savePlayer(p);
+  await tReply(sock, msg, ctx, w.emoji + ' ' + chapter.titulo, ['\u2705 Escolha: *' + choice.txt + '*', choice.xp ? '\u2B50 +' + choice.xp + ' XP' : '', choice.item ? '\u{1f392} +' + choice.item : '', '', '> Proximo com *!historia*'].filter(Boolean));
+}
+
+async function _processarProximo(sock, msg, ctx, worldId, chapterId, nextNodeId) {
+  const p = await rpg.getPlayer(ctx.senderNumber);
+  const w = WORLDS[worldId];
+  const chapters = _getChapters(worldId);
+  const chapter = chapters.find(c => c.id === chapterId);
+  if (!chapter) return;
+  const node = chapter.nodes.find(n => n.id === nextNodeId);
+  if (!node) return;
+  const prog = await getProgress(p, worldId);
+  prog.node = nextNodeId;
+  await rpg.savePlayer(p);
+  const corpo = w.emoji + ' *' + chapter.titulo + '*\n\n' + node.texto;
+  if (node.escolhas && node.escolhas.length) {
+    const botoes = node.escolhas.map((e, i) => ({ id: 'STORYC_' + worldId + '_' + chapterId + '_' + node.id + '_' + i, text: e.txt.slice(0, 25) }));
+    await enviarBotoes(sock, msg, ctx, corpo, botoes);
+  } else if (node.next) {
+    await enviarBotoes(sock, msg, ctx, corpo, [{ id: 'STORYN_' + worldId + '_' + chapterId + '_' + node.next, text: '\u25B6\uFE0F Continuar' }]);
+  } else {
+    await tReply(sock, msg, ctx, w.emoji + ' ' + chapter.titulo, [corpo]);
+    prog.capitulo = (prog.capitulo || 0) + 1; prog.node = null;
+    if (!prog.completos) prog.completos = [];
+    prog.completos.push(chapterId);
+    await rpg.savePlayer(p);
+  }
+}
+
 module.exports = {
-  WORLDS,
-  NARUTO_CHAPTERS,
-  listarMundos,
-  jogarMundo,
-  resolverClique,
-  getProgress,
-  _getChapters,
-  enviarBotoes,
-  enviarLista,
-  tReply,
+  WORLDS, NARUTO_CHAPTERS, listarMundos, jogarMundo, iniciarTeste,
+  mostrarStatus, resolverClique, getProgress, _getChapters,
+  enviarBotoes, enviarLista, enviarCarrossel, enviarImagem, tReply,
 };

@@ -97,6 +97,10 @@ const RPGPlayerSchema = new mongoose.Schema({
   craftingLevel:  { type: Number, default: 1 },
   recipesKnown:   [{ type: String }],
 
+  // Story Mode Progress (v11.0)
+  storyProgress: { type: mongoose.Schema.Types.Mixed, default: {} },
+  _testState:    { type: mongoose.Schema.Types.Mixed, default: {} },
+
   // Cooldowns
   lastDaily:   { type: Date, default: null },
   lastWork:    { type: Date, default: null },
