@@ -11,6 +11,7 @@
  */
 
 function canais() { return require('../../aura/auraCanais'); }
+function sorteios() { return require('../../aura/auraSorteios'); }
 
 async function alvoMeu() {
   try {
@@ -42,7 +43,7 @@ module.exports = function registerCanalCases(registerCase) {
         const d = await C.listarCanais().catch(() => ({ lista: [] }));
         const linhas = matches.map((mch) => {
           const n = (d.lista || []).findIndex(c => c.jid === mch.jid) + 1;
-          return `*${n}.* ${mch.name || 'Canal'} _(via \`@${n}\`)_`;
+          return `*${n}.* ${mch.name || 'Canal'} _(via \`${n}\`)_`;
         });
         return reply(`🔍 *${matches.length} canais* casam com \`${args[0]}\`:\n\n${linhas.join('\n')}\n\n> Sê específico: \`${prefix}canal @<nº> ${args.slice(1).join(' ')}\``);
       }
@@ -83,6 +84,12 @@ module.exports = function registerCanalCases(registerCase) {
       `*Reacções (v9.20):*\n` +
       `• \`${prefix}canal reagir <emoji>\` — reage a todos os posts recentes\n` +
       `• \`${prefix}canal reagir 🖤❤️🔥\` — roda entre emojis (inflação)\n\n` +
+      `*Sorteios & Quiz (v9.23):*\n` +
+      `• \`${prefix}canal sorteio\` — ver tipos de sorteio\n` +
+      `• \`${prefix}canal quiz <pergunta> | <op1> | <op2> | <resposta> | <prémio>\`\n` +
+      `• \`${prefix}canal multipla <pergunta> | <op1> | <op2>...\` — seleção múltipla\n` +
+      `• \`${prefix}canal limite <N> | <pergunta> | <op1> | <op2>\` — só N votos\n` +
+      `• \`${prefix}canal engajamento\` — métricas do canal\n\n` +
       `*Multi-canal (SUPER):*\n` +
       `• \`${prefix}canal @<nº|nome> <comando>\` — age noutro canal sem trocar o ativo\n` +
       `• \`${prefix}super <texto>\` — publica em *todos* os canais (+ \`grupos\` avisa os grupos)`;
@@ -289,6 +296,180 @@ module.exports = function registerCanalCases(registerCase) {
         return reply(fmtResult(await C.reagirTudoCanal(sock, alvo, emojiList[0], 30, { emojis: emojiList })));
       }
       return reply(fmtResult(await C.reagirTudoCanal(sock, alvo, emojiList[0], 30)));
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // v9.23 — SORTEIOS, QUIZ & ENQUETES AVANÇADAS
+    // ═══════════════════════════════════════════════════════════
+
+    if (sub === 'sorteio' || sub === 'sortear' || sub === 'raffle') {
+      const alvo = await escolherAlvo();
+      if (!alvo) return reply(`❌ Sem canal adotado. \`${prefix}canal adotar <link>\``);
+
+      const acao = String(args[1] || '').toLowerCase();
+
+      // ── Sorteio por voto ──
+      if (acao === 'voto') {
+        const pollId = args[2];
+        if (!pollId) return reply(`❓ Usa: \`${prefix}canal sorteio voto <pollId> [nVencedores]\`\nCria um sorteio a partir dos votos de uma enquete.`);
+        const r = await sorteios().criarSorteioPorVoto(sock, alvo, pollId, {
+          nVencedores: parseInt(args[3]) || 1,
+          nome: 'Sorteio por Voto',
+        });
+        return reply(fmtResult(r));
+      }
+
+      // ── Sorteio por reação ──
+      if (acao === 'reacao' || acao === 'reação' || acao === 'reaction') {
+        const postId = args[2];
+        if (!postId) return reply(`❓ Usa: \`${prefix}canal sorteio reacao <postId> [emoji]\`\nSorteia entre quem reagiu a um post.`);
+        const r = await sorteios().criarSorteioPorReacao(sock, alvo, postId, {
+          emoji: args[3] || null,
+          nVencedores: parseInt(args[4]) || 1,
+          nome: 'Sorteio por Reação',
+        });
+        return reply(fmtResult(r));
+      }
+
+      // ── Sorteio por nome (inscrição aberta) ──
+      if (acao === 'nome' || acao === 'name' || acao === 'aberto') {
+        const nome = resto.split('|')[0]?.trim() || 'Sorteio Aberto';
+        const premio = resto.split('|')[1]?.trim() || 'Prémio surpresa';
+        const r = await sorteios().criarSorteioPorNome(sock, alvo, {
+          nome, premio, emoji: '🎲', nVencedores: parseInt(args[2]) || 1,
+        });
+        return reply(fmtResult(r));
+      }
+
+      // ── Sorteio por seguir ──
+      if (acao === 'seguir' || acao === 'follow' || acao === 'seguidores') {
+        const nome = resto.split('|')[0]?.trim() || 'Sorteio de Seguidores';
+        const premio = resto.split('|')[1]?.trim() || 'Prémio exclusivo';
+        const r = await sorteios().criarSorteioPorSeguir(sock, alvo, {
+          nome, premio, nVencedores: parseInt(args[2]) || 1,
+        });
+        return reply(fmtResult(r));
+      }
+
+      // ── Fechar/executar sorteio ──
+      if (acao === 'fechar' || acao === 'close' || acao === 'executar' || acao === 'run') {
+        const id = args[2];
+        if (!id) {
+          const lista = sorteios().listarSorteios(alvo);
+          if (!lista.length) return reply('📋 Nenhum sorteio ativo neste canal.');
+          const linhas = lista.map((s, i) => `${i + 1}. *${s.nome}* (${s.tipo}) — ${s.participantes} participantes${s.vencedor ? ' ✅' : ''}`);
+          return reply(`📋 *SORTEIOS ATIVOS:*\n\n${linhas.join('\n')}\n\nPara fechar: \`${prefix}canal sorteio fechar <id>\``);
+        }
+        const r = await sorteios().executarSorteio(sock, id);
+        return reply(fmtResult(r));
+      }
+
+      // ── Revelar quiz ──
+      if (acao === 'revelar' || acao === 'reveal' || acao === 'resultado') {
+        const id = args[2];
+        if (!id) return reply(`❓ Usa: \`${prefix}canal sorteio revelar <quizId>\``);
+        const r = await sorteios().revelarQuiz(sock, alvo, id);
+        return reply(fmtResult(r));
+      }
+
+      // ── Listar sorteios ──
+      if (acao === 'lista' || acao === 'listar' || acao === 'list') {
+        const lista = sorteios().listarSorteios(alvo);
+        if (!lista.length) return reply('📋 Nenhum sorteio ativo neste canal.');
+        const linhas = lista.map((s, i) => {
+          const medalha = s.vencedor ? '✅' : '⏳';
+          return `${medalha} ${i + 1}. *${s.nome}* (${s.tipo}) — ${s.participantes} participantes`;
+        });
+        return reply(`📋 *SORTEIOS:*\n\n${linhas.join('\n')}`);
+      }
+
+      return reply(
+        `🎲 *SORTEIOS DO CANAL*\n\n` +
+        `• \`${prefix}canal sorteio nome <nome> | <prémio>\` — inscrição aberta por emoji\n` +
+        `• \`${prefix}canal sorteio seguir <nome> | <prémio>\` — só seguidores\n` +
+        `• \`${prefix}canal sorteio voto <pollId>\` — dos votos de uma enquete\n` +
+        `• \`${prefix}canal sorteio reacao <postId> [emoji]\` — dos que reagiram\n` +
+        `• \`${prefix}canal sorteio fechar <id>\` — executar e revelar vencedor\n` +
+        `• \`${prefix}canal sorteio revelar <quizId>\` — revelar resultado do quiz\n` +
+        `• \`${prefix}canal sorteio lista\` — ver sorteios ativos`
+      );
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // QUIZ — enquete com resposta certa
+    // ═══════════════════════════════════════════════════════════
+
+    if (sub === 'quiz') {
+      const alvo = await escolherAlvo();
+      if (!alvo) return reply(`❌ Sem canal adotado. \`${prefix}canal adotar <link>\``);
+      if (!resto) return reply(`❓ Usa: \`${prefix}canal quiz <pergunta> | <op1> | <op2> | <respostaCerta> | <prémio>\`\nEx: \`${prefix}canal quiz Qual a capital de Angola? | Luanda | Benguela | Huambo | Luanda | Voucher 5000kz\``);
+
+      const partes = resto.split('|').map(s => s.trim());
+      if (partes.length < 3) return reply(`❓ Formato: \`${prefix}canal quiz <pergunta> | <op1> | <op2> | ... | <respostaCerta> | <prémio>\``);
+
+      const pergunta = partes[0];
+      const respostaCerta = partes[partes.length - 2];
+      const premio = partes[partes.length - 1] || '';
+      const opcoes = partes.slice(1, -2);
+
+      // Se não há opções suficientes, usar todas exceto pergunta e resposta
+      const opcoesFinal = opcoes.length >= 2 ? opcoes : partes.slice(1, -1);
+
+      const r = await sorteios().criarQuiz(sock, alvo, {
+        pergunta, opcoes: opcoesFinal, resposta: respostaCerta, premio,
+        nVencedores: 1,
+      });
+      return reply(fmtResult(r));
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // ENQUETE MÚLTIPLA — seleção múltipla
+    // ═══════════════════════════════════════════════════════════
+
+    if (sub === 'multipla' || sub === 'multi' || sub === 'multiple') {
+      const alvo = await escolherAlvo();
+      if (!alvo) return reply(`❌ Sem canal adotado. \`${prefix}canal adotar <link>\``);
+      if (!resto) return reply(`❓ Usa: \`${prefix}canal multipla <pergunta> | <op1> | <op2> | ...\``);
+
+      const partes = resto.split('|').map(s => s.trim());
+      const pergunta = partes[0];
+      const opcoes = partes.slice(1);
+
+      const r = await sorteios().criarEnqueteMultipla(sock, alvo, {
+        pergunta, opcoes, maxSelecoes: opcoes.length,
+      });
+      return reply(fmtResult(r));
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // ENQUETE COM LIMITE — só N primeiros votam
+    // ═══════════════════════════════════════════════════════════
+
+    if (sub === 'limite' || sub === 'limit' || sub === 'rapida') {
+      const alvo = await escolherAlvo();
+      if (!alvo) return reply(`❌ Sem canal adotado. \`${prefix}canal adotar <link>\``);
+      if (!resto) return reply(`❓ Usa: \`${prefix}canal limite <nº votos> | <pergunta> | <op1> | <op2>\``);
+
+      const partes = resto.split('|').map(s => s.trim());
+      const limite = parseInt(partes[0]) || 10;
+      const pergunta = partes[1] || 'Vota rápido!';
+      const opcoes = partes.slice(2);
+
+      const r = await sorteios().criarEnqueteComLimite(sock, alvo, {
+        pergunta, opcoes: opcoes.length ? opcoes : ['Sim', 'Não'], limite,
+      });
+      return reply(fmtResult(r));
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // ENGAJAMENTO — dashboard de métricas
+    // ═══════════════════════════════════════════════════════════
+
+    if (sub === 'engajamento' || sub === 'engagement' || sub === 'metricas' || sub === 'mvp') {
+      const alvo = await escolherAlvo();
+      if (!alvo) return reply(`❌ Sem canal adotado. \`${prefix}canal adotar <link>\``);
+      const r = await sorteios().dashboardEngajamento(sock, alvo);
+      return reply(fmtResult(r));
     }
 
     return reply(`❓ Subcomando desconhecido: \`${sub}\`\nVê: \`${prefix}canal\``);

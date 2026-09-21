@@ -555,6 +555,44 @@ const CAPACIDADES = [
     gatilhos: [/\b(lembras|lembra)(-| )te\b.{0,14}\b(daquilo|daquele|disso|de que|do que)\b/, /\bo que\b.{0,12}\b(guardaste|te disse|anotaste)\b/],
   },
 
+  // ══ SORTEIOS & QUIZ (v9.23) ════════════════════════════════
+  {
+    id: 'canal_sorteio', nivel: 'dono', arg: 'depois', risco: 'seguro',
+    desc: 'Fazer sorteio no canal (por voto, reação, nome ou seguir)',
+    gatilhos: [
+      /\b(sortear|sorteio|sorteia|raffle|giveaway)\b.{0,20}\b(canal|newsletter)\b/,
+      /\b(canal|newsletter)\b.{0,20}\b(sortear|sorteio|sorteia|raffle|giveaway)\b/,
+      /\b(faz|fazer|cria|criar)\b.{0,16}\b(sorteio|sortear|raffle)\b/,
+      /\b(sorteio|sortear)\b.{0,16}\b(por voto|por reacao|por nome|por seguir|seguidores)\b/,
+    ],
+  },
+  {
+    id: 'canal_quiz', nivel: 'dono', arg: 'depois', risco: 'seguro',
+    desc: 'Criar quiz no canal (enquete com resposta certa)',
+    gatilhos: [
+      /\b(cria|criar|faz|fazer|manda|publica)\b.{0,20}\b(quiz)\b/,
+      /\b(quiz)\b.{0,20}\b(no canal|canal|seguidores)\b/,
+      /\bpergunta\b.{0,20}\bcom resposta\b/,
+    ],
+  },
+  {
+    id: 'canal_enquete_multipla', nivel: 'dono', arg: 'depois', risco: 'seguro',
+    desc: 'Criar enquete com seleção múltipla no canal',
+    gatilhos: [
+      /\b(faz|cria|manda)\b.{0,20}\b(enquete multipla|enquete multipla|selecao multipla)\b/,
+      /\b(enquete|poll)\b.{0,16}\b(multipla|multipla|varias opcoes|seleciona varias)\b/,
+    ],
+  },
+  {
+    id: 'canal_engajamento', nivel: 'dono', arg: 'nenhum', risco: 'seguro',
+    desc: 'Ver métricas de engajamento do canal',
+    gatilhos: [
+      /\b(engajamento|engagement|metricas|mvp|desempenho)\b.{0,20}\b(canal|newsletter)\b/,
+      /\b(canal|newsletter)\b.{0,20}\b(engajamento|engagement|metricas|mvp|desempenho)\b/,
+      /\bcomo\b.{0,10}\b(canal|newsletter)\b.{0,10}\b(esta|ta|vai|performa)\b/,
+    ],
+  },
+
   // ══ AGENDAMENTO (daily, orações, dicas...) ════════════════
   {
     id: 'agendar_conteudo', nivel: 'dono', arg: 'texto', risco: 'seguro',
