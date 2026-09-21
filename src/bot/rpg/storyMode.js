@@ -492,8 +492,144 @@ async function jogarMundo(sock, msg, ctx, worldId) {
   return _mostrarCapitulo(sock, msg, ctx, p, w, chapter, capIdx);
 }
 
+
+// ══════════════════════════════════════════════════════════════
+// DRAGON BALL — 15 CAPÍTULOS ÉPICOS
+// ══════════════════════════════════════════════════════════════
+const DRAGONBALL_CHAPTERS = [
+  {
+    id: 'db_ch01', titulo: 'O Rapaz da Cauda',
+    descricao: 'Montanha Paozu. Um rapaz com cauda de macaco vive sozinho ate Bulma aparecer.',
+    nivel: 20, xp: 300, coins: 800,
+    nodes: [
+      { id: 'd1_01', texto: '🐉 *Montanha Paozu*\n\nUm rapaz de 12 anos com cauda vive sozinho. Pesca, treina e come. Muito.\n\n"Eu sou Son Goku!"', falante: 'Goku' },
+      { id: 'd1_02', texto: '🔮 *Bulma e as Esferas do Dragao!*\n\n"EU SOU BULMA! Procuro as 7 Esferas do Dragao!"\n\nGoku: "Que fixe! Eu vou contigo!"', falante: 'Bulma' },
+      { id: 'd1_03', texto: '🐢 *Mestre Roshi*\n\nGoku treina com o velho pervertido durante 8 meses!\n\nDepois entra no 21o Torneio de Artes Marciais!', xp: 200, coins: 500, item: 'Kinton' },
+    ],
+    recompensas: { xp: 800, coins: 2000, item: 'Kinton', title: 'Lutador de Torneio' },
+  },
+  {
+    id: 'db_ch02', titulo: 'O Rei Piccolo',
+    descricao: 'O demónio mais antigo desperta. Goku precisa de vinganca.',
+    nivel: 22, xp: 400, coins: 1000,
+    nodes: [
+      { id: 'd2_01', texto: '💀 *Krillin Morreu!*\n\nO demónio mais antigo do mundo despertou!', xp: 100 },
+      { id: 'd2_02', texto: '👹 *Goku vs Rei Piccolo!*', boss: { nome: 'Rei Piccolo', emoji: '👹', hp: 4000, atk: 150, def: 60, xp: 800, coins: 2000, habilidades: ['Makankosappo', 'Explosao Demoníaca'], descricao: 'O demónio mais antigo do mundo.' }},
+      { id: 'd2_03', texto: '🏆 *Goku vence e torna-se Campeao Mundial!*', xp: 300, title: 'Campeao Mundial' },
+    ],
+    recompensas: { xp: 1200, coins: 3000, title: 'Campeao Mundial' },
+  },
+  {
+    id: 'db_ch03', titulo: 'A Chegada dos Saiyajins',
+    descricao: 'Raditz revela a verdade: Goku e um Saiyajin!',
+    nivel: 25, xp: 600, coins: 1500,
+    nodes: [
+      { id: 'd3_01', texto: '⚡ *Raditz — O Irmao de Goku!*\n\n"Tu es um Saiyajin! Foste enviado para destruir a Terra!"', falante: 'Raditz' },
+      { id: 'd3_02', texto: '⚡ *Goku vs Raditz!*', boss: { nome: 'Raditz', emoji: '⚡', hp: 3000, atk: 140, def: 50, xp: 600, coins: 1500, habilidades: ['Ki Blast', 'Double Sunday'], descricao: 'O irmao de Goku.' }},
+      { id: 'd3_03', texto: '💀 *Goku morre para derrotar Raditz...*', xp: 200 },
+      { id: 'd3_04', texto: '🏋️ *Treino com o Rei Kaioh!*\n\nGoku aprende o Kaioken!\n\n"KAIOKEN TIMES 2!"', xp: 300, skill: 'Kaioken' },
+      { id: 'd3_05', texto: '💥 *Goku vs Vegeta!*', boss: { nome: 'Vegeta', emoji: '👑', hp: 6000, atk: 200, def: 80, xp: 1500, coins: 3000, habilidades: ['Galick Gun', 'Oozaru'], descricao: 'O Principe dos Saiyajins.' }},
+      { id: 'd3_06', texto: '👑 *Vegeta foge!*\n\nRumo a Namek!', xp: 400, title: 'Saiyajin de Classe Baixa' },
+    ],
+    recompensas: { xp: 2500, coins: 6000, skill: 'Kaioken', title: 'Saiyajin' },
+  },
+  {
+    id: 'db_ch04', titulo: 'Namek — O Imperador Frieza',
+    descricao: 'O planeta Namek. O tirano mais cruel do universo.',
+    nivel: 30, xp: 1000, coins: 2500,
+    nodes: [
+      { id: 'd4_01', texto: '🟢 *O Planeta Namek!*\n\nFrieza ja esta la!', xp: 200 },
+      { id: 'd4_02', texto: '⚡ *Goku vs Ginyu Force!*', xp: 300 },
+      { id: 'd4_03', texto: '👿 *Frieza — O Tirano!*', boss: { nome: 'Frieza (Forma Final)', emoji: '👿', hp: 15000, atk: 300, def: 120, xp: 3000, coins: 8000, habilidades: ['Death Beam', 'Death Ball'], descricao: 'O imperador do universo.' }},
+      { id: 'd4_04', texto: '💀 *Krillin morre de novo!*\n\nGoku: "KRILLIN... AAAAAAH!"\n\nO cabelo fica dourado. Os olhos verdes.\n\n> 💛 *SUPER SAIYAJIN!*', xp: 500, skill: 'Super Saiyajin' },
+      { id: 'd4_05', texto: '💛 *Goku SSJ vs Frieza!*\n\nGoku vence! Namek explode!', xp: 500, title: 'Super Saiyajin' },
+    ],
+    recompensas: { xp: 3500, coins: 9000, skill: 'Super Saiyajin', title: 'Super Saiyajin' },
+  },
+  {
+    id: 'db_ch05', titulo: 'Androides e Cell',
+    descricao: 'Trunks do futuro avisa: androides vao destruir a Terra!',
+    nivel: 35, xp: 1200, coins: 3000,
+    nodes: [
+      { id: 'd5_01', texto: '⚡ *Trunks do Futuro!*\n\n"Em 3 anos, androides vao destruir a Terra!"', falante: 'Trunks' },
+      { id: 'd5_02', texto: '🤖 *Os Androides 17 e 18!*\n\nVegeta atinge o Super Saiyajin!\n\n"FINAL FLASH!"', xp: 300, skill: 'Final Flash' },
+      { id: 'd5_03', texto: '🧬 *Cell — O Perfeito!*', boss: { nome: 'Cell Perfeito', emoji: '🧬', hp: 20000, atk: 350, def: 150, xp: 4000, coins: 10000, habilidades: ['Kamehameha', 'Regeneracao'], descricao: 'O ser perfeito.' }},
+      { id: 'd5_04', texto: '⚡ *Gohan atinge o Super Saiyajin 2!*\n\n"VOCES VAO PAGAR!"', xp: 500, skill: 'Super Saiyajin 2' },
+      { id: 'd5_05', texto: '⚡ *Gohan vence Cell!*', xp: 500, title: 'Heroi do Torneio' },
+    ],
+    recompensas: { xp: 3000, coins: 8000, skill: 'Super Saiyajin 2', title: 'Heroi do Torneio' },
+  },
+  {
+    id: 'db_ch06', titulo: 'Majin Buu',
+    descricao: 'O demónio mais antigo desperta. A Terra esta em perigo!',
+    nivel: 40, xp: 1500, coins: 4000,
+    nodes: [
+      { id: 'd6_01', texto: '💀 *Majin Buu desperta!*\n\nBabidi controla Vegeta!', xp: 300 },
+      { id: 'd6_02', texto: '👑 *Vegeta sacrifica-se!*\n\n"TRUNKS... BULMA... EU VOU SALVAR-VOS!"', xp: 400 },
+      { id: 'd6_03', texto: '💀 *Buu absorve todos!*', boss: { nome: 'Super Buu', emoji: '💀', hp: 25000, atk: 400, def: 160, xp: 5000, coins: 12000, habilidades: ['Absorcao', 'Candy Beam', 'Regeneracao'], descricao: 'O demónio mais antigo.' }},
+      { id: 'd6_04', texto: '🐉 *Goku SSJ3!*\n\n"EU VOU ALÉM DOS LIMITES!"', xp: 600, skill: 'Super Saiyajin 3' },
+      { id: 'd6_05', texto: '🌍 *Genkidama!*\n\nToda a Terra da energia!\n\n*BUU É DESTRUÍDO!*', xp: 600, title: 'Salvador da Terra' },
+    ],
+    recompensas: { xp: 4000, coins: 10000, skill: 'Super Saiyajin 3', title: 'Salvador da Terra' },
+  },
+  {
+    id: 'db_ch07', titulo: 'Battle of Gods — Beerus',
+    descricao: 'O Deus da Destruição desperta! E mais forte que qualquer Saiyajin!',
+    nivel: 45, xp: 2000, coins: 5000,
+    nodes: [
+      { id: 'd7_01', texto: '😴 *Beerus acorda!*\n\n"Eu sou o Deus da Destruição. Alguém me provocou."', falante: 'Beerus' },
+      { id: 'd7_02', texto: '💜 *Goku vs Beerus!*', boss: { nome: 'Beerus', emoji: '😴', hp: 30000, atk: 500, def: 200, xp: 6000, coins: 15000, habilidades: ['Hakai', 'Sphere of Destruction'], descricao: 'O Deus da Destruição.' }},
+      { id: 'd7_03', texto: '🔴 *Super Saiyajin God!*\n\nGoku atinge o poder divino!', xp: 800, skill: 'Super Saiyajin God' },
+      { id: 'd7_04', texto: '🔴 *Goku SSG vs Beerus!*\n\nO combate destrói planetas!\n\nBeerus fica impressionado!', xp: 600, title: 'Deus Saiyajin' },
+    ],
+    recompensas: { xp: 5000, coins: 12000, skill: 'Super Saiyajin God', title: 'Deus Saiyajin' },
+  },
+  {
+    id: 'db_ch08', titulo: 'Resurrection F — Golden Frieza',
+    descricao: 'Frieza volta da morte com uma nova forma dourada!',
+    nivel: 50, xp: 2500, coins: 6000,
+    nodes: [
+      { id: 'd8_01', texto: '👿 *Frieza ressuscita!*\n\n"EU VOU VINGAR-ME DO GOKU!"', falante: 'Frieza' },
+      { id: 'd8_02', texto: '💛 *Golden Frieza!*', boss: { nome: 'Golden Frieza', emoji: '💛', hp: 35000, atk: 550, def: 220, xp: 7000, coins: 18000, habilidades: ['Golden Death Beam', 'Earth Breaker'], descricao: 'Frieza na sua forma dourada.' }},
+      { id: 'd8_03', texto: '💙 *Super Saiyajin Blue!*\n\nGoku atinge o SSB!', xp: 1000, skill: 'Super Saiyajin Blue' },
+      { id: 'd8_04', texto: '💙 *Goku SSB vs Golden Frieza!*\n\nGoku vence de novo!', xp: 800, title: 'Saiyajin Blue' },
+    ],
+    recompensas: { xp: 6000, coins: 15000, skill: 'Super Saiyajin Blue', title: 'Saiyajin Blue' },
+  },
+  {
+    id: 'db_ch09', titulo: 'Goku Black — Zamasu',
+    descricao: 'Um Kaioshin corrompido rouba o corpo de Goku!',
+    nivel: 55, xp: 3000, coins: 7000,
+    nodes: [
+      { id: 'd9_01', texto: '🖤 *Goku Black!*\n\nUm Goku do futuro com o poder de Zamasu!', xp: 400 },
+      { id: 'd9_02', texto: '💜 *Zamasu Imortal!*', boss: { nome: 'Zamasu Fusionado', emoji: '💜', hp: 40000, atk: 600, def: 250, xp: 8000, coins: 20000, habilidades: ['Holy Wrath', 'Lightning of Absolution'], descricao: 'O deus corrompido.' }},
+      { id: 'd9_03', texto: '⚡ *Trunks SSJ Rage!*\n\n"EU VOU PROTEGER TODOS!"', xp: 800, skill: 'Spirit Sword' },
+      { id: 'd9_04', texto: '🌍 *Zeno apaga a linha temporal!*\n\nO universo e salvo!', xp: 600, title: 'Guerreiro Temporal' },
+    ],
+    recompensas: { xp: 7000, coins: 17000, skill: 'Spirit Sword', title: 'Guerreiro Temporal' },
+  },
+  {
+    id: 'db_ch10', titulo: 'Torneio do Poder',
+    descricao: '8 universos lutam pela sobrevivencia! Goku alcanca o poder supremo!',
+    nivel: 60, xp: 4000, coins: 10000,
+    nodes: [
+      { id: 'd10_01', texto: '🏆 *Torneio do Poder!*\n\n8 universos! 80 guerreiros! O universo perdedor e apagado!', xp: 500 },
+      { id: 'd10_02', texto: '💪 *Jiren — O Mais Forte!*', boss: { nome: 'Jiren', emoji: '💪', hp: 50000, atk: 800, def: 300, xp: 10000, coins: 25000, habilidades: ['Power Impact', 'Invisible Strikes', 'Full Power'], descricao: 'O guerreiro mais forte do Universo 11.' }},
+      { id: 'd10_03', texto: '⚪ *ULTRA INSTINTO!*\n\nGoku atinge o poder supremo!\n\nO corpo move-se sozinho!\n\nO cabelo fica prateado!', xp: 2000, skill: 'Ultra Instinto' },
+      { id: 'd10_04', texto: '⚪ *Goku UI vs Jiren!*\n\nA batalha mais epica de todos os tempos!\n\nGoku vence! O Universo 7 e salvo!', xp: 1500, title: 'Mortal Mais Forte' },
+      { id: 'd10_05', texto: '🏆 *FIM — Dragon Ball Super!*\n\nGoku e o mortal mais forte do multiverso!\n\n> 🏆 *Parabens! Completaste Dragon Ball!*', xp: 3000, coins: 20000, title: 'Lenda Saiyajin' },
+    ],
+    recompensas: { xp: 10000, coins: 30000, skill: 'Ultra Instinto', title: 'Lenda Saiyajin' },
+  },
+];
+
+WORLDS.dragonball.capitulos = DRAGONBALL_CHAPTERS.length;
+
 function _getChapters(worldId) {
-  const map = { naruto: NARUTO_CHAPTERS, onepiece: ONEPIECE_CHAPTERS };
+  const map = { naruto: NARUTO_CHAPTERS, onepiece: ONEPIECE_CHAPTERS, sololeveling: SOLOLEVELING_CHAPTERS, dragonball: DRAGONBALL_CHAPTERS };
+  return map[worldId] || [];
+
+
   return map[worldId] || [];
 }
 
@@ -774,19 +910,6 @@ async function _processarProximo(sock, msg, ctx, worldId, chapterId, nextNodeId)
     await rpg.savePlayer(p);
   }
 }
-
-module.exports = {
-  WORLDS,
-  NARUTO_CHAPTERS,
-  listarMundos,
-  jogarMundo,
-  resolverClique,
-  getProgress,
-  _getChapters,
-  enviarBotoes,
-  enviarLista,
-  tReply,
-};
 
 // ══════════════════════════════════════════════════════════════
 // ONE PIECE — 35 CAPÍTULOS ÉPICOS
@@ -1105,14 +1228,8 @@ const ONEPIECE_CHAPTERS = [
 WORLDS.onepiece.capitulos = ONEPIECE_CHAPTERS.length;
 
 // Atualizar _getChapters para incluir One Piece
-const _origGetChapters = _getChapters;
-function _getChaptersNew(worldId) {
-  const map = { naruto: NARUTO_CHAPTERS, onepiece: ONEPIECE_CHAPTERS };
-  return map[worldId] || [];
-}
 
 // Sobrescrever a função
-module.exports._getChapters = _getChaptersNew;
 
 
 // ══════════════════════════════════════════════════════════════
@@ -1292,10 +1409,27 @@ const SOLOLEVELING_CHAPTERS = [
 ];
 
 WORLDS.sololeveling.capitulos = SOLOLEVELING_CHAPTERS.length;
+WORLDS.dragonball.capitulos = DRAGONBALL_CHAPTERS.length;
 
-// Atualizar _getChapters
 function _getChapters(worldId) {
-  const map = { naruto: NARUTO_CHAPTERS, onepiece: ONEPIECE_CHAPTERS, sololeveling: SOLOLEVELING_CHAPTERS };
+  const map = {
+    naruto: NARUTO_CHAPTERS,
+    onepiece: ONEPIECE_CHAPTERS,
+    sololeveling: SOLOLEVELING_CHAPTERS,
+    dragonball: DRAGONBALL_CHAPTERS,
+  };
   return map[worldId] || [];
 }
 
+module.exports = {
+  WORLDS,
+  NARUTO_CHAPTERS,
+  listarMundos,
+  jogarMundo,
+  resolverClique,
+  getProgress,
+  _getChapters,
+  enviarBotoes,
+  enviarLista,
+  tReply,
+};
