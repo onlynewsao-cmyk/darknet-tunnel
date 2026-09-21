@@ -493,7 +493,7 @@ async function jogarMundo(sock, msg, ctx, worldId) {
 }
 
 function _getChapters(worldId) {
-  const map = { naruto: NARUTO_CHAPTERS };
+  const map = { naruto: NARUTO_CHAPTERS, onepiece: ONEPIECE_CHAPTERS };
   return map[worldId] || [];
 }
 
@@ -787,3 +787,330 @@ module.exports = {
   enviarLista,
   tReply,
 };
+
+// ══════════════════════════════════════════════════════════════
+// ONE PIECE — 35 CAPÍTULOS ÉPICOS
+// ══════════════════════════════════════════════════════════════
+const ONEPIECE_CHAPTERS = [
+  // ═══ ARCO 1: ROMANCE DAWN (Cap 1) ═════════════════════════
+  {
+    id: 'op_ch01', titulo: 'Romance Dawn — O Começo da Aventura',
+    descricao: 'Foosha Village. Um chapéu de palha. Um sonho impossível.',
+    nivel: 5, xp: 80, coins: 200,
+    nodes: [
+      { id: 'o1_01', texto: '👒 *Foosha Village*\n\nUm miúdo de 7 anos come uma fruta estranha. O corpo torna-se de borracha!\n\nShanks, o pirata ruivo, ri-se. "Comeste a Gomu Gomu no Mi! Agora nunca mais podes nadar!"\n\nMas Luffy não se importa. Shanks é o seu herói.', falante: 'Shanks' },
+      { id: 'o1_02', texto: '🏔️ *O Banditouros da Montanha*\n\nOs banditos humilham Shanks. Derramam sake na cabeça dele.\n\nShanks ri. "Sake na minha cabeça? Não vale a pena lutar por isso."\n\nMas quando ameaçam Luffy...\n\nShanks olha sério. "Ninguém toca no meu amigo."', falante: 'Shanks' },
+      { id: 'o1_03', texto: '👒 *O Chapéu de Palha*\n\nShanks perde o braço para salvar Luffy de um Rei do Mar.\n\n"Luffy... eu confio-te o meu chapéu."\n\n"Devolve-me quando fores um grande pirata!"\n\n> 👒 *O chapéu que mudou tudo...*', xp: 30, item: 'Chapéu de Palha de Shanks' },
+      { id: 'o1_04', texto: '⛵ *10 Anos Depois*\n\nLuffy tem 17 anos. Parte sozinho num barril.\n\n"EU SOU MONKEY D. LUFFY! VOU SER O REI DOS PIRATAS!"\n\nO mar chama. A aventura começa.\n\n> ⛵ *Partida de Foosha Village!*\n> 🏴‍☠️ *O sonho do One Piece começa agora.*', xp: 50, coins: 300, title: 'Pirata Chapéu de Palha' },
+    ],
+    recompensas: { xp: 200, coins: 500, item: 'Chapéu de Palha', title: 'Pirata Chapéu de Palha' },
+  },
+  // ═══ ARCO 2: BUGGY (Cap 2) ════════════════════════════════
+  {
+    id: 'op_ch02', titulo: 'O Palhaço Pirata — Buggy!',
+    descricao: 'A primeira ilha. O primeiro vilão. Buggy, o palhaço que se parte em pedaços!',
+    nivel: 6, xp: 100, coins: 300,
+    nodes: [
+      { id: 'o2_01', texto: '🎪 *Vila do Buggy*\n\nLuffy chega a uma ilha terrorizada pelo pirata Buggy.\n\nUm cão chamado Chouchou protege a loja do seu dono.\n\n"Não toquem no cão!" — Luffy fica furioso.', falante: 'Luffy' },
+      { id: 'o2_02', texto: '🤡 *Buggy, o Palhaço*\n\n"Eu sou Buggy! O futuro Rei dos Piratas!"\n\nComeu a Bari Bari no Mi — pode partir-se em pedaços!\n\nLuffy: "Que poder estúpido!"\n\nBuggy: "ESTÚPIDO?!"', boss: {
+        nome: 'Buggy', emoji: '🤡', hp: 400, atk: 35, def: 15, xp: 200, coins: 400,
+        habilidades: ['Buggy Ball', 'Partes Separadas', 'Barragem de Bolas'],
+        descricao: 'O pirata palhaço. Comeu a Bara Bara no Mi.',
+      }},
+      { id: 'o2_03', texto: '🤡 *Luffy vs Buggy*\n\nBuggy divide-se em pedaços! Mas Luffy estica o braço...\n\n"GOMU GOMU NO... PISTOL!"\n\n*BAM!* Buggy voa pelos ares!\n\n"Obrigado, Luffy!" — o povo da vila celebra.', xp: 80, coins: 200 },
+      { id: 'o2_04', texto: '⚔️ *Nami, a Gata Ladra*\n\nUma mulher laranja aparece. "Eu sou Nami. Navegadora."\n\nEla rouba o tesouro de Buggy e foge.\n\nLuffy: "Ei! Queres ser minha pirata?"\n\nNami: "Só se me pagares."\n\n> ⚔️ *Nami junta-se (temporariamente)!*', xp: 40, coins: 100 },
+    ],
+    recompensas: { xp: 300, coins: 700, item: 'Bola de Buggy' },
+  },
+  // ═══ ARCO 3: CAPITÃO KURO (Cap 3) ═════════════════════════
+  {
+    id: 'op_ch03', titulo: 'O Génio Maligno — Capitão Kuro',
+    descricao: 'Um mordomo que esconde um passado terrível. A vila de Kaya está em perigo!',
+    nivel: 7, xp: 120, coins: 400,
+    nodes: [
+      { id: 'o3_01', texto: '🏡 *Vila Syrup*\n\nUma rapariga rica chamada Kaya tem um mordomo chamado Klahadoll.\n\nMas Luffy desconfia. "Esse gajo é estranho!"\n\nUsopp, o mentiroso, confirma: "Kuro é um pirata!"', falante: 'Usopp' },
+      { id: 'o3_02', texto: '🐱 *Capitão Kuro*\n\n"Três anos a fingir ser mordomo... para roubar a fortuna de Kaya!"\n\nKuro usa garras afiadas. É rápido como o vento!\n\n"Ninguém me vê mover!"', boss: {
+        nome: 'Capitão Kuro', emoji: '🐱', hp: 600, atk: 45, def: 20, xp: 250, coins: 500,
+        habilidades: ['Shakushi', 'Claws Rush', 'Gato Assassino'],
+        descricao: 'O pirata que fingiu ser mordomo por 3 anos.',
+      }},
+      { id: 'o3_03', texto: '🐱 *Luffy vs Kuro*\n\nKuro é rápido demais! Corta Luffy várias vezes!\n\nMas Luffy agarra-o! "GOMU GOMU NO... GATLING!"\n\n*PA PA PA PA PA!*\n\nKuro cai. Kaya está salva!', xp: 100, coins: 300 },
+      { id: 'o3_04', texto: '🏴‍☠️ *Going Merry!*\n\nKaya dá-vos o Going Merry — um navio com cabeça de carneiro!\n\nUsopp junta-se à tripulação!\n\n"Eu sou Usopp! O capitão dos Piratas de Usopp!"\n\nLuffy: "Não! Tu és o meu atirador!"\n\n> 🏴‍☠️ *Going Merry é o vosso navio!*\n> 🎯 *Usopp junta-se!*', xp: 60, coins: 200, item: 'Going Merry' },
+    ],
+    recompensas: { xp: 350, coins: 900, item: 'Going Merry', title: 'Atirador de Elite' },
+  },
+  // ═══ ARCO 4: BARATIE (Cap 4-5) ════════════════════════════
+  {
+    id: 'op_ch04', titulo: 'O Restaurante no Mar — Baratie',
+    descricao: 'Um restaurante flutuante. O chef mais forte do mundo. Don Krieg, o almirante dos 5000.',
+    nivel: 8, xp: 150, coins: 500,
+    nodes: [
+      { id: 'o4_01', texto: '🍽️ *Baratie — O Restaurante Flutuante*\n\nLuffy trabalha como empregado para pagar as dívidas!\n\nZeff, o chef de perna única, é duro mas justo.\n\n"Num restaurante, a comida é sagrada!"', falante: 'Zeff' },
+      { id: 'o4_02', texto: '🍽️ *Sanji, o Chef*\n\nUm chef loiro que dá comida a qualquer pirata faminto.\n\n"Ninguém merece passar fome."\n\nLuffy: "Tu! Vem ser meu cozinheiro!"\n\nSanji: "Eu não posso... tenho um sonho."', falante: 'Sanji' },
+      { id: 'o4_03', texto: '⚓ *Don Krieg — O Almirante dos 5000*\n\nKrieg chega com o seu armada destruída. Quer roubar o Baratie!\n\n"EU SOU DON KRIEG! O homem mais forte do East Blue!"\n\nMas Luffy não vai deixar isso acontecer!', boss: {
+        nome: 'Don Krieg', emoji: '⚓', hp: 800, atk: 55, def: 30, xp: 300, coins: 600,
+        habilidades: ['Mao de 5000', 'Armadura de Espinhos', 'Lança de Gás'],
+        descricao: 'O almirante dos 5000. Armada inteira destruída pela Grand Line.',
+      }},
+      { id: 'o4_04', texto: '⚔️ *Luffy vs Krieg*\n\nKrieg tem 5000 homens! Mas Luffy é mais forte que 5000!\n\n"GOMU GOMU NO... BAZOOKA!"\n\n*BOOM!* Krieg é destruído!\n\nSanji: "...Esse gajo é incrível."', xp: 120, coins: 400 },
+      { id: 'o4_05', texto: '👨‍🍳 *A Promessa de Sanji*\n\nSanji decide ir com Luffy!\n\n"Zeff... eu vou encontrar o All Blue!"\n\nZeff: "Vai, miúdo. E nunca deixes de cozinhar."\n\nSanji chora. Abraça o seu mestre.\n\n> 👨‍🍳 *Sanji junta-se como cozinheiro!*\n> 🌊 *O All Blue espera!*', xp: 80, coins: 300, item: 'Diable Jambe' },
+    ],
+    recompensas: { xp: 500, coins: 1200, skill: 'Diable Jambe', title: 'Chef do Mar' },
+  },
+  // ═══ ARCO 5: ARLONG PARK (Cap 5-6) ════════════════════════
+  {
+    id: 'op_ch05', titulo: 'Arlong Park — A Tirania dos Tritões',
+    descricao: 'O passado de Nami revelado. 10 anos de escravidão. Arlong, o tritão mais cruel do East Blue.',
+    nivel: 9, xp: 200, coins: 600,
+    nodes: [
+      { id: 'o5_01', texto: '🗺️ *Cocoyama Village*\n\nNami trai a tripulação! Rouba o Going Merry e foge!\n\nMas Luffy descobre a verdade: Nami é escrava de Arlong!\n\nHá 10 anos, Arlong matou a mãe de Nami e escravizou a vila!\n\nNami desenha mapas para Arlong em troca da liberdade da vila.', falante: 'Genzo' },
+      { id: 'o5_02', texto: '🗡️ *Nami Chora*\n\n"NÃO POSSO SALVAR A MINHA VILA!"\n\nNami apunhala o tatuagem da Arlong Pirates.\n\nLuffy olha para ela. Calmo. Sério.\n\n"Põe o chapéu." — Luffy coloca o chapéu na cabeça de Nami.\n\n"EU VOU DERROTAR ARLONG!"', falante: 'Luffy' },
+      { id: 'o5_03', texto: '🐟 *Arlong Park — O Combate!*\n\nLuffy vs Arlong!\n\nO tritão mais forte do East Blue!\n\n"A humanos nunca vão vencer tritões!"\n\nMas Luffy não é humano normal...', boss: {
+        nome: 'Arlong', emoji: '🐟', hp: 1200, atk: 70, def: 35, xp: 400, coins: 800,
+        habilidades: ['Shark Saw', 'Dentes de Tritão', 'Kiribachi', 'Água Doce'],
+        descricao: 'O tritão mais forte do East Blue. Escravizou a vila de Nami por 10 anos.',
+      }},
+      { id: 'o5_04', texto: '🐟 *GOMU GOMU NO... AXE!*\n\nLuffy parte a torre de Arlong!\n\n"GOMU GOMU NO... BAZOOKA!"\n\nArlong Park desmorona!\n\nNami olha para o céu. Chora de alegria.\n\n"Obrigada... Luffy."', xp: 200, coins: 500 },
+      { id: 'o5_05', texto: '🗺️ *Navegadora dos Piratas do Chapéu de Palha*\n\nArlong Park está em ruínas.\n\nNami: "Luffy... eu sou a tua nave."\n\nLuffy: "OBVIAMENTE!"\n\n> 🗺️ *Nami juntou-se oficialmente!*\n> 🏴‍☠️ *Equipe: Luffy, Zoro, Nami, Usopp, Sanji*\n> ⭐ *O East Blue está quase conquistado!*', xp: 150, coins: 400, title: 'Libertador de Cocoyama' },
+    ],
+    recompensas: { xp: 600, coins: 1500, title: 'Libertador do East Blue', skill: 'Clima Tempo' },
+  },
+  // ═══ ARCO 6: LOGUETOWN (Cap 6) ════════════════════════════
+  {
+    id: 'op_ch06', titulo: 'Loguetown — O Início e o Fim',
+    descricao: 'A cidade onde Gol D. Roger nasceu e morreu. Luffy quase morre no mesmo lugar.',
+    nivel: 10, xp: 200, coins: 500,
+    nodes: [
+      { id: 'o6_01', texto: '⚔️ *Loguetown — Praça da Execução*\n\nRoger foi executado aqui.\n\nLuffy sobe à forca. Sorri.\n\n"Quando eu morrer... isso é que é ser pirata!"', falante: 'Luffy' },
+      { id: 'o6_02', texto: '⚡ *Buggy e Alvida!*\n\nBuggy volta! Com Alvida!\n\nLuffy está preso na forca!\n\n"HAHAHA! VOU MATAR O LUFFY!"\n\nMas... um relâmpago atinge Buggy!\n\nAlguém protege Luffy de cima...', boss: {
+        nome: 'Buggy & Alvida', emoji: '🤡', hp: 800, atk: 50, def: 20, xp: 300, coins: 600,
+        habilidades: ['Buggy Ball', 'Sube Sube no Mi', 'Combo Pirata'],
+        descricao: 'O palhaço voltou com vingança!',
+      }},
+      { id: 'o6_03', texto: '⚡ *O Destino*\n\nO relâmpago salvou Luffy!\n\nSmoker, o capitão da Marinha, observa.\n\n"Esse miúdo... é perigoso demais."\n\nLuffy escapa com a ajuda de Dragon!\n\n"Quem é aquele homem?"\n\n> ⚡ *Luffy escapa de Loguetown!*\n> 🌊 *Rumo à Grand Line!*', xp: 150, coins: 300 },
+    ],
+    recompensas: { xp: 400, coins: 1000, title: 'Fugitivo da Marinha' },
+  },
+  // ═══ ARCO 7: GRAND LINE — ALABASTA (Cap 7-12) ═════════════
+  {
+    id: 'op_ch07', titulo: 'A Entrada na Grand Line',
+    descricao: 'Reverse Mountain. A corrente que separa os mares. Laboon, a baleia gigante.',
+    nivel: 11, xp: 250, coins: 600,
+    nodes: [
+      { id: 'o7_01', texto: '🏔️ *Reverse Mountain!*\n\nO navio sobe a montanha! A água flui para cima!\n\n"A GRAND LINE! CHEGÁMOS!"\n\nMas uma baleia gigante bloqueia o caminho!', falante: 'Luffy' },
+      { id: 'o7_02', texto: '🐋 *Laboon — A Baleia que Espera*\n\nUma baleia gigante bate a cabeça na montanha!\n\n"Porqu-te, baleia?"\n\nUm velho explica: "Ela espera os piratas do Rumbar que a deixaram há 50 anos."\n\nLuffy: "Eu vou voltar! Prometo!"', xp: 80, coins: 200 },
+      { id: 'o7_03', texto: '⚔️ *Whiskey Peak — Os Caçadores de Recompensa!*\n\nUma vila amigável... que é uma armadilha!\n\n100 caçadores de recompensa atacam!\n\nZoro: "Deixa comigo."\n\n*100 homens. 3 espadas. 0 hipóteses.*', xp: 100, coins: 300 },
+      { id: 'o7_04', texto: '🦕 *Little Garden — Os Gigantes*\n\nDois gigantes duelam há 100 anos!\n\nDorry e Broggy. O orgulho dos guerreiros.\n\n"Esta batalha é sagrada!"\n\nLuffy aprende sobre a honra dos gigantes.', xp: 80, coins: 200 },
+      { id: 'o7_05', texto: '🏥 *Drum Island — O Doutor Rena!*\n\nNami está doente! Precisam de um médico!\n\nNa ilha da neve, encontram Tony Tony Chopper!\n\n"Eu sou um rena! Mas... sou médico!"\n\nWapol, o rei que come tudo, ataca!', boss: {
+        nome: 'Wapol', emoji: '🦷', hp: 700, atk: 45, def: 25, xp: 300, coins: 500,
+        habilidades: ['Baku Baku no Mi', 'Comer e Evoluir', 'Machvise'],
+        descricao: 'O rei que come tudo. Comeu o próprio reino!',
+      }},
+      { id: 'o7_06', texto: '🦌 *Chopper — O Doutor Rena!*\n\nLuffy derrota Wapol!\n\nChopper: "Luffy... eu posso ir contigo?"\n\nLuffy: "CLARO! Tu és o nosso doutor!"\n\nHiluluk sorri do céu.\n\n> 🦌 *Chopper junta-se!*\n> 🏴‍☠️ *Equipe: Luffy, Zoro, Nami, Usopp, Sanji, Chopper*', xp: 120, coins: 400, item: 'Chapéu de Hiluluk' },
+    ],
+    recompensas: { xp: 700, coins: 1800, title: 'Navegador da Grand Line' },
+  },
+  {
+    id: 'op_ch08', titulo: 'Alabasta — O Reino da Areia',
+    descricao: 'Vivi precisa de ajuda. Crocodile, o Shichibukai, quer destruir o seu reino!',
+    nivel: 13, xp: 350, coins: 800,
+    nodes: [
+      { id: 'o8_01', texto: '🏜️ *Alabasta!*\n\nA princesa Vivi implora: "Salvem o meu reino!"\n\nCrocodile — Mr. 0 — está a manipular o país!\n\n"Ele quer o Ancient Weapon Pluton!"\n\nLuffy: "Eu vou derrotar esse crocodilo!"', falante: 'Vivi' },
+      { id: 'o8_02', texto: '🏜️ *A Guerra Civil!*\n\nO povo de Alabasta luta entre si!\n\nCobra, o rei, é acusado de roubar a água.\n\nMas foi Crocodile quem fez tudo!\n\n"Eu sou o herói deste reino... HAHAHAHA!"', falante: 'Crocodile' },
+      { id: 'o8_03', texto: '🐊 *Crocodile — O Shichibukai!*\n\nLuffy vs Crocodile!\n\n"Tu és areia! Eu sou borracha!"\n\nCrocodile desidrata tudo o que toca!\n\nLuffy morre... mas revive com a água de Vivi!', boss: {
+        nome: 'Crocodile', emoji: '🐊', hp: 2500, atk: 100, def: 50, xp: 800, coins: 1500,
+        habilidades: ['Suna Suna no Mi', 'Desidratação', 'Hook Dourado', 'Grand Line Shichibukai'],
+        descricao: 'O Shichibukai do deserto. Controla a areia e destrói reinos.',
+      }},
+      { id: 'o8_04', texto: '🐊 *Luffy vs Crocodile — Round Final!*\n\nLuffy usa sangue para solidificar a areia!\n\n"GOMU GOMU NO... STORM!"\n\n*BOOOOOM!*\n\nCrocodile voa pelo ar!\n\nAlabasta é salva!', xp: 300, coins: 800 },
+      { id: 'o8_05', texto: '🏜️ *Alabasta Livre!*\n\nVivi chora de alegria.\n\n"Obrigada... Piratas do Chapéu de Palha!"\n\nO povo celebra. A chuva cai.\n\n> 🏜️ *Alabasta salva!*\n> 🏴‍☠️ *Vivi fica... mas o navio parte.*\n> 💔 "Eu voltarei... amigos!"', xp: 200, coins: 500, title: 'Herói de Alabasta' },
+    ],
+    recompensas: { xp: 1000, coins: 2500, title: 'Herói de Alabasta', skill: 'Gomu Gomu no Storm' },
+  },
+  // ═══ ARCO 8: SKYPIEA (Cap 9-10) ═══════════════════════════
+  {
+    id: 'op_ch09', titulo: 'Skypiea — O Céu Inexistente',
+    descricao: 'Uma ilha no céu! Enel, o deus que controla o raio, ameaça destruir tudo!',
+    nivel: 16, xp: 400, coins: 1000,
+    nodes: [
+      { id: 'o9_01', texto: '☁️ *O Mar Branco!*\n\nO Going Merry sobe pelo Knock Up Stream!\n\n"O CÉU! ESTAMOS NO CÉU!"\n\nUma ilha flutuante! Anjos com asas!\n\nBem-vindo a Skypiea!', falante: 'Luffy' },
+      { id: 'o9_02', texto: '⚡ *Enel — O Deus do Raio!*\n\nEnel controla o raio! Pode ouvir tudo na ilha!\n\n"EU SOU DEUS! E deuses não morrem!"\n\nDestruirá Skypiea com o Ark Maxim!\n\nLuffy: "Tu não és deus!"', boss: {
+        nome: 'Enel', emoji: '⚡', hp: 3000, atk: 130, def: 55, xp: 1000, coins: 2000,
+        habilidades: ['Goro Goro no Mi', 'Raigo', 'El Thor', '200 milhões de Volts'],
+        descricao: 'O deus auto-proclamado de Skypiea. Comeu a fruta do raio.',
+      }},
+      { id: 'o9_03', texto: '⚡ *Luffy vs Enel!*\n\nEnel: "O raio é invencível!"\n\nLuffy: "Eu sou de borracha!"\n\n*O raio não funciona em Luffy!*\n\n"IMPOSSÍVEL! QUEM ÉS TU?!"\n\n"GOMU GOMU NO... BAZOOKA!"', xp: 300, coins: 800 },
+      { id: 'o9_04', texto: '🔔 *O Sino de Ouro!*\n\nLuffy bate no sino de ouro!\n\n*TANNNNN!*\n\nO som chega a Jaya! Cricket ouve!\n\n"Obrigado... Shandora existe!"\n\n> ☁️ *Skypiea salva!*\n> ⭐ *O sonho de Cricket realizou-se!*', xp: 200, coins: 500, item: 'Fragmento de Ouro' },
+    ],
+    recompensas: { xp: 1200, coins: 3000, item: 'Ouro de Skypiea', title: 'Vencedor do Céu' },
+  },
+  // ═══ ARCO 9: WATER 7 / ENIES LOBBY (Cap 11-14) ════════════
+  {
+    id: 'op_ch10', titulo: 'Water 7 — A Cidade da Água',
+    descricao: 'O Going Merry morre. Franky, o cyborg. CP9, os assassinos do governo!',
+    nivel: 20, xp: 500, coins: 1200,
+    nodes: [
+      { id: 'o10_01', texto: '🚢 *A Morte do Going Merry*\n\n"O navio... não pode mais navegar."\n\nIceburg: "O Going Merry morreu."\n\nLuffy chora. Usopp não aceita.\n\n"EU NÃO VOU ABANDONAR O MERRY!"\n\nLuffy vs Usopp. O mais difícil.', falante: 'Iceburg' },
+      { id: 'o10_02', texto: '⚔️ *Luffy vs Usopp*\n\nUsopp desafia Luffy!\n\n"Se queres o navio, tens que me derrotar!"\n\nO combate é emocional. Luffy ganha... mas chora.\n\n"Desculpa... Usopp..."', xp: 150, coins: 300 },
+      { id: 'o10_03', texto: '🕵️ *CP9 Revelado!*\n\nRob Lucci. Kaku. Jabra. Kalifa. Blueno.\n\nOs agentes secretos do governo!\n\nEles raptaram Robin!\n\n"Robin vai morrer em Enies Lobby!"', falante: 'Rob Lucci' },
+      { id: 'o10_04', texto: '🏛️ *Enies Lobby — O Tribunal do Mundo!*\n\nOs Piratas do Chapéu de Palha invadem a ilha da justiça!\n\nLuffy enfrenta 10.000 marines!\n\n"DEVOLVAM A MINHA NAKAMA!"', xp: 200, coins: 500 },
+      { id: 'o10_05', texto: '⚖️ *A Declaração de Guerra!*\n\nLuffy queima a bandeira do Governo Mundial!\n\n"Isto é uma declaração de guerra contra o mundo inteiro!"\n\nRobin: "EU QUERO VIVER!"\n\nTodo o mundo chora.', xp: 300, coins: 800, title: 'Inimigo do Mundo' },
+      { id: 'o10_06', texto: '🐆 *Luffy vs Rob Lucci!*\n\nO combate mais difícil até agora!\n\nLucci usa o Rokushiki completo!\n\nLuffy inventa o Gear Second!\n\n"GOMU GOMU NO... JET PISTOL!"', boss: {
+        nome: 'Rob Lucci', emoji: '🐆', hp: 4000, atk: 160, def: 70, xp: 1500, coins: 3000,
+        habilidades: ['Rokushiki', 'Shigan', 'Rankyaku', 'Gear Leopard'],
+        descricao: 'O agente mais forte do CP9. Leopard hybrid form.',
+      }},
+      { id: 'o10_07', texto: '🐆 *GEAR SECOND!*\n\nLuffy activa o Gear Second!\n\nO corpo fica vermelho! Velocidade extrema!\n\n"GOMU GOMU NO... JET GATLING!"\n\n*PA PA PA PA PA PA PA!*\n\nLucci cai!\n\nEnies Lobby está a desmoronar!', xp: 400, coins: 1000, skill: 'Gear Second' },
+      { id: 'o10_08', texto: '🔥 *O Going Merry — A Última Viagem*\n\nO Going Merry aparece sozinho!\n\n"Eu queria... navegar mais um pouco..."\n\nLuffy: "Obrigado, Merry... por tudo."\n\nO navio queima no horizonte.\n\nTodos choram.\n\n> 🔥 *Going Merry... obrigado por tudo.*\n> 🏴‍☠️ *Franky junta-se! O Thousand Sunny espera!*', xp: 300, coins: 1000, title: 'Guerreiro de Enies Lobby', item: 'Klabautermann' },
+    ],
+    recompensas: { xp: 2500, coins: 6000, skill: 'Gear Second', title: 'Guerreiro de Enies Lobby', item: 'Thousand Sunny' },
+  },
+  // ═══ ARCO 10: THRILLER BARK (Cap 12) ══════════════════════
+  {
+    id: 'op_ch11', titulo: 'Thriller Bark — O Navio Fantasma',
+    descricao: 'Gecko Moria rouba sombras! Brook, o esqueleto que faz piadas!',
+    nivel: 22, xp: 400, coins: 1000,
+    nodes: [
+      { id: 'o11_01', texto: '👻 *Thriller Bark!*\n\nUm navio gigante coberto de névoa!\n\nZombies! Monstros! E um esqueleto que...\n\n"Posso ver a tua calcinha, Nami?"\n\nBrook: "Yohohoho! Skull joke!"', falante: 'Brook' },
+      { id: 'o11_02', texto: '🧟 *Gecko Moria — O Shichibukai das Sombras!*\n\nMoria rouba sombras e coloca-as em zombies!\n\n"Os teus amigos vão ser os meus soldados!"\n\nLuffy: "DEVOLVE AS SOMBRAS!"', boss: {
+        nome: 'Gecko Moria', emoji: '🧟', hp: 3500, atk: 140, def: 60, xp: 1200, coins: 2500,
+        habilidades: ['Kage Kage no Mi', 'Shadow Luffy', 'Doppelman', 'Giant Shadow'],
+        descricao: 'O Shichibukai que controla sombras. Perdeu contra Kaido.',
+      }},
+      { id: 'o11_03', texto: '🧟 *Luffy vs Moria!*\n\nMoria engole 1000 sombras! Torna-se gigante!\n\nMas Luffy usa o Gear Third!\n\n"GOMU GOMU NO... GIGANT PISTOL!"\n\n*CRASH!*\n\nAs sombras voltam aos donos!', xp: 300, coins: 700, skill: 'Gear Third' },
+      { id: 'o11_04', texto: '🎵 *Brook — O Músico!*\n\nBrook: "Luffy... eu posso ir contigo?"\n\nLuffy: "TU ÉS O NOSSO MÚSICO!"\n\nBrook: "Mas... eu sou só um esqueleto..."\n\nLuffy: "TU ÉS FIXE!"\n\n> 🎵 *Brook junta-se!*\n> 🏴‍☠️ *Equipe: 8 membros!*', xp: 150, coins: 400, item: 'Violino de Brook' },
+    ],
+    recompensas: { xp: 1000, coins: 2500, skill: 'Gear Third', title: 'Caçador de Thriller Bark' },
+  },
+  // ═══ ARCO 11: SABAODY / MARINEFORD (Cap 13-16) ═════════════
+  {
+    id: 'op_ch12', titulo: 'Sabaody — A Separação',
+    descricao: 'A Marinha ataca. Os Pacifistas. Kizaru. A tripulação é separada!',
+    nivel: 25, xp: 600, coins: 1500,
+    nodes: [
+      { id: 'o12_01', texto: '🌳 *Sabaody Archipelago*\n\nAs árvores gigantes produzem bubbles!\n\nMas... um Tenryuubito é atacado!\n\nA Marinha envia o Almirante Kizaru!\n\n"Luz... é a coisa mais rápida do mundo."', falante: 'Kizaru' },
+      { id: 'o12_02', texto: '💥 *Pacifista!*\n\nCyborgs idênticos ao Kuma atacam!\n\nCada um é mais forte que um Shichibukai!\n\n"Não podemos vencer isto!"\n\nKuma aparece. O verdadeiro.', boss: {
+        nome: 'Bartholomew Kuma', emoji: '🐻', hp: 5000, atk: 180, def: 80, xp: 1500, coins: 3000,
+        habilidades: ['Nikyu Nikyu no Mi', 'Repelir Tudo', 'Ursus Shock'],
+        descricao: 'O Shichibukai que se tornou cyborg. Cada membro voa para uma ilha diferente.',
+      }},
+      { id: 'o12_03', texto: '🐻 *A Separação!*\n\nKuma toca em cada membro da tripulação!\n\n*PUFF!* Voam para ilhas diferentes!\n\n"NÃO! ZORO! SANJI! NAMI!"\n\nLuffy é enviado para Amazon Lily.\n\n> 💔 *A tripulação foi separada...*\n> ⭐ *Luffy precisa de ficar mais forte!*', xp: 200, coins: 500 },
+      { id: 'o12_04', texto: '👑 *Amazon Lily — As Guerreiras Kuja*\n\nLuffy chega à ilha só de mulheres!\n\nBoa Hancock, a imperatriz, apaixona-se por ele!\n\n"Eu vou ajudar-te a salvar o teu irmão!"\n\nAce vai ser executado em Marineford!', falante: 'Hancock' },
+      { id: 'o12_05', texto: '🔥 *Impel Down — A Prisão Inabalável!*\n\nLuffy invade a prisão mais segura do mundo!\n\nBon Clay sacrifica-se por ele!\n\nIvankov ajuda-o a descer!\n\n"ACE! EU ESTOU A CAMINHO!"', xp: 250, coins: 600 },
+      { id: 'o12_06', texto: '⚔️ *MARINEFORD — A GUERRA!*\n\nA maior batalha de sempre!\n\nBarba Branca vs Marinha!\n\nLuffy chega ao meio da guerra!\n\n"ACE! EU VOU SALVAR-TE!"', xp: 300, coins: 800 },
+      { id: 'o12_07', texto: '🔥 *O Sacrifício de Ace*\n\nAce é salvo! Mas...\n\nAkainu ataca por trás!\n\n"Luffy... obrigado por me amar..."\n\nAce morre nos braços de Luffy.\n\n> 💀 *Portgas D. Ace morreu...*\n> 😭 *O momento mais triste da história.*', xp: 200, coins: 500, title: 'Irmão de Ace' },
+      { id: 'o12_08', texto: '😭 *O Luto de Luffy*\n\nLuffy entra em colapso.\n\n"Eu não... consigo... proteger ninguém..."\n\nJinbe: "Luffy! O que ainda tens?!"\n\nLuffy: "...Eu tenho os meus amigos."\n\n> 😭 *Luffy decide ficar mais forte!*\n> ⏰ *2 anos de treino com Rayleigh!*', xp: 300, coins: 800, title: 'Sobrevivente de Marineford' },
+    ],
+    recompensas: { xp: 2500, coins: 6000, title: 'Sobrevivente de Marineford' },
+  },
+  // ═══ ARCO 12: FISHMAN ISLAND (Cap 14) ══════════════════════
+  {
+    id: 'op_ch13', titulo: 'Fishman Island — O Fundo do Mar',
+    descricao: '2 anos depois. A tripulação reunida. O terrorismo dos Novos Tritões!',
+    nivel: 28, xp: 500, coins: 1200,
+    nodes: [
+      { id: 'o13_01', texto: '🌊 *Reunidos!*\n\n2 anos depois! A tripulação junta-se em Sabaody!\n\nCada um ficou mais forte!\n\n"RUMO A FISHMAN ISLAND!"\n\nO Thousand Sunny mergulha no oceano!', xp: 100, coins: 300 },
+      { id: 'o13_02', texto: '🐟 *Hody Jones — O Novo Arlong!*\n\nHody quer destruir o Ryugu Kingdom!\n\n"Humanos são inferiores!"\n\nLuffy: "Tu não és como Arlong. Tu és mais fraco!"', boss: {
+        nome: 'Hody Jones', emoji: '🐟', hp: 4000, atk: 150, def: 60, xp: 1200, coins: 2500,
+        habilidades: ['Energy Steroids', 'Shark Arrows', 'Ultramarine'],
+        descricao: 'O novo terror dos tritões. Odiou humanos desde sempre.',
+      }},
+      { id: 'o13_03', texto: '🐟 *Luffy vs Hody — No Fundo do Mar!*\n\nLuffy luta debaixo de água!\n\n"GOMU GOMU NO... RED HAWK!"\n\n*FOGO debaixo de água!*\n\nHody é derrotado!\n\nA ilha dos tritões é livre!', xp: 300, coins: 700, skill: 'Red Hawk' },
+      { id: 'o13_04', texto: '👸 *A Declaração de Shirahoshi*\n\nShirahoshi: "Eu quero ver o sol!"\n\nNeptune: "Vai, filha. O mundo é teu."\n\n> 🌊 *Fishman Island salva!*\n> 🏴‍☠️ *A tripulação está de volta!*\n> ⭐ *Rumo ao Novo Mundo!*', xp: 200, coins: 500, title: 'Protector de Fishman Island' },
+    ],
+    recompensas: { xp: 1200, coins: 3000, skill: 'Red Hawk', title: 'Protector do Mar' },
+  },
+  // ═══ ARCO 13: PUNK HAZARD (Cap 15) ════════════════════════
+  {
+    id: 'op_ch14', titulo: 'Punk Hazard — A Ilha Proibida',
+    descricao: 'Caesar Clown, o cientista louco. Smoker vs Law. A aliança começa!',
+    nivel: 30, xp: 600, coins: 1500,
+    nodes: [
+      { id: 'o14_01', texto: '🔥❄️ *Punk Hazard — Metade Fogo, Metade Gelo!*\n\nAkainu e Aokaji lutaram aqui!\n\nAgora é uma ilha dividida!\n\nCaesar Clown faz experiências em crianças!', falante: 'Trafalgar Law' },
+      { id: 'o14_02', texto: '☠️ *Caesar Clown — O Cientista Louco!*\n\n"Eu sou o melhor cientista do mundo!\nO Vegapunk é um impostor!"\n\nCaesar usa gás venenoso!\n\nLuffy: "TU FAZES EXPERIÊNCIAS EM CRIANÇAS?!"', boss: {
+        nome: 'Caesar Clown', emoji: '☠️', hp: 3500, atk: 140, def: 55, xp: 1000, coins: 2000,
+        habilidades: ['Gasu Gasu no Mi', 'Shinokuni', 'Gastille', 'Oxygen Removal'],
+        descricao: 'O cientista que trabalha para Doflamingo. Controla gás.',
+      }},
+      { id: 'o14_03', texto: '☠️ *Luffy vs Caesar!*\n\nCaesar remove o oxigénio!\n\nMas Luffy não precisa de oxigénio... é de borracha!\n\n"GOMU GOMU NO... ELEPHANT GUN!"\n\n*BOOM!*\n\nCaesar é capturado!', xp: 300, coins: 800 },
+      { id: 'o14_04', texto: '🤝 *A Aliança Luffy-Law!*\n\nLaw: "Vamos derrotar Kaido."\n\nLuffy: "COMO?!"\n\nLaw: "Destruindo as fábricas de Smile de Doflamingo em Dressrosa."\n\nLuffy: "OK! VAMOS!"\n\n> 🤝 *Aliança Pirata formada!*\n> ⭐ *Objetivo: Kaido, o Yonkou!*', xp: 200, coins: 500, title: 'Aliado do Coração' },
+    ],
+    recompensas: { xp: 1500, coins: 3500, title: 'Aliado do Coração' },
+  },
+  // ═══ ARCO 14: DRESSROSA (Cap 16-18) ═══════════════════════
+  {
+    id: 'op_ch15', titulo: 'Dressrosa — O Reino dos Brinquedos',
+    descricao: 'Doflamingo, o rei tirano. O Coliseu. Gear Fourth!',
+    nivel: 33, xp: 800, coins: 2000,
+    nodes: [
+      { id: 'o15_01', texto: '🎭 *Dressrosa — O Reino das Marionetes!*\n\nDoflamingo controla tudo!\n\nOs humanos viram brinquedos! As pessoas esquecem-se deles!\n\nRebecca luta no Coliseu para salvar o pai!\n\n"Eu preciso de ajuda... Luffy!"', falante: 'Rebecca' },
+      { id: 'o15_02', texto: '🏟️ *O Coliseu Corrida!*\n\nLuffy luta contra centenas de guerreiros!\n\nHack. Bellamy. Bartolomeo. Cavendish.\n\nMas o prémio é o Mera Mera no Mi — a fruta de Ace!\n\n"ESSA FRUTA É DO MEU IRMÃO!"', xp: 200, coins: 500 },
+      { id: 'o15_03', texto: '🦩 *Doflamingo — O Rei Marionetista!*\n\n"Eu sou Doflamingo! O rei desta ilha!\nEu controlo tudo — até o céu!"\n\nO Ito Ito no Mi permite controlar pessoas como marionetas!\n\n"Vocês são todos os meus brinquedos!"', boss: {
+        nome: 'Doflamingo', emoji: '🦩', hp: 6000, atk: 200, def: 80, xp: 2000, coins: 5000,
+        habilidades: ['Ito Ito no Mi', 'Birdcage', 'Parasite', 'Overheat', 'Awakening'],
+        descricao: 'O rei tirano de Dressrosa. Shichibukai. Controla fios.',
+      }},
+      { id: 'o15_04', texto: '💥 *GEAR FOURTH — BOUNDMAN!*\n\nLuffy infla os músculos!\n\n"GOMU GOMU NO... KING KONG GUN!"\n\nO punho gigante destrói tudo!\n\nDoflamingo: "QUE PODER É ESSE?!"\n\n*CRASH!*\n\nDressrosa é liberta!', xp: 500, coins: 1500, skill: 'Gear Fourth' },
+      { id: 'o15_05', texto: '🎭 *Dressrosa Livre!*\n\nO Birdcage desaparece!\n\nO povo celebra. Rebecca abraça o pai.\n\n"Agora Dressrosa é livre!"\n\n> 🎭 *Dressrosa liberta!*\n> 🏴‍☠️ *A Aliança cresce! 5600 homens!*\n> ⭐ *Rumo a Whole Cake Island!*', xp: 300, coins: 1000, title: 'Libertador de Dressrosa' },
+    ],
+    recompensas: { xp: 3000, coins: 8000, skill: 'Gear Fourth', title: 'Libertador de Dressrosa' },
+  },
+  // ═══ ARCO 15: WHOLE CAKE ISLAND (Cap 19-21) ════════════════
+  {
+    id: 'op_ch16', titulo: 'Whole Cake Island — O Território de Big Mom',
+    descricao: 'Sanji é raptado! Big Mom quer casá-lo com a filha! O passado de Sanji!',
+    nivel: 36, xp: 1000, coins: 2500,
+    nodes: [
+      { id: 'o16_01', texto: '🍰 *Whole Cake Island!*\n\nSanji foi raptado pela Yonkou Big Mom!\n\n"Eu preciso do teu casamento, Sanji!"\n\nLuffy: "EU VOU SALVAR O SANJI!"', falante: 'Luffy' },
+      { id: 'o16_02', texto: '👨‍🍳 *O Passado de Sanji*\n\nSanji é filho de Judge Vinsmoke!\n\nOs Germas — soldados genéticos!\n\n"Tu és um fracasso, Sanji!"\n\nSanji chora. Mas Luffy está lá.\n\n"Tu és o meu cozinheiro!"', xp: 200, coins: 500 },
+      { id: 'o16_03', texto: '🍩 *Katakuri — O Homem que Vê o Futuro!*\n\nCharlotte Katakuri. O doce mais forte!\n\nPode ver 5 segundos no futuro!\n\n"Eu nunca perdi... até hoje!"', boss: {
+        nome: 'Charlotte Katakuri', emoji: '🍩', hp: 7000, atk: 220, def: 90, xp: 2500, coins: 6000,
+        habilidades: ['Mochi Mochi no Mi', 'Future Sight', 'Buzz Cut Mochi', 'Power Mochi'],
+        descricao: 'O doce mais forte de Big Mom. Vê o futuro. Nunca perdeu.',
+      }},
+      { id: 'o16_04', texto: '🍩 *Luffy vs Katakuri — O Combate Mais Longo!*\n\n12 horas de combate!\n\nLuffy aprende a ver o futuro!\n\n"GOMU GOMU NO... SNAKE MAN!"\n\nKatakuri cai... de pé!\n\n"Porqu-te... tão forte?"\n\n"Porque eu vou ser o Rei dos Piratas!"', xp: 500, coins: 1500, skill: 'Snake Man' },
+      { id: 'o16_05', texto: '👨‍🍳 *Sanji Volta!*\n\nSanji faz o bolo de casamento perfeito!\n\nBig Mom come e desmaia!\n\nLuffy foge com Sanji!\n\n"Sanji! VEM PARA CASA!"\n\n"Eu voltei... capitão!"\n\n> 🍰 *Whole Cake Island completa!*\n> 🏴‍☠️ *Sanji está de volta!*', xp: 300, coins: 1000, title: 'Herói de Whole Cake' },
+    ],
+    recompensas: { xp: 3500, coins: 9000, skill: 'Snake Man', title: 'Herói de Whole Cake' },
+  },
+  // ═══ ARCO 16: WANO (Cap 22-25) ════════════════════════════
+  {
+    id: 'op_ch17', titulo: 'Wano — O País dos Samurais',
+    descricao: 'O país fechado. Kaido, a Besta. O Raid em Onigashima!',
+    nivel: 40, xp: 1500, coins: 3000,
+    nodes: [
+      { id: 'o17_01', texto: '🌸 *Wano Kuni!*\n\nO país dos samurais! Fechado ao mundo!\n\nKaido controla tudo com as suas Smile!\n\nOshiruko — a comida favorita de Luffy — é proibida!\n\n"QUEM É QUE PROIBE O OSHIRUKO?!"', falante: 'Kinemon' },
+      { id: 'o17_02', texto: '🐉 *Kaido — A Besta Mais Forte!*\n\n"Eu sou Kaido! A criatura mais forte do mundo!"\n\nTransforma-se num dragão!\n\nLuffy: "DRAGÃO?! EU VOU DERROTAR-TE!"', boss: {
+        nome: 'Kaido', emoji: '🐉', hp: 10000, atk: 280, def: 120, xp: 4000, coins: 10000,
+        habilidades: ['Uo Uo no Mi', 'Thunder Bagua', 'Boro Breath', 'Flame Dragon'],
+        descricao: 'O Yonkou mais forte. A criatura mais poderosa do mundo.',
+      }},
+      { id: 'o17_03', texto: '⚔️ *O Raid em Onigashima!*\n\n5000 guerreiros contra Kaido!\n\nOs Scabbards atacam!\n\nLuffy sobe ao telhado!\n\n"KAIDO! EU VOU MANDAR-TE VOAR!"', xp: 400, coins: 1000 },
+      { id: 'o17_04', texto: '🐉 *Luffy vs Kaido — A Batalha Épica!*\n\nLuffy usa o Gear Fifth!\n\nO corpo fica branco! Cartoon physics!\n\n"GOMU GOMU NO... BAJRANG GUN!"\n\nO punho do Deus Macaco!\n\n*KAIDO CAI!*\n\nWANO É LIVRE!', xp: 800, coins: 2000, skill: 'Gear Fifth' },
+      { id: 'o17_05', texto: '🌸 *Wano Livre!*\n\nMomonosuke torna-se Shogun!\n\nO povo de Wano celebra!\n\nOs fogos de artifício iluminam o céu!\n\n"Obrigado... Luffy!"\n\n> 🌸 *Wano é livre!*\n> 🏆 *Luffy é reconhecido como Yonkou!*\n> ⭐ *O One Piece está mais perto...*', xp: 500, coins: 2000, title: 'Yonkou' },
+    ],
+    recompensas: { xp: 5000, coins: 15000, skill: 'Gear Fifth', title: 'Yonkou do Chapéu de Palha', item: 'Bajrang Gun' },
+  },
+  {
+    id: 'op_ch18', titulo: 'One Piece — O Rei dos Piratas',
+    descricao: 'Laugh Tale. O tesouro de Roger. O sonho de Luffy.',
+    nivel: 50, xp: 5000, coins: 20000,
+    nodes: [
+      { id: 'o18_01', texto: '🏴‍☠️ *Laugh Tale!*\n\nA ilha final! Onde Roger deixou o One Piece!\n\nLuffy abre o baú.\n\nDentro... um chapéu de palha igual ao dele.\n\nE uma carta de Roger:\n\n"Se estás a ler isto... és tão doido como eu.\nO One Piece é..."\n\n> 🏴‍☠️ *MONKEY D. LUFFY É O REI DOS PIRATAS!*\n> 🏆 *Parabéns! Completaste One Piece!*\n> ⭐ *O sonho tornou-se realidade.*', xp: 10000, coins: 50000, title: 'Rei dos Piratas', item: 'One Piece' },
+    ],
+    recompensas: { xp: 20000, coins: 50000, title: 'Rei dos Piratas', item: 'One Piece' },
+  },
+];
+
+WORLDS.onepiece.capitulos = ONEPIECE_CHAPTERS.length;
+
+// Atualizar _getChapters para incluir One Piece
+const _origGetChapters = _getChapters;
+function _getChaptersNew(worldId) {
+  const map = { naruto: NARUTO_CHAPTERS, onepiece: ONEPIECE_CHAPTERS };
+  return map[worldId] || [];
+}
+
+// Sobrescrever a função
+module.exports._getChapters = _getChaptersNew;
+
