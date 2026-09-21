@@ -64,7 +64,7 @@ const PADROES = [
   [/^(down|downloads|dl)\d*$/,   'Abre o menu de downloads'],
 
   // ── Conteúdo +18 (descrições específicas — antes dos padrões genéricos) ──
-  [/^(hentai|ximg|yande|kona|e621|nekos|erome|eromevid|livros18)\d*$/, 'Busca conteúdo +18 (só Dono/VIP)'],
+  [/^(hentai|ximg|yande|kona|e621|nekos|erome|eromevid|livros18|xvid|xvideos|pornhub|ph|sexcom|sex|sexgif|sexvid|sexfoto|cosplay|gostosas|sexyfoto|placa18|plaquinha18)\d*$/, 'Busca conteúdo +18 (VIP/Dono; adultmode)'],
   [/^(fig18|pack18|gif18|shorts18)\d*$/, 'Conteúdo +18 em figurinha/pack/GIF (só Dono)'],
   [/^(xvideo|xvideodl|adultvideo|adultsearch|adultapi|adultmode|adultstats|buscar18)\d*$/, 'Vídeos/config +18 (só Dono)'],
   [/^(menu18|menu-rpg|menumais|maiscmds|cmdsocultos|menudono|menurpgfull|menurpg2)$/, 'Abre um menu especial'],

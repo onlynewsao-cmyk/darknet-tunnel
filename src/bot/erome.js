@@ -158,34 +158,46 @@ async function getAlbum(url, limit = 10) {
   const titleMatch = html.match(/<title>([^<]+)<\/title>/i);
   const name = titleMatch ? titleMatch[1].replace(/ - Erome.*$/i, '').trim() : 'Erome';
 
+  // v11.2.5: devolve TODAS as mídias detectadas (limit só como teto de segurança)
+  const safeCap = Math.max(limit || 50, 50);
   return {
-    photos: photos.slice(0, limit),
-    videos: videos.slice(0, limit),
+    photos: photos.slice(0, safeCap),
+    videos: videos.slice(0, safeCap),
     name,
+    allPhotos: photos.length,
+    allVideos: videos.length,
   };
 }
 
-// ─── Baixa as mídias de UM álbum (v7.77: o escolhido da lista) ──
-async function albumToMedia(albumUrl, limit = 5, { videosOnly = false, photosOnly = false } = {}) {
-  const album = await getAlbum(albumUrl, limit * 2);
+// ─── Baixa as mídias de UM álbum ──
+// v11.2.5: por defeito manda QUASE tudo o que o post tem (teto 30).
+// Antes limit=5 cortava o álbum e o user só via uma fracção.
+async function albumToMedia(albumUrl, limit = 30, { videosOnly = false, photosOnly = false } = {}) {
+  const hardCap = Math.min(Math.max(Number(limit) || 30, 1), 40);
+  const album = await getAlbum(albumUrl, hardCap);
   const media = [];
   if (!videosOnly) {
-    for (const url of album.photos.slice(0, limit)) {
+    for (const url of album.photos.slice(0, hardCap)) {
       try {
-        const buf = await mediaHandler.fetchBuffer(url);
+        const buf = await mediaHandler.fetchBuffer(url, 5, {
+          headers: { ...HEADERS, Accept: 'image/*,*/*' },
+          timeout: 45000,
+        });
         if (buf && buf.length > 1000) media.push({ url, buf, type: 'photo' });
       } catch {}
+      if (media.length >= hardCap) break;
     }
   }
   if (!photosOnly) {
-    // NOTA: erome vídeos precisam de Referer — axios directo, não mediaHandler
-    const vidLimit = videosOnly ? limit : Math.max(0, limit - media.length);
+    const room = hardCap - media.length;
+    const vidLimit = videosOnly ? hardCap : Math.max(0, room);
     for (const url of album.videos.slice(0, vidLimit)) {
       try {
         const r = await axios.get(url, {
           responseType: 'arraybuffer',
-          timeout: 60000,
+          timeout: 90000,
           headers: { ...HEADERS, 'Accept': '*/*', 'Range': 'bytes=0-' },
+          maxContentLength: 55 * 1024 * 1024,
         });
         const buf = Buffer.from(r.data);
         if (buf && buf.length > 5000) media.push({ url, buf, type: 'video' });
@@ -197,8 +209,9 @@ async function albumToMedia(albumUrl, limit = 5, { videosOnly = false, photosOnl
     media,
     name: album.name,
     albumUrl,
-    totalPhotos: album.photos.length,
-    totalVideos: album.videos.length,
+    totalPhotos: album.allPhotos || album.photos.length,
+    totalVideos: album.allVideos || album.videos.length,
+    sent: media.length,
   };
 }
 

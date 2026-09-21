@@ -212,6 +212,9 @@ const GroupSettingsSchema = new mongoose.Schema({
   autoAdmMedia:    { type: Boolean, default: false }, // auto-adm também em midia/status
   parcerias:       [{ type: String }],   // links/JIDs de grupos parceiros (whitelist antilink)
   x9:              { type: Boolean, default: false }, // avisa promote/demote/add/remove
+  // v11.2.5: modo adulto POR GRUPO — ADM/dono/subdono liga com !adultmode on
+  // Quando true, plaquinhas+18 e cmds 18+ VIP podem enviar no grupo (não só PV).
+  adultMode:       { type: Boolean, default: false },
   captcha:         { type: Boolean, default: false }, // exige resposta simples a novos
   multiprefixo:    { type: Boolean, default: false }, // aceita prefixos globais + do grupo
   groupEmoji:      { type: String, default: '' },

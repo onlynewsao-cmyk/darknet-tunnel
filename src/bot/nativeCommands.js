@@ -840,31 +840,92 @@ async function dynamicSubmenu(sock, msg, ctx, config, category) {
 const stickerPack = require('./stickerPack');
 const sendNativeStickerPack = stickerPack.sendNativeStickerPack;
 
-// v7.77: baixa + envia as mídias de UM álbum erome (o escolhido da lista ou URL direta)
+// v7.77 / v11.2.5: baixa + envia as mídias de UM álbum erome (TODAS até teto)
 async function eromeBaixarAlbum(sock, msg, ctx, albumUrl, limit, opts = {}) {
   const replyFn = (t) => sock.sendMessage(ctx.remoteJid, { text: t }, { quoted: msg });
   try {
     const erome = require('./erome');
-    const result = await erome.albumToMedia(albumUrl, limit, opts);
+    // v11.2.5: default 30 (antes 5 cortava o post)
+    const cap = Math.min(Math.max(Number(limit) || 30, 1), 40);
+    const result = await erome.albumToMedia(albumUrl, cap, opts);
     let sent = 0;
+    const dest = await resolveAdultDest(sock, ctx);
     for (const m of result.media) {
       try {
         if (m.type === 'photo') {
-          await sock.sendMessage(ctx.remoteJid, { image: m.buf, caption: sent === 0 ? '📸 *' + result.name + '*' : '' }, { quoted: msg });
+          await sock.sendMessage(dest, { image: m.buf, caption: sent === 0 ? '📸 *' + result.name + '*' : '' }, { quoted: msg });
         } else if (m.type === 'video') {
-          await sock.sendMessage(ctx.remoteJid, { video: m.buf, mimetype: 'video/mp4', caption: '🎬 *' + result.name + '*' }, { quoted: msg });
+          await sock.sendMessage(dest, { video: m.buf, mimetype: 'video/mp4', caption: '🎬 *' + result.name + '*' }, { quoted: msg });
         }
         sent++;
-        await new Promise(r => setTimeout(r, 500));
+        await new Promise(r => setTimeout(r, 450));
       } catch {}
     }
     if (!sent) throw new Error('Sem mídias no álbum');
-    await sock.sendMessage(ctx.remoteJid, { text: '✅ *' + sent + ' mídias enviadas*\n📸 ' + result.totalPhotos + ' fotos | 🎬 ' + result.totalVideos + ' vídeos' }, { quoted: msg });
+    const more = (result.totalPhotos + result.totalVideos) > sent
+      ? `\n📦 Álbum tem *${result.totalPhotos}* fotos + *${result.totalVideos}* vídeos (enviados ${sent}/${cap})`
+      : `\n📸 ${result.totalPhotos} fotos | 🎬 ${result.totalVideos} vídeos`;
+    await sock.sendMessage(ctx.remoteJid, { text: `✅ *${sent} mídias enviadas*${more}` }, { quoted: msg });
     await sock.sendMessage(ctx.remoteJid, { react: { text: '✅', key: msg.key } });
   } catch (e) {
     await sock.sendMessage(ctx.remoteJid, { react: { text: '❌', key: msg.key } });
     return replyFn('❌ Erome: ' + e.message);
   }
+}
+
+/**
+ * v11.2.5 — destino 18+:
+ *  - grupo com adultMode ON → envia no grupo
+ *  - senão → PV do caller
+ */
+async function resolveAdultDest(sock, ctx) {
+  try {
+    if (ctx?.isGroup && ctx.remoteJid) {
+      const gs = await GroupSettings.findOne({ groupJid: ctx.remoteJid }).lean().catch(() => null);
+      if (gs?.adultMode) return ctx.remoteJid;
+    }
+  } catch {}
+  return ctx.senderJid || (String(ctx.senderNumber || '').replace(/\D/g, '') + '@s.whatsapp.net');
+}
+
+/** Portal global OU adultMode do grupo. */
+async function isAdultEnabled(ctx) {
+  const globalOn = await BotConfig.get('adult_mode_enabled', false).catch(() => false);
+  if (globalOn) return true;
+  if (ctx?.isGroup && ctx.remoteJid) {
+    try {
+      const gs = await GroupSettings.findOne({ groupJid: ctx.remoteJid }).lean().catch(() => null);
+      if (gs?.adultMode) return true;
+    } catch {}
+  }
+  return false;
+}
+
+/** Dono / subdono / admin de grupo (para adultmode e plaquinhas). */
+async function canToggleAdult(sock, ctx) {
+  if (ctx?.isPrimaryOwner || ctx?.isOwner) return true;
+  try {
+    const extra = await botConfigCache.get('owner_numbers', []).catch(() => []);
+    const nums = (Array.isArray(extra) ? extra : []).map(n => String(n).replace(/\D/g, ''));
+    if (ctx?.senderNumber && nums.includes(String(ctx.senderNumber).replace(/\D/g, ''))) return true;
+  } catch {}
+  if (ctx?.isGroup) {
+    try { if (await isAdmin(sock, ctx)) return true; } catch {}
+  }
+  return false;
+}
+
+async function sendAdultMedia(sock, ctx, payload, quotedMsg) {
+  const dest = await resolveAdultDest(sock, ctx);
+  await sock.sendMessage(dest, payload, quotedMsg ? { quoted: quotedMsg } : {});
+  // se foi para PV e o pedido veio de grupo sem adultMode, avisa
+  if (ctx.isGroup && dest !== ctx.remoteJid) {
+    await sock.sendMessage(ctx.remoteJid, {
+      text: '📬 Conteúdo 18+ enviado no teu *PV*.\n💡 Admin: *adultmode on* neste grupo para receber aqui.',
+      mentions: [ctx.senderJid],
+    }, { quoted: quotedMsg }).catch(() => {});
+  }
+  return dest;
 }
 
 module.exports = {
@@ -1382,74 +1443,74 @@ module.exports = {
     const RE = require('./renderEngine');
     const t = await RE.getTheme(ctx.remoteJid);
     const menuText = RE.renderBlock(t, '🔞 PORTAL 18+ COMPLETO', [
-      // v6.48: o menu prometia mais do que entregava — duas correcções.
-      // (1) Anunciava 9 comandos INEXISTENTES (nekos, yande, kona, e621,
-      //     xvideodl, livro, fig18, pack18, adultstats): quem os
-      //     escrevesse levava "comando não encontrado". Removidos.
-      // (2) Dizia "exclusivo VIP/Dono" e abria para VIP, mas 8 dos 10
-      //     comandos têm isPrimaryOwnerOnly() — o VIP via a lista e
-      //     nada funcionava. Agora cada linha diz quem pode usar.
       isPrimaryOwner
         ? '👑 *Acesso total — Dono Supremo*'
         : '⚠️ *Como VIP tens acesso limitado.* Os itens marcados 👑 são só do Dono.',
       '',
-      '📸 *IMAGENS ADULTAS*',
-      '👑 ' + p + 'hentai [tags] — anime adulto aleatório',
-      '👑 ' + p + 'ximg [tags] — busca por tags específicas',
-      '👑 ' + p + 'adultsearch [t] — busca multi-fonte',
-      // v6.49: reposto — as funções já existiam no portal18.js e
-      // entregam imagens reais; só faltavam os comandos que as chamam.
-      '👑 ' + p + 'yande [tags] — yande.re, alta resolução',
-      '👑 ' + p + 'kona [tags] — konachan.com',
-      '👑 ' + p + 'e621 [tags] — e621.net (imagem/gif/webm)',
+      '🎬 *VÍDEOS PRINCIPAIS*',
+      '💎 ' + p + 'xvid <termo> — XVideos (lista + download)',
+      '💎 ' + p + 'xvideos <termo> — alias xvid',
+      '💎 ' + p + 'pornhub <termo> — Pornhub (lista + dl)',
+      '💎 ' + p + 'ph <termo> — alias pornhub',
+      '👑 ' + p + 'xvideodl <url> — baixa link directo',
+      '👑 ' + p + 'adultvideo [termo] — API externa',
+      '',
+      '🔥 *SEX.COM — FOTOS · GIFS · SHORTS*',
+      '💎 ' + p + 'sexcom <termo> — busca sex.com',
+      '💎 ' + p + 'sex <termo> — alias',
+      '💎 ' + p + 'sexgif <termo> — só GIFs sex.com',
+      '💎 ' + p + 'sexvid <termo> — shorts/vídeos sex.com',
+      '💎 ' + p + 'sexfoto <termo> — só fotos sex.com',
+      '',
+      '💃 *FOTOS · COSPLAY · GOSTOSAS*',
+      '💎 ' + p + 'cosplay [tema] — cosplay / fantasia',
+      '💎 ' + p + 'gostosas [tema] — fotos sexy HD',
+      '💎 ' + p + 'sexyfoto [tema] — alias gostosas',
+      '',
+      '📸 *IMAGENS / BOORUS*',
+      '👑 ' + p + 'hentai [tags] — anime adulto',
+      '👑 ' + p + 'ximg [tags] — tags multi-fonte',
+      '👑 ' + p + 'adultsearch [t] — multi-fonte',
+      '👑 ' + p + 'yande [tags] — yande.re',
+      '👑 ' + p + 'kona [tags] — konachan',
+      '👑 ' + p + 'e621 [tags] — e621.net',
       '👑 ' + p + 'nekos [tipo] — nekos.life',
-      '💎 ' + p + 'erome <nome> — busca erome.com',
-      '💎 ' + p + 'erome <nome> <qtd> — com quantidade',
-      '💎 ' + p + 'eromevid <nome> — vídeos erome',
+      '💎 ' + p + 'erome <nome> — erome (álbum COMPLETO)',
+      '💎 ' + p + 'eromevid <nome> — só vídeos erome',
       '',
-      '🎬 *VÍDEOS*',
-      '👑 ' + p + 'xvideo [termo] — busca vídeo adulto',
-      '👑 ' + p + 'adultvideo [termo] — fonte alternativa',
-      '👑 ' + p + 'xvideodl <url> — baixa vídeo de um link',
+      '🪧 *PLAQUINHAS +18*',
+      '💎 ' + p + 'placa18 <texto> — plaquinha hot',
+      '💎 ' + p + 'plaquinha18 <texto> — alias',
       '',
-      // v6.50: implementados — usam portal18 → fetchBuffer → stickerMaker
-      // v6.51: busca por nome, GIFs animados e figurinhas animadas
-      '🔎 *BUSCA POR NOME*',
-      '👑 ' + p + 'buscar18 <nome> — procura personagem/tema',
-      '👑 ' + p + 'figbusca <nome> — figurinha desse nome',
-      '👑 ' + p + 'packbusca <nome> [qtd] — pack desse nome',
-      '',
-      '🎞️ *GIFs & SHORTS*',
-      '👑 ' + p + 'gif18 [tipo] — GIF animado 18+',
-      '👑 ' + p + 'shorts18 [nome] — vídeos curtos animados',
-      '',
-      '🎭 *FIGURINHAS 18+*',
+      '🔎 *BUSCA / GIFS / FIGS*',
+      '👑 ' + p + 'buscar18 <nome> — personagem/tema',
+      '👑 ' + p + 'figbusca <nome> — figurinha',
+      '👑 ' + p + 'packbusca <nome> — pack',
+      '👑 ' + p + 'gif18 [tipo] — GIF 18+',
+      '👑 ' + p + 'shorts18 [nome] — shorts',
       '👑 ' + p + 'fig18 [tags] — figurinha 18+',
-      '👑 ' + p + 'pack18 [tags] [qtd] — pack até 8 figurinhas',
-      '👑 ' + p + 'figgif [tipo] — figurinha ANIMADA',
-      '💎 ' + p + 'sly <nome> — sticker.ly adulto',
+      '👑 ' + p + 'pack18 [tags] — pack figs',
+      '👑 ' + p + 'figgif [tipo] — fig animada',
+      '💎 ' + p + 'sly <nome> — sticker.ly',
       '💎 ' + p + 'slypack <nome> — pack sticker.ly',
       '💎 ' + p + 'packname <nome> — pack por nome',
-      '💎 ' + p + 'takepack <id> — baixa pack por ID',
+      '💎 ' + p + 'takepack <id> — pack por ID',
       '',
-      '💬 *CHAT HOT COM IA*',
+      '💬 *CHAT HOT*  ·  📚 *LIVROS*',
       '👑 ' + p + 'hotchat [tema] — chat sensual',
-      '👑 ' + p + 'hotchat [t] picante — mais ousado',
-      '👑 ' + p + 'hotchat [t] conto — conto erótico',
-      '👑 ' + p + 'hotchat [t] roleplay — roleplay',
+      '👑 ' + p + 'buscalivro [nome] — livros',
+      '👑 ' + p + 'livros18 — top 18+',
       '',
-      '📚 *LIVROS*',
-      '👑 ' + p + 'buscalivro [nome] — busca livros',
-      '👑 ' + p + 'livros18 — top livros 18+',
+      '⚙️ *CONTROLO*',
+      '🛡️ ' + p + 'adultmode on/off — grupo (ADM/dono/sub)',
+      '👑 ' + p + 'adultmode global on/off — portal global',
+      '👑 ' + p + 'adultapi <url> — API de vídeo',
+      '👑 ' + p + 'adultstats — estado do portal',
       '',
-      '⚙️ *CONTROLO (só Dono)*',
-      '👑 ' + p + 'adultmode on/off — liga/desliga o portal',
-      '👑 ' + p + 'adultapi <url> — configura API de vídeo',
-      '👑 ' + p + 'adultstats — estado do portal e das fontes',
-      '',
-      '> 👑 = só Dono   💎 = VIP e Dono',
-      '> ⚠️ O portal tem de estar ON (' + p + 'adultmode on)',
-      '> 🔞 Conteúdo enviado no PV por segurança',
+      '> 👑 = só Dono   💎 = VIP e Dono   🛡️ = ADM/dono/sub',
+      '> Listas: *todos* os resultados · *mais* = +10',
+      '> Sem adultmode no grupo → mídia vai no *PV*',
+      '> ⚠️ O portal/grupo tem de estar ON (' + p + 'adultmode on)',
     ], { botName: localConfig.bot.name });
 
     // PV robusto: tenta múltiplos formatos de JID
@@ -2090,18 +2151,65 @@ module.exports = {
   },
 
   async adultmode({ sock, msg, ctx, args }) {
-    if (!isPrimaryOwnerOnly(ctx)) return true;
-    const v = (args[0] || '').toLowerCase();
-    if (!['on', 'off'].includes(v)) {
-      const cur = await BotConfig.get('adult_mode_enabled', false).catch(() => false);
-      await portal18.ownerPv(sock, { text: `🕳️ Portal 18+: *${cur ? 'ACTIVO 🟢' : 'INACTIVO 🔴'}*\n\nUse: adultmode on/off` }, ctx);
-      return true;
+    // v11.2.5: ADM/dono/subdono podem ligar adultMode NO GRUPO.
+    // "global on/off" ou (PV + dono) → portal global BotConfig.
+    const a0 = (args[0] || '').toLowerCase();
+    const a1 = (args[1] || '').toLowerCase();
+    const wantGlobal = a0 === 'global' || (!ctx.isGroup && isPrimaryOwnerOnly(ctx));
+    const v = wantGlobal ? (a0 === 'global' ? a1 : a0) : a0;
+
+    if (!['on', 'off', 'status', ''].includes(v) && a0 !== 'global') {
+      return reply(sock, msg, ctx,
+        `🕳️ *Adult Mode*\n\n` +
+        `• No *grupo*: \`${config.bot.prefix}adultmode on|off\` (ADM/dono/sub)\n` +
+        `• Global: \`${config.bot.prefix}adultmode global on|off\` (só Dono)\n` +
+        `• Estado: \`${config.bot.prefix}adultmode\``
+      );
     }
-    await BotConfig.set('adult_mode_enabled', v === 'on');
-    botConfigCache.clear();
-    await portal18.ownerPv(sock, { text: `✅ Portal 18+: *${v === 'on' ? 'ACTIVADO 🟢' : 'DESACTIVADO 🔴'}*` }, ctx);
-    if (!ctx.isGroup) await sock.sendMessage(ctx.remoteJid, { text: `✅ Portal 18+: ${v.toUpperCase()}` }, { quoted: msg });
-    return true;
+
+    // status
+    if (!v || v === 'status') {
+      const gOn = await BotConfig.get('adult_mode_enabled', false).catch(() => false);
+      let gLocal = false;
+      if (ctx.isGroup) {
+        const gs = await GroupSettings.findOne({ groupJid: ctx.remoteJid }).lean().catch(() => null);
+        gLocal = !!gs?.adultMode;
+      }
+      const txt =
+        `🕳️ *Adult Mode*\n` +
+        `🌍 Global: *${gOn ? 'ON 🟢' : 'OFF 🔴'}*\n` +
+        (ctx.isGroup ? `👥 Este grupo: *${gLocal ? 'ON 🟢' : 'OFF 🔴'}*\n` : '') +
+        `\n_Com grupo ON, plaquinhas/erome/xvid podem ir no grupo._`;
+      return reply(sock, msg, ctx, txt);
+    }
+
+    if (wantGlobal) {
+      if (!isPrimaryOwnerOnly(ctx)) {
+        return reply(sock, msg, ctx, '🚫 Só o *Dono Supremo* liga o portal global.');
+      }
+      await BotConfig.set('adult_mode_enabled', v === 'on');
+      botConfigCache.clear();
+      await portal18.ownerPv(sock, { text: `✅ Portal 18+ GLOBAL: *${v === 'on' ? 'ON 🟢' : 'OFF 🔴'}*` }, ctx);
+      return reply(sock, msg, ctx, `✅ Portal 18+ GLOBAL: *${v.toUpperCase()}*`);
+    }
+
+    // por grupo
+    if (!ctx.isGroup) {
+      return reply(sock, msg, ctx, '⚠️ Usa *adultmode on/off* dentro do grupo.\nGlobal: *adultmode global on/off*');
+    }
+    if (!(await canToggleAdult(sock, ctx))) {
+      return reply(sock, msg, ctx, '🚫 Só *ADM / dono / subdono* podem activar adultmode neste grupo.');
+    }
+    await GroupSettings.findOneAndUpdate(
+      { groupJid: ctx.remoteJid },
+      { $set: { adultMode: v === 'on', groupName: ctx.groupName || '' } },
+      { upsert: true, new: true },
+    );
+    return reply(sock, msg, ctx,
+      v === 'on'
+        ? `🟢 *Adult Mode ON* neste grupo.\nPlaquinhas +18, erome, xvid, sex.com e cosplay podem enviar *aqui*.\n⚠️ Só para maiores de 18.`
+        : `🔴 *Adult Mode OFF* neste grupo.\nConteúdo 18+ volta a ir só no *PV* (se o portal global estiver ON).`
+    );
   },
 
   async adultapi({ sock, msg, ctx, args }) {
@@ -2640,7 +2748,7 @@ module.exports = {
     }
     return true;
   },
-  async xvideo(a) { return module.exports.adultvideo(a); },
+  // xvideo → xvid (v11.2.5) — ver bloco XVIDEOS mais abaixo
 
   // !hotchat [tema] [estilo?] — chat adulto com IA
   async hotchat({ sock, msg, ctx, args }) {
@@ -2859,14 +2967,13 @@ module.exports = {
   // !mediaup / !mediadown / !medialist — Armazenamento de mídias
   // ══════════════════════════════════════════════════════════════════════
 
-  // ═══ EROME.COM v7 ═══
+  // ═══ EROME.COM v11.2.5 — álbum completo + lista paginada ═══
   async erome({ sock, msg, ctx, args }) {
     const query = args.filter(a => !/^\d+$/.test(a)).join(' ').trim();
-    const limit = parseInt(args.find(a => /^\d+$/.test(a))) || 5;
-    if (!query) return reply(sock, msg, ctx, '🔍 Uso: *!erome <nome>* [qtd]');
-    // URL direta de álbum → baixa sem lista
+    const limit = parseInt(args.find(a => /^\d+$/.test(a))) || 30;
+    if (!query) return reply(sock, msg, ctx, '🔍 Uso: *!erome <nome>* [qtd]\nEnvia *todas* as mídias do álbum (até 40).');
     if (/erome\.com\/a\//i.test(query)) {
-      return eromeBaixarAlbum(sock, msg, ctx, query, Math.min(limit, 20), {});
+      return eromeBaixarAlbum(sock, msg, ctx, query, Math.min(limit, 40), {});
     }
     await sock.sendMessage(ctx.remoteJid, { react: { text: '🔍', key: msg.key } });
     try {
@@ -2874,17 +2981,17 @@ module.exports = {
       const results = (await erome.search(query)).filter(r => !erome.isFiltered(r.name, r.url));
       if (!results.length) throw new Error('Nenhum resultado para: ' + query);
       if (results.length === 1) {
-        return eromeBaixarAlbum(sock, msg, ctx, results[0].url, Math.min(limit, 20), {});
+        return eromeBaixarAlbum(sock, msg, ctx, results[0].url, Math.min(limit, 40), {});
       }
-      // v7.77: LISTA de álbuns — o user escolhe o número
+      // v11.2.5: TODOS os resultados, 10 por página (mais/avança)
       const lista = require('./listaEscolha');
-      const itens = results.slice(0, 10);
       await lista.mostrar(sock, msg, ctx, {
-        titulo: `💎 *${results.length} resultados* — ${query.slice(0, 40)}`,
-        linhas: itens.map((r) => `*${String(r.name || 'Álbum').slice(0, 55)}*${r.type === 'profile' ? '\n   👤 perfil' : ''}`),
-        itens, tipo: 'erome',
+        titulo: `💎 *Erome* — ${query.slice(0, 40)}`,
+        intro: `🔍 *${results.length}* álbuns · responde o nº ou *mais*`,
+        linhas: results.map((r) => `*${String(r.name || 'Álbum').slice(0, 55)}*${r.type === 'profile' ? '\n   👤 perfil' : ''}`),
+        itens: results, tipo: 'erome',
         aoEscolher: async ({ item }) => {
-          await eromeBaixarAlbum(sock, msg, ctx, item.url, Math.min(limit, 20), {});
+          await eromeBaixarAlbum(sock, msg, ctx, item.url, Math.min(limit, 40), {});
         },
       });
       await sock.sendMessage(ctx.remoteJid, { react: { text: '✅', key: msg.key } });
@@ -2896,10 +3003,10 @@ module.exports = {
 
   async eromevid({ sock, msg, ctx, args }) {
     const query = args.filter(a => !/^\d+$/.test(a)).join(' ').trim();
-    const limit = parseInt(args.find(a => /^\d+$/.test(a))) || 3;
+    const limit = parseInt(args.find(a => /^\d+$/.test(a))) || 15;
     if (!query) return reply(sock, msg, ctx, '🎬 Uso: *!eromevid <nome>* [qtd]');
     if (/erome\.com\/a\//i.test(query)) {
-      return eromeBaixarAlbum(sock, msg, ctx, query, Math.min(limit, 10), { videosOnly: true });
+      return eromeBaixarAlbum(sock, msg, ctx, query, Math.min(limit, 20), { videosOnly: true });
     }
     await sock.sendMessage(ctx.remoteJid, { react: { text: '🎬', key: msg.key } });
     try {
@@ -2907,17 +3014,16 @@ module.exports = {
       const results = (await erome.search(query)).filter(r => !erome.isFiltered(r.name, r.url));
       if (!results.length) throw new Error('Nenhum resultado para: ' + query);
       if (results.length === 1) {
-        return eromeBaixarAlbum(sock, msg, ctx, results[0].url, Math.min(limit, 10), { videosOnly: true });
+        return eromeBaixarAlbum(sock, msg, ctx, results[0].url, Math.min(limit, 20), { videosOnly: true });
       }
-      // v7.77: LISTA de álbuns — o user escolhe o número
       const lista = require('./listaEscolha');
-      const itens = results.slice(0, 10);
       await lista.mostrar(sock, msg, ctx, {
-        titulo: `🎬 *${results.length} resultados* — ${query.slice(0, 40)}`,
-        linhas: itens.map((r) => `*${String(r.name || 'Álbum').slice(0, 55)}*`),
-        itens, tipo: 'eromevid',
+        titulo: `🎬 *Erome VID* — ${query.slice(0, 40)}`,
+        intro: `*${results.length}* resultados · *mais* = próxima página`,
+        linhas: results.map((r) => `*${String(r.name || 'Álbum').slice(0, 55)}*`),
+        itens: results, tipo: 'eromevid',
         aoEscolher: async ({ item }) => {
-          await eromeBaixarAlbum(sock, msg, ctx, item.url, Math.min(limit, 10), { videosOnly: true });
+          await eromeBaixarAlbum(sock, msg, ctx, item.url, Math.min(limit, 20), { videosOnly: true });
         },
       });
       await sock.sendMessage(ctx.remoteJid, { react: { text: '✅', key: msg.key } });
@@ -2926,6 +3032,197 @@ module.exports = {
       return reply(sock, msg, ctx, '❌ Erome: ' + e.message);
     }
   },
+
+  // ═══ v11.2.5 XVIDEOS / PORNHUB / SEX.COM / COSPLAY / PLAQUINHAS ═══
+  async xvid({ sock, msg, ctx, args }) {
+    const q = portal18.cleanQuery(args.join(' '));
+    if (!q) return reply(sock, msg, ctx, '🎬 Uso: *xvid <termo>*\nEx: xvid blonde');
+    if (portal18.isBlocked(q)) return reply(sock, msg, ctx, '🚫 Termo bloqueado.');
+    if (!(await isAdultEnabled(ctx))) return reply(sock, msg, ctx, '🛑 Adult mode OFF. ADM: *adultmode on*');
+    await react(sock, msg, '🔍');
+    try {
+      const src = require('./adultSources');
+      const results = await src.xvideosSearch(q, 30);
+      if (!results.length) throw new Error('Sem resultados');
+      const lista = require('./listaEscolha');
+      await lista.mostrar(sock, msg, ctx, {
+        titulo: `🎬 *XVideos* — ${q.slice(0, 36)}`,
+        intro: `*${results.length}* vídeos · escolhe nº · *mais* = +10`,
+        linhas: results.map(r => `*${String(r.title).slice(0, 60)}*`),
+        itens: results, tipo: 'xvid',
+        aoEscolher: async ({ item }) => {
+          await sock.sendMessage(ctx.remoteJid, { text: `⬇️ A baixar: *${String(item.title).slice(0, 50)}*...` }, { quoted: msg }).catch(() => {});
+          const dl = await src.xvideosDownload(item.url);
+          if (dl.buf.length > 64 * 1024 * 1024) {
+            return reply(sock, msg, ctx, `⚠️ Vídeo grande (${(dl.buf.length / 1048576).toFixed(1)}MB).\n🔗 ${item.url}`);
+          }
+          await sendAdultMedia(sock, ctx, {
+            video: dl.buf, mimetype: 'video/mp4',
+            caption: `🎬 *${String(item.title).slice(0, 80)}*\n📡 XVideos`,
+          }, msg);
+        },
+      });
+      await react(sock, msg, '✅');
+    } catch (e) {
+      await react(sock, msg, '❌');
+      return reply(sock, msg, ctx, '❌ XVideos: ' + e.message);
+    }
+  },
+  async xvideos(a) { return module.exports.xvid(a); },
+  async xvideo(a) { return module.exports.xvid(a); },
+
+  async pornhub({ sock, msg, ctx, args }) {
+    const q = portal18.cleanQuery(args.join(' '));
+    if (!q) return reply(sock, msg, ctx, '🎬 Uso: *pornhub <termo>*');
+    if (portal18.isBlocked(q)) return reply(sock, msg, ctx, '🚫 Termo bloqueado.');
+    if (!(await isAdultEnabled(ctx))) return reply(sock, msg, ctx, '🛑 Adult mode OFF. ADM: *adultmode on*');
+    await react(sock, msg, '🔍');
+    try {
+      const src = require('./adultSources');
+      const results = await src.pornhubSearch(q, 30);
+      if (!results.length) throw new Error('Sem resultados (site pode bloquear o IP)');
+      const lista = require('./listaEscolha');
+      await lista.mostrar(sock, msg, ctx, {
+        titulo: `🟠 *Pornhub* — ${q.slice(0, 36)}`,
+        intro: `*${results.length}* vídeos · nº ou *mais*`,
+        linhas: results.map(r => `*${String(r.title).slice(0, 60)}*`),
+        itens: results, tipo: 'pornhub',
+        aoEscolher: async ({ item }) => {
+          await sock.sendMessage(ctx.remoteJid, { text: `⬇️ A baixar Pornhub...` }, { quoted: msg }).catch(() => {});
+          const dl = await src.pornhubDownload(item.url);
+          if (dl.buf.length > 64 * 1024 * 1024) {
+            return reply(sock, msg, ctx, `⚠️ Demasiado grande (${(dl.buf.length / 1048576).toFixed(1)}MB)\n🔗 ${item.url}`);
+          }
+          await sendAdultMedia(sock, ctx, {
+            video: dl.buf, mimetype: 'video/mp4',
+            caption: `🟠 *${String(item.title).slice(0, 80)}*\n📡 Pornhub`,
+          }, msg);
+        },
+      });
+      await react(sock, msg, '✅');
+    } catch (e) {
+      await react(sock, msg, '❌');
+      return reply(sock, msg, ctx, '❌ Pornhub: ' + e.message);
+    }
+  },
+  async ph(a) { return module.exports.pornhub(a); },
+
+  async sexcom({ sock, msg, ctx, args }, forceType) {
+    const q = portal18.cleanQuery(args.join(' '));
+    if (!q) return reply(sock, msg, ctx, '🔥 Uso: *sexcom <termo>*\nAliases: sex · sexgif · sexvid · sexfoto');
+    if (portal18.isBlocked(q)) return reply(sock, msg, ctx, '🚫 Termo bloqueado.');
+    if (!(await isAdultEnabled(ctx))) return reply(sock, msg, ctx, '🛑 Adult mode OFF. ADM: *adultmode on*');
+    const type = forceType || 'all';
+    await react(sock, msg, '🔥');
+    try {
+      const src = require('./adultSources');
+      const results = await src.sexcomSearch(q, { limit: 30, type });
+      if (!results.length) throw new Error('Sem resultados no sex.com');
+      const lista = require('./listaEscolha');
+      await lista.mostrar(sock, msg, ctx, {
+        titulo: `🔥 *sex.com* — ${q.slice(0, 36)}`,
+        intro: `*${results.length}* pins · fotos/GIFs/shorts · *mais* = +10`,
+        linhas: results.map(r => `*${String(r.title || r.type).slice(0, 50)}*\n   ${r.type || 'media'}`),
+        itens: results, tipo: 'sexcom',
+        aoEscolher: async ({ item }) => {
+          const m = await src.sexcomResolve(item);
+          if (m.type === 'video') {
+            await sendAdultMedia(sock, ctx, { video: m.buf, mimetype: 'video/mp4', caption: `🔥 *${m.title}*\n📡 sex.com` }, msg);
+          } else if (m.type === 'gif') {
+            // GIF como video gifPlayback se mp4, senão image
+            const isGif = m.buf.slice(0, 3).toString() === 'GIF';
+            if (isGif) {
+              await sendAdultMedia(sock, ctx, { video: m.buf, gifPlayback: true, caption: `✨ GIF · sex.com` }, msg).catch(async () => {
+                await sendAdultMedia(sock, ctx, { image: m.buf, caption: `✨ *${m.title}*` }, msg);
+              });
+            } else {
+              await sendAdultMedia(sock, ctx, { image: m.buf, caption: `🔥 *${m.title}*\n📡 sex.com` }, msg);
+            }
+          } else {
+            await sendAdultMedia(sock, ctx, { image: m.buf, caption: `🔥 *${m.title}*\n📡 sex.com` }, msg);
+          }
+        },
+      });
+      await react(sock, msg, '✅');
+    } catch (e) {
+      await react(sock, msg, '❌');
+      return reply(sock, msg, ctx, '❌ sex.com: ' + e.message);
+    }
+  },
+  async sex(a) { return module.exports.sexcom(a); },
+  async sexgif(a) { return module.exports.sexcom(a, 'gifs'); },
+  async sexvid(a) { return module.exports.sexcom(a, 'videos'); },
+  async sexfoto(a) { return module.exports.sexcom(a, 'pics'); },
+
+  async cosplay({ sock, msg, ctx, args }) {
+    const q = portal18.cleanQuery(args.join(' ') || 'cosplay');
+    if (portal18.isBlocked(q)) return reply(sock, msg, ctx, '🚫 Termo bloqueado.');
+    if (!(await isAdultEnabled(ctx))) return reply(sock, msg, ctx, '🛑 Adult mode OFF. ADM: *adultmode on*');
+    await react(sock, msg, '💃');
+    try {
+      const src = require('./adultSources');
+      const results = await src.cosplaySearch(q, 20);
+      if (!results.length) throw new Error('Sem fotos');
+      const lista = require('./listaEscolha');
+      await lista.mostrar(sock, msg, ctx, {
+        titulo: `💃 *Cosplay / Sexy* — ${q.slice(0, 32)}`,
+        intro: `*${results.length}* fotos · só imagens · *mais* = página`,
+        linhas: results.map(r => `*${String(r.title || r.source).slice(0, 50)}*\n   ${r.source}`),
+        itens: results, tipo: 'cosplay',
+        aoEscolher: async ({ item }) => {
+          const m = await src.cosplayDownload(item);
+          await sendAdultMedia(sock, ctx, {
+            image: m.buf,
+            caption: `💃 *${String(m.title).slice(0, 60)}*\n📡 ${m.source}`,
+          }, msg);
+        },
+      });
+      // também envia já 3 amostras rápidas
+      let n = 0;
+      for (const item of results.slice(0, 3)) {
+        try {
+          const m = await src.cosplayDownload(item);
+          await sendAdultMedia(sock, ctx, { image: m.buf, caption: n === 0 ? `💃 Amostra · ${q}` : '' }, msg);
+          n++;
+        } catch {}
+      }
+      await react(sock, msg, '✅');
+    } catch (e) {
+      await react(sock, msg, '❌');
+      return reply(sock, msg, ctx, '❌ Cosplay: ' + e.message);
+    }
+  },
+  async gostosas(a) { return module.exports.cosplay(a); },
+  async sexyfoto(a) { return module.exports.cosplay(a); },
+
+  async placa18({ sock, msg, ctx, args }) {
+    if (!(await isAdultEnabled(ctx))) return reply(sock, msg, ctx, '🛑 Adult mode OFF.\nADM/dono: *adultmode on* no grupo (ou global).');
+    const styles = ['hot', 'pink', 'gold', 'purple'];
+    let estilo = 'hot';
+    let words = args.slice();
+    if (words.length && styles.includes(String(words[0]).toLowerCase())) {
+      estilo = String(words.shift()).toLowerCase();
+    }
+    const text = words.join(' ').trim();
+    if (!text) return reply(sock, msg, ctx, '🪧 Uso: *placa18 [hot|pink|gold|purple] <texto>*\nEx: placa18 hot Vem cá…');
+    if (portal18.isBlocked(text)) return reply(sock, msg, ctx, '🚫 Texto bloqueado.');
+    await react(sock, msg, '🪧');
+    try {
+      const src = require('./adultSources');
+      const { buf } = await src.placa18(text, estilo);
+      await sendAdultMedia(sock, ctx, {
+        image: buf,
+        caption: `🪧 *Plaquinha +18*\n_${text.slice(0, 80)}_`,
+      }, msg);
+      await react(sock, msg, '✅');
+    } catch (e) {
+      await react(sock, msg, '❌');
+      return reply(sock, msg, ctx, '❌ Placa: ' + e.message);
+    }
+  },
+  async plaquinha18(a) { return module.exports.placa18(a); },
+  async placa18hot(a) { a.args = ['hot', ...(a.args || [])]; return module.exports.placa18(a); },
+
   async mediaup({ sock, msg, ctx, args, isOwner, config: cfg }) {
     if (!isOwner) return reply(sock, msg, ctx, '🚫 Só Dono.');
     const m = msg.message || {};
