@@ -501,8 +501,15 @@ class WhatsAppBot {
           if (event.action === 'add') {
             const selfs = [this.sock.user?.id, this.sock.user?.lid]
               .map(s => String(s || '').split('@')[0].split(':')[0]).filter(Boolean);
-            const fuiEu = (event.participants || []).some(p =>
-              selfs.includes(String(p).split('@')[0].split(':')[0]));
+            const fuiEu = (event.participants || []).some(p => {
+              // v11.2.3: participant pode ser string OU { id, phoneNumber, lid }
+              if (p && typeof p === 'object') {
+                const cands = [p.phoneNumber, p.pn, p.id, p.jid, p.lid].filter(Boolean);
+                return cands.some(c => selfs.includes(String(c).split('@')[0].split(':')[0].replace(/\D/g, '')) ||
+                                       selfs.includes(String(c).split('@')[0].split(':')[0]));
+              }
+              return selfs.includes(String(p).split('@')[0].split(':')[0]);
+            });
             if (fuiEu) {
               const meta = await this.sock.groupMetadata(event.id).catch(() => null);
               const autorNumero = String(event.author || '').split('@')[0].split(':')[0].replace(/\D/g, '');

@@ -21,6 +21,48 @@ function fillVars(text, { userName, groupName, botName, ownerName, number } = {}
     .trim();
 }
 
+/**
+ * v11.2.3 — Baileys moderno manda participants como OBJECTOS
+ *   { id, lid?, phoneNumber?, admin? }  (Contact / GroupParticipant)
+ * e NÃO como strings "244…@s.whatsapp.net". O código antigo fazia
+ * `participant.split('@')` → TypeError → catch silencioso → welcome/goodbye
+ * NUNCA disparavam. antiFoba/autoApresentar já normalizavam; aqui também.
+ *
+ * Devolve sempre { jid, pnJid, number, raw } com jid preferindo o PN
+ * (melhor para menções e foto de perfil).
+ */
+function normalizeParticipant(p) {
+  if (!p) return null;
+  if (typeof p === 'string') {
+    const jid = p;
+    const number = String(jid).split(':')[0].split('@')[0].replace(/\D/g, '');
+    return { jid, pnJid: jid.includes('@s.whatsapp.net') ? jid : (number ? number + '@s.whatsapp.net' : jid), number, raw: p };
+  }
+  if (typeof p === 'object') {
+    const id = p.id || p.jid || '';
+    const lid = p.lid || (String(id).includes('@lid') ? id : '');
+    const phone = p.phoneNumber || p.pn || '';
+    // PN preferido para menção/foto; fallback para id/lid
+    let pnJid = '';
+    if (typeof phone === 'string' && phone.includes('@')) pnJid = phone;
+    else if (typeof phone === 'string' && phone.replace(/\D/g, '').length >= 8) pnJid = phone.replace(/\D/g, '') + '@s.whatsapp.net';
+    else if (typeof id === 'string' && id.includes('@s.whatsapp.net')) pnJid = id;
+    const jid = pnJid || id || lid || '';
+    let number = '';
+    if (pnJid) number = pnJid.split(':')[0].split('@')[0].replace(/\D/g, '');
+    if (!number && phone) number = String(phone).replace(/\D/g, '');
+    if (!number && id && !String(id).includes('@lid')) number = String(id).split(':')[0].split('@')[0].replace(/\D/g, '');
+    return { jid, pnJid: pnJid || jid, number, lid, raw: p };
+  }
+  return null;
+}
+
+function jidNum(j) {
+  return String(j || '').split(':')[0].split('@')[0].replace(/\D/g, '');
+}
+
+
+
 // ── ANTI-BAN: saudação combinada em tempestade de entradas (v9.13) ──
 // Convidar membros em massa (ou um link partilhado que rebenta) fazia o
 // bot disparar um welcome com IMAGEM por cada entrada — assinatura
@@ -80,32 +122,37 @@ async function ownerPv(sock, text) {
 
 async function handle(sock, event) {
   try {
-    const { id: groupJid, participants, action } = event;
+    const { id: groupJid, action } = event;
     if (!groupJid?.endsWith('@g.us')) return;
+
+    // v11.2.3: normaliza participants (string LEGACY ou objecto Baileys actual)
+    const rawParts = Array.isArray(event.participants) ? event.participants : [];
+    const parts = rawParts.map(normalizeParticipant).filter(Boolean);
+    if (!parts.length && rawParts.length) {
+      console.warn('[GroupEvents] participants ilegíveis:', typeof rawParts[0], JSON.stringify(rawParts[0]).slice(0, 120));
+    }
 
     const meta      = await sock.groupMetadata(groupJid).catch(() => null);
     const groupName = meta?.subject || 'grupo';
 
-    // v6.82: feed live do dashboard (página Grupos). Emite para todas
-    // as acções (add/remove/promote/demote), mesmo quando o bot não
-    // tem welcome activo — o evento é do grupo, não do bot.
+    // v6.82: feed live do dashboard (página Grupos).
     try {
       require('./liveBroadcaster').groupEvent({
         type: action,
         group: { jid: groupJid, name: groupName },
-        participants: (participants || []).map(p => ({
-          jid: p,
-          number: String(p).split('@')[0].replace(/\D/g, ''),
-        })),
+        participants: parts.map(p => ({ jid: p.jid, number: p.number })),
       });
     } catch (e) {}
 
-    const botNum    = String(sock.user?.id || '').split(':')[0].split('@')[0];
-    const botJids   = [sock.user?.id, sock.user?.lid, `${botNum}@s.whatsapp.net`].filter(Boolean);
-    const botAdded  = action === 'add' && participants.some(p =>
-      botJids.some(j => p.split(':')[0].split('@')[0] === j.split(':')[0].split('@')[0])
+    const botNum  = jidNum(sock.user?.id);
+    const botNums = new Set(
+      [sock.user?.id, sock.user?.lid, sock.user?.phoneNumber, botNum && (botNum + '@s.whatsapp.net')]
+        .filter(Boolean)
+        .map(jidNum)
+        .filter(Boolean),
     );
 
+    const botAdded = action === 'add' && parts.some(p => p.number && botNums.has(p.number));
     if (botAdded) {
       await onBotAdded(sock, groupJid, groupName, meta);
       return;
@@ -113,51 +160,60 @@ async function handle(sock, event) {
 
     const gs = await GroupSettings.findOne({ groupJid }).lean().catch(() => null);
 
-    // v7.47 incoming-cases: anti-fobados bane DDIs na blacklist ANTES do
-    // welcome (banidos não recebem boas-vindas); auto-apresentação arma o
-    // prazo de 5 min para quem entrou e cancela para quem saiu.
+    // anti-fobados / auto-apresentação (aceitam string OU objecto)
     let banidosFoba = [];
     if (action === 'add') {
-      try { banidosFoba = await require('./antiFoba').onJoin(sock, groupJid, participants, meta) || []; } catch {}
-      try { await require('./autoApresentar').onParticipantsUpdate(sock, groupJid, participants, action, meta); } catch {}
+      try { banidosFoba = await require('./antiFoba').onJoin(sock, groupJid, rawParts, meta) || []; } catch {}
+      try { await require('./autoApresentar').onParticipantsUpdate(sock, groupJid, rawParts, action, meta); } catch {}
     }
     if (action === 'remove') {
-      try { await require('./autoApresentar').onParticipantsUpdate(sock, groupJid, participants, action, meta); } catch {}
+      try { await require('./autoApresentar').onParticipantsUpdate(sock, groupJid, rawParts, action, meta); } catch {}
     }
+    const banidosSet = new Set((banidosFoba || []).map(b => {
+      if (typeof b === 'string') return b;
+      const n = normalizeParticipant(b);
+      return n?.jid || n?.pnJid || '';
+    }).filter(Boolean));
 
-    for (const participant of participants) {
-      const number = participant.split('@')[0].replace(/\D/g, '');
-      const isBot  = botJids.some(j => j.split(':')[0].split('@')[0] === number);
-      if (isBot) continue;
-      if (banidosFoba.includes(participant)) continue;
+    for (const p of parts) {
+      if (!p.jid && !p.pnJid) continue;
+      if (p.number && botNums.has(p.number)) continue;
+      // jid preferido: PN para menção/foto; fallback id/lid
+      const mentionJid = p.pnJid || p.jid;
+      const actJid = p.jid || p.pnJid; // para promote/remove API
+      if (banidosSet.has(p.jid) || banidosSet.has(p.pnJid) || banidosSet.has(actJid)) continue;
+
       if (action === 'add') {
-        await onJoin(sock, groupJid, participant, number, groupName, gs, meta);
-        // auto-ADM: promove se estiver na lista
+        await onJoin(sock, groupJid, mentionJid, p.number || jidNum(mentionJid), groupName, gs, meta);
+        // auto-ADM
         try {
           const autos = (gs?.autoAdmins || []).map(n => String(n).replace(/\D/g, ''));
-          if (autos.includes(number)) {
-            await sock.groupParticipantsUpdate(groupJid, [participant], 'promote').catch(() => {});
+          if (p.number && autos.includes(p.number)) {
+            await sock.groupParticipantsUpdate(groupJid, [actJid], 'promote').catch(() => {});
             await sock.sendMessage(groupJid, {
-              text: `🤖 Auto-ADM: @${number} promovido.`,
-              mentions: [participant],
+              text: `🤖 Auto-ADM: @${p.number} promovido.`,
+              mentions: [mentionJid],
             }).catch(() => {});
           }
         } catch {}
       }
-      if (action === 'remove') await onLeave(sock, groupJid, participant, number, groupName, gs);
-      // X9 — anuncia promote/demote/add/remove (excepto o próprio bot)
+      if (action === 'remove') {
+        await onLeave(sock, groupJid, mentionJid, p.number || jidNum(mentionJid), groupName, gs);
+      }
+      // X9
       if (gs?.x9 && ['add', 'remove', 'promote', 'demote'].includes(action)) {
         try {
           const labels = { add: 'entrou', remove: 'saiu', promote: 'foi promovido a admin', demote: 'foi rebaixado' };
+          const who = p.number ? `@${p.number}` : (mentionJid || 'alguém');
           await sock.sendMessage(groupJid, {
-            text: `🕵️ X9: @${number} ${labels[action] || action}.`,
-            mentions: [participant],
+            text: `🕵️ X9: ${who} ${labels[action] || action}.`,
+            mentions: p.number ? [mentionJid] : [],
           }).catch(() => {});
         } catch {}
       }
     }
   } catch (e) {
-    console.error('[GroupEvents]', e?.message);
+    console.error('[GroupEvents]', e?.message || e);
   }
 }
 
@@ -395,4 +451,4 @@ async function onLeave(sock, groupJid, participantJid, number, groupName, gs) {
   await sock.sendMessage(groupJid, { text, mentions: [participantJid] }).catch(() => {});
 }
 
-module.exports = { handle, _welDebug: { _ultimoWel, _comboWel, WEL_JANELA_MS, WEL_COMBO_DEBOUNCE, _comboEncaixa, _comboDispara } };
+module.exports = { handle, normalizeParticipant, _welDebug: { _ultimoWel, _comboWel, WEL_JANELA_MS, WEL_COMBO_DEBOUNCE, _comboEncaixa, _comboDispara } };
