@@ -600,14 +600,16 @@ module.exports = function registerAudioAdmin2(registerCase) {
   }, true);
 
   // ═══ ADMIN: MISC (v6.39 — com verificação de permissão) ═══
+  // v9.24: boasvindas/bv/legendabv/legendasaiu/fotobv/fotosaiu saíram daqui —
+  // eram STUBS mortos que ganhavam a grupos.js (ordem alfabética audioAdmin2 < grupos).
+  // Implementação real está em cases/grupos.js + groupEvents.js + welcm.js.
   const miscAdmin = ['aprovar', 'recusarsolic', 'aceitatodos', 'addblacklist', 'delblacklist',
     'blockuser', 'unblockuser', 'blockcmd', 'unblockcmd', 'addmod', 'delmod',
     'grantmodcmd', 'revokemodcmd', 'rmadv', 'adv', 'listaddd', 'listaddi',
     'addautoadm', 'addautoadmidia', 'delautoadm', 'autorepo', 'addparceria',
     'delparceria', 'captura', 'x9', 'captcha', 'antitoxic', 'resetrank', 'limparrank',
     'setbammsg', 'emprego', 'convite', 'linkgp', 'admin', 'proibir', 'em',
-    'boasvindas', 'bv', 'legendabv', 'legendasaiu', 'fotobv', 'rmfotobv',
-    'fotosaiu', 'rmfotosaiu', 'groupprefix', 'prefixgrupo', 'grouptheme', 'temagrupo', 'settheme',
+    'groupprefix', 'prefixgrupo', 'grouptheme', 'temagrupo', 'settheme',
     'multiprefixo', 'aviso', 'avisos', 'citar', 'copiar', 'copymsg', 'marcar',
     'editarmsg', 'fakeedit', 'fakemsg', 'invisible', 'invite',
   ];
@@ -618,8 +620,7 @@ module.exports = function registerAudioAdmin2(registerCase) {
       const adminCmds = ['aprovar', 'recusarsolic', 'aceitatodos', 'addblacklist', 'delblacklist',
         'blockcmd', 'unblockcmd', 'addmod', 'delmod', 'grantmodcmd', 'revokemodcmd',
         'addautoadm', 'addautoadmidia', 'delautoadm', 'resetrank', 'limparrank',
-        'setbammsg', 'proibir', 'boasvindas', 'bv', 'legendabv', 'legendasaiu',
-        'fotobv', 'rmfotobv', 'fotosaiu', 'rmfotosaiu', 'groupprefix', 'prefixgrupo',
+        'setbammsg', 'proibir', 'groupprefix', 'prefixgrupo',
         'grouptheme', 'temagrupo', 'settheme', 'multiprefixo', 'invisible'];
       if (adminCmds.includes(cmd) && !await _admGuard(sock, msg, ctx, isOwner, `🛡️ ${cmd.toUpperCase()}`)) return;
       return tReply(sock, msg, ctx, `🛡️ ${cmd.toUpperCase()}`, [

@@ -244,7 +244,7 @@ async function onJoin(sock, groupJid, participantJid, number, groupName, gs, met
     `${t.bullet} 🤖 *${config.bot.name}*\n\n` +
     `> ${t.vibe}`;
 
-  const template = gs?.customWelcomeMsg || defaultMsg;
+  const template = gs?.customWelcomeMsg || gs?.customWelcome || defaultMsg;
   const caption = fillVars(template, {
     userName: number, groupName, botName: config.bot.name,
     ownerName: config.owner.name, number,
@@ -254,10 +254,23 @@ async function onJoin(sock, groupJid, participantJid, number, groupName, gs, met
   // Se imagem custom definida no grupo → usa ela
   const welcomeImg = gs?.welcomeWithMedia;
   if (welcomeImg) {
-    await sock.sendMessage(groupJid, {
-      image: { url: welcomeImg }, caption, mentions: [participantJid],
-    }).catch(() => {});
-    return;
+    try {
+      if (String(welcomeImg).startsWith('local:')) {
+        const mediaHandler = require('./mediaHandler');
+        const buf = await mediaHandler.fetchBuffer(welcomeImg);
+        if (buf?.length > 200) {
+          await sock.sendMessage(groupJid, {
+            image: buf, caption, mentions: [participantJid],
+          }).catch(() => {});
+          return;
+        }
+      } else {
+        await sock.sendMessage(groupJid, {
+          image: { url: welcomeImg }, caption, mentions: [participantJid],
+        }).catch(() => {});
+        return;
+      }
+    } catch (e) { console.warn('[Welcome custom media]', e.message); }
   }
 
   // ── v8.4 WELCM3: GIF de super animação (arte IA + foto perfil) ─────
@@ -320,16 +333,42 @@ async function onJoin(sock, groupJid, participantJid, number, groupName, gs, met
 }
 
 async function onLeave(sock, groupJid, participantJid, number, groupName, gs) {
+  // Aceita goodbyeEnabled (novo) e o campo legado `goodbye`
   if (gs?.goodbyeEnabled === false) return;
+  if (gs?.goodbye === false && gs?.goodbyeEnabled == null) return;
   const globalOn = await botConfigCache.get('welcome_enabled', true).catch(() => true);
   if (!globalOn) return;
 
+  // Fallback legado: customGoodbye (sem Msg)
   const defaultMsg = `👋 @${number} saiu de *${groupName}*. Até à próxima!`;
-  const template = gs?.customGoodbyeMsg || defaultMsg;
+  const template = gs?.customGoodbyeMsg || gs?.customGoodbye || defaultMsg;
   const text = fillVars(template, {
     userName: number, groupName, botName: config.bot.name,
     ownerName: config.owner.name, number,
   });
+
+  // Foto custom de despedida (se definida com !fotosaiu)
+  const byeImg = gs?.goodbyeWithMedia;
+  if (byeImg) {
+    try {
+      if (String(byeImg).startsWith('local:')) {
+        const mediaHandler = require('./mediaHandler');
+        const buf = await mediaHandler.fetchBuffer(byeImg);
+        if (buf?.length > 200) {
+          await sock.sendMessage(groupJid, {
+            image: buf, caption: text, mentions: [participantJid],
+          }).catch(() => {});
+          return;
+        }
+      } else {
+        await sock.sendMessage(groupJid, {
+          image: { url: byeImg }, caption: text, mentions: [participantJid],
+        }).catch(() => {});
+        return;
+      }
+    } catch (e) { console.warn('[Goodbye Image]', e.message); }
+  }
+
   await sock.sendMessage(groupJid, { text, mentions: [participantJid] }).catch(() => {});
 }
 

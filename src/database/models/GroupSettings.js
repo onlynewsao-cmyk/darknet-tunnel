@@ -121,6 +121,7 @@ const GroupSettingsSchema = new mongoose.Schema({
   customGoodbyeMsg: { type: String, default: '' },
   welcomeWithPhoto: { type: Boolean, default: true },
   welcomeWithMedia: { type: String, default: '' },  // URL de imagem de boas-vindas
+  goodbyeWithMedia: { type: String, default: '' },  // URL de imagem de despedida
   welcome2: { type: Boolean, default: false },   // v8.4: foto IA de entrada (PIP)
   welcm3: { type: Boolean, default: false },     // v8.4: GIF animado de entrada
 

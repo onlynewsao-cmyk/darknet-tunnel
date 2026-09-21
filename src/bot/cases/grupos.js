@@ -641,26 +641,247 @@ module.exports = function registerGroupCases(registerCase) {
     );
   });
 
-  // !welcome
-  registerCase(['welcome', 'boasvindas', 'bv'], async ({ sock, ctx, args, prefix, reply }) => {
-    if (!await requireSenderAdmin(sock, ctx, reply)) return;
-    const gs = await GroupSettings.findOneAndUpdate(
-      { groupJid: ctx.remoteJid },
-      { $setOnInsert: { groupJid: ctx.remoteJid } },
-      { upsert: true, new: true }
+  // ══════════════════════════════════════════════════════════════════
+  // !welcome / !boasvindas / !bv / !bemvindo + DESPEDIDA (!goodbye/!saida)
+  // welcome2 / welcm3 ficam em cases/welcm.js (arte IA / GIF)
+  // ══════════════════════════════════════════════════════════════════
+  async function _gsUpsert(jid) {
+    return GroupSettings.findOneAndUpdate(
+      { groupJid: jid },
+      { $setOnInsert: { groupJid: jid } },
+      { upsert: true, new: true },
     );
-    const sub = (args[0]||'status').toLowerCase();
+  }
+
+  function _parseOnOff(v) {
+    const s = String(v || '').toLowerCase();
+    if (['on', 'ativar', 'ligar', '1', 'true', 'sim'].includes(s)) return true;
+    if (['off', 'desativar', 'desligar', '0', 'false', 'nao', 'não'].includes(s)) return false;
+    return null;
+  }
+
+  async function _saveQuotedImage(sock, msg, ctx, slot) {
+    const mediaHandler = require('../mediaHandler');
+    const fs = require('fs');
+    const path = require('path');
+    const quoted = msg.message?.extendedTextMessage?.contextInfo;
+    const qMsg = msg.message?.imageMessage
+      ? msg
+      : (quoted?.quotedMessage
+        ? {
+            key: {
+              remoteJid: ctx.remoteJid,
+              id: quoted.stanzaId,
+              fromMe: false,
+              participant: quoted.participant,
+            },
+            message: quoted.quotedMessage,
+          }
+        : null);
+    if (!qMsg?.message?.imageMessage && !qMsg?.message?.stickerMessage) {
+      return { ok: false, err: '❌ Responde a uma *imagem* (ou envia com o comando).' };
+    }
+    let buf;
+    try { buf = await mediaHandler.downloadFromMessage(qMsg); }
+    catch (e) {
+      return { ok: false, err: '❌ Não consegui descarregar a imagem: ' + String(e?.message || e).slice(0, 120) };
+    }
+    if (!buf || buf.length < 200) return { ok: false, err: '❌ Imagem vazia ou inválida.' };
+
+    let url = null;
+    try {
+      const cloudinary = require('cloudinary').v2;
+      const cfg = require('../../config');
+      if (cfg.cloudinary?.cloud_name || process.env.CLOUDINARY_CLOUD_NAME) {
+        if (!cloudinary.config().cloud_name) {
+          cloudinary.config({
+            cloud_name: process.env.CLOUDINARY_CLOUD_NAME || cfg.cloudinary?.cloud_name,
+            api_key: process.env.CLOUDINARY_API_KEY || cfg.cloudinary?.api_key,
+            api_secret: process.env.CLOUDINARY_API_SECRET || cfg.cloudinary?.api_secret,
+          });
+        }
+        const result = await new Promise((resolve, reject) => {
+          const stream = cloudinary.uploader.upload_stream(
+            { folder: 'dark-bot/group-welcome', resource_type: 'image' },
+            (err, r) => (err ? reject(err) : resolve(r)),
+          );
+          stream.end(buf);
+        });
+        if (result?.secure_url) url = result.secure_url;
+      }
+    } catch {}
+
+    if (!url) {
+      const dir = path.join(__dirname, '..', '..', '..', 'assets', 'group-media');
+      fs.mkdirSync(dir, { recursive: true });
+      const safe = String(ctx.remoteJid || 'gp').replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 48);
+      const file = `${safe}-${slot}.jpg`;
+      fs.writeFileSync(path.join(dir, file), buf);
+      url = `local:group-media/${file}`;
+    }
+    return { ok: true, url };
+  }
+
+  registerCase(['welcome', 'boasvindas', 'bv', 'bemvindo'], async ({ sock, msg, ctx, args, prefix, reply }) => {
+    if (!await requireSenderAdmin(sock, ctx, reply)) return;
+    const gs = await _gsUpsert(ctx.remoteJid);
+    const sub = String(args[0] || 'status').toLowerCase();
     let saved = false;
-    if (['on','ativar'].includes(sub)) { gs.welcomeEnabled = true; saved = true; }
-    else if (['off','desativar'].includes(sub)) { gs.welcomeEnabled = false; saved = true; }
-    else if (['texto','set'].includes(sub)) {
+    const onOff = _parseOnOff(sub);
+    if (onOff === true) { gs.welcomeEnabled = true; saved = true; }
+    else if (onOff === false) { gs.welcomeEnabled = false; saved = true; }
+    else if (['texto', 'set', 'msg', 'mensagem'].includes(sub)) {
       const t = args.slice(1).join(' ').trim();
-      if (!t) return reply(`Variáveis: {user} {grupo} {bot}\nEx: *${prefix}welcome texto* Olá {user}!`);
-      gs.customWelcomeMsg = t.slice(0,500); saved = true;
+      if (!t) {
+        return reply(
+          `Variáveis: \`{user}\` \`{nome}\` \`{grupo}\` \`{bot}\` \`{dono}\`\n` +
+          `Ex: *${prefix}welcome texto* Olá {user}! Bem-vindo a {grupo}`,
+        );
+      }
+      gs.customWelcomeMsg = t.slice(0, 800); saved = true;
+    } else if (['reset', 'limpar', 'default'].includes(sub)) {
+      gs.customWelcomeMsg = ''; saved = true;
+    } else if (onOff === null && args.length && !['status', 'info', 'ver'].includes(sub)) {
+      const t = args.join(' ').trim();
+      if (t.length > 2) { gs.customWelcomeMsg = t.slice(0, 800); saved = true; }
     }
     if (saved) await gs.save();
-    await reply(`👋 Welcome: ${gs.welcomeEnabled !== false ? '🟢 ON' : '🔴 OFF'}\nTexto: _${(gs.customWelcomeMsg||'padrão').slice(0,50)}_`);
+    const w2 = gs.welcome2 ? ' · 🎨 welcome2 ON' : '';
+    const w3 = gs.welcm3 ? ' · 🎞️ welcm3 ON' : '';
+    const media = gs.welcomeWithMedia ? ' · 🖼️ foto custom' : '';
+    await reply(
+      `👋 *WELCOME* ${gs.welcomeEnabled !== false ? '🟢 ON' : '🔴 OFF'}${w2}${w3}${media}\n` +
+      `📝 Texto: _${(gs.customWelcomeMsg || 'padrão do tema').slice(0, 80)}_\n\n` +
+      `• \`${prefix}welcome on|off\`\n` +
+      `• \`${prefix}welcome texto Olá {user}!\`\n` +
+      `• \`${prefix}legendabv <texto>\` · \`${prefix}fotobv\` (marca foto)\n` +
+      `• \`${prefix}welcome2 on\` · \`${prefix}welcm3 on\` (arte IA / GIF)\n` +
+      `• Despedida: \`${prefix}goodbye\` / \`${prefix}saida\``,
+    );
   });
+
+  // !goodbye / !saida / !despedida — mensagem de saída (vem SEMPRE junto com welcome)
+  registerCase(['goodbye', 'saida', 'despedida', 'adeus'], async ({ sock, msg, ctx, args, prefix, reply }) => {
+    if (!await requireSenderAdmin(sock, ctx, reply)) return;
+    const gs = await _gsUpsert(ctx.remoteJid);
+    const sub = String(args[0] || 'status').toLowerCase();
+    let saved = false;
+    const onOff = _parseOnOff(sub);
+    if (onOff === true) { gs.goodbyeEnabled = true; saved = true; }
+    else if (onOff === false) { gs.goodbyeEnabled = false; saved = true; }
+    else if (['texto', 'set', 'msg', 'mensagem'].includes(sub)) {
+      const t = args.slice(1).join(' ').trim();
+      if (!t) {
+        return reply(
+          `Variáveis: \`{user}\` \`{nome}\` \`{grupo}\` \`{bot}\`\n` +
+          `Ex: *${prefix}goodbye texto* {user} saiu de {grupo}. Até!`,
+        );
+      }
+      gs.customGoodbyeMsg = t.slice(0, 800); saved = true;
+    } else if (['reset', 'limpar', 'default'].includes(sub)) {
+      gs.customGoodbyeMsg = ''; saved = true;
+    } else if (onOff === null && args.length && !['status', 'info', 'ver'].includes(sub)) {
+      const t = args.join(' ').trim();
+      if (t.length > 2) { gs.customGoodbyeMsg = t.slice(0, 800); saved = true; }
+    }
+    if (saved) await gs.save();
+    const media = gs.goodbyeWithMedia ? ' · 🖼️ foto custom' : '';
+    await reply(
+      `🚪 *DESPEDIDA* ${gs.goodbyeEnabled !== false ? '🟢 ON' : '🔴 OFF'}${media}\n` +
+      `📝 Texto: _${(gs.customGoodbyeMsg || 'padrão').slice(0, 80)}_\n\n` +
+      `• \`${prefix}goodbye on|off\` / \`${prefix}saida on|off\`\n` +
+      `• \`${prefix}legendasaiu <texto>\` · \`${prefix}fotosaiu\` (marca foto)\n` +
+      `• Boas-vindas: \`${prefix}welcome\``,
+    );
+  });
+
+  // !legendabv — define o texto do welcome
+  registerCase(['legendabv', 'msgbv', 'textbv'], async ({ sock, msg, ctx, args, prefix, reply }) => {
+    if (!await requireSenderAdmin(sock, ctx, reply)) return;
+    const gs = await _gsUpsert(ctx.remoteJid);
+    const t = args.join(' ').trim();
+    if (!t) {
+      return reply(
+        `📜 *LEGENDA BV*\nActual: _${(gs.customWelcomeMsg || 'padrão').slice(0, 120)}_\n\n` +
+        `Usa: \`${prefix}legendabv Olá {user}! Bem-vindo a {grupo}\`\n` +
+        `Vars: {user} {nome} {grupo} {bot} {dono}`,
+      );
+    }
+    if (['reset', 'limpar', 'off', 'default'].includes(t.toLowerCase())) {
+      gs.customWelcomeMsg = ''; await gs.save();
+      return reply('✅ Legenda de boas-vindas reposta ao padrão.');
+    }
+    gs.customWelcomeMsg = t.slice(0, 800);
+    gs.welcomeEnabled = true;
+    await gs.save();
+    return reply(`✅ Legenda BV guardada e welcome 🟢 ON:\n_${gs.customWelcomeMsg.slice(0, 160)}_`);
+  });
+
+  // !legendasaiu — define o texto da despedida
+  registerCase(['legendasaiu', 'msgsaiu', 'textsaiu', 'legendagoodbye'], async ({ sock, msg, ctx, args, prefix, reply }) => {
+    if (!await requireSenderAdmin(sock, ctx, reply)) return;
+    const gs = await _gsUpsert(ctx.remoteJid);
+    const t = args.join(' ').trim();
+    if (!t) {
+      return reply(
+        `📜 *LEGENDA SAÍDA*\nActual: _${(gs.customGoodbyeMsg || 'padrão').slice(0, 120)}_\n\n` +
+        `Usa: \`${prefix}legendasaiu {user} saiu de {grupo}. Até!\`\n` +
+        `Vars: {user} {nome} {grupo} {bot} {dono}`,
+      );
+    }
+    if (['reset', 'limpar', 'off', 'default'].includes(t.toLowerCase())) {
+      gs.customGoodbyeMsg = ''; await gs.save();
+      return reply('✅ Legenda de despedida reposta ao padrão.');
+    }
+    gs.customGoodbyeMsg = t.slice(0, 800);
+    gs.goodbyeEnabled = true;
+    await gs.save();
+    return reply(`✅ Legenda de saída guardada e despedida 🟢 ON:\n_${gs.customGoodbyeMsg.slice(0, 160)}_`);
+  });
+
+  // !fotobv / !rmfotobv — imagem custom de boas-vindas
+  registerCase(['fotobv', 'imgbv', 'fotobemvindo'], async ({ sock, msg, ctx, prefix, reply }) => {
+    if (!await requireSenderAdmin(sock, ctx, reply)) return;
+    const r = await _saveQuotedImage(sock, msg, ctx, 'welcome');
+    if (!r.ok) return reply(r.err + `\n\nMarca uma imagem e manda \`${prefix}fotobv\`.`);
+    const gs = await _gsUpsert(ctx.remoteJid);
+    gs.welcomeWithMedia = r.url;
+    gs.welcomeEnabled = true;
+    await gs.save();
+    return reply(
+      `🖼️ *FOTO BV* guardada!\nWelcome 🟢 ON\nFonte: \`${String(r.url).slice(0, 60)}\`\n\n` +
+      `Remove com \`${prefix}rmfotobv\`.`,
+    );
+  });
+
+  registerCase(['rmfotobv', 'delfotobv', 'semfotobv'], async ({ sock, ctx, prefix, reply }) => {
+    if (!await requireSenderAdmin(sock, ctx, reply)) return;
+    const gs = await _gsUpsert(ctx.remoteJid);
+    gs.welcomeWithMedia = '';
+    await gs.save();
+    return reply(`🗑️ Foto de boas-vindas removida. Volta ao cartão gerado / welcome2 / texto.\n\`${prefix}fotobv\` para pôr outra.`);
+  });
+
+  // !fotosaiu / !rmfotosaiu — imagem custom de despedida
+  registerCase(['fotosaiu', 'imagsaiu', 'fotogoodbye'], async ({ sock, msg, ctx, prefix, reply }) => {
+    if (!await requireSenderAdmin(sock, ctx, reply)) return;
+    const r = await _saveQuotedImage(sock, msg, ctx, 'goodbye');
+    if (!r.ok) return reply(r.err + `\n\nMarca uma imagem e manda \`${prefix}fotosaiu\`.`);
+    const gs = await _gsUpsert(ctx.remoteJid);
+    gs.goodbyeWithMedia = r.url;
+    gs.goodbyeEnabled = true;
+    await gs.save();
+    return reply(`🖼️ *FOTO SAÍDA* guardada!\nDespedida 🟢 ON\nRemove com \`${prefix}rmfotosaiu\`.`);
+  });
+
+  registerCase(['rmfotosaiu', 'delfotosaiu', 'semfotosaiu'], async ({ sock, ctx, prefix, reply }) => {
+    if (!await requireSenderAdmin(sock, ctx, reply)) return;
+    const gs = await _gsUpsert(ctx.remoteJid);
+    gs.goodbyeWithMedia = '';
+    await gs.save();
+    return reply('🗑️ Foto de despedida removida.');
+  });
+
 
   // ══════════════════════════════════════════════════════════════════
   // !setnomegrupo — Altera nome do grupo

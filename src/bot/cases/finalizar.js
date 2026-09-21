@@ -389,17 +389,46 @@ const adminHandlers = {
     await botConfigCache.set('autorespostas:' + ctx.remoteJid, on);
     return reply(sock, msg, ctx, `🤖 *AUTO-RESPOSTAS* ${on ? 'ACTIVAS ✅' : 'DESACTIVADAS ❌'}`);
   },
-  async bemvindo({ sock, msg, ctx, args }) {
+  async bemvindo({ sock, msg, ctx, args, prefix }) {
+    // Alias de !welcome — grava em GroupSettings.welcomeEnabled (o motor real)
     if (!ctx.isGroup) return reply(sock, msg, ctx, '👥 Só em grupos.');
-    const on = args[0]?.toLowerCase() !== 'off';
-    await botConfigCache.set('bemvindo:' + ctx.remoteJid, on);
-    return reply(sock, msg, ctx, `👋 *BOAS-VINDAS* ${on ? 'ACTIVAS ✅' : 'DESACTIVADAS ❌'}\n\nDefine a mensagem: *legendabv*`);
+    const GroupSettings = require('../../database/models/GroupSettings');
+    const a = String(args[0] || '').toLowerCase();
+    const gs = await GroupSettings.findOneAndUpdate(
+      { groupJid: ctx.remoteJid },
+      { $setOnInsert: { groupJid: ctx.remoteJid } },
+      { upsert: true, new: true },
+    );
+    if (['off', 'desativar', 'desligar', '0'].includes(a)) gs.welcomeEnabled = false;
+    else if (['on', 'ativar', 'ligar', '1', ''].includes(a) || !a) gs.welcomeEnabled = true;
+    await gs.save();
+    const p = prefix || '!';
+    return reply(sock, msg, ctx,
+      `👋 *BOAS-VINDAS* ${gs.welcomeEnabled !== false ? 'ACTIVAS ✅' : 'DESACTIVADAS ❌'}\n\n` +
+      `Define a mensagem: *${p}legendabv <texto>*\n` +
+      `Arte IA: *${p}welcome2 on* · GIF: *${p}welcm3 on*\n` +
+      `Despedida: *${p}saida* / *${p}goodbye*`,
+    );
   },
-  async saida({ sock, msg, ctx, args }) {
+  async saida({ sock, msg, ctx, args, prefix }) {
+    // Alias de !goodbye — grava em GroupSettings.goodbyeEnabled (o motor real)
     if (!ctx.isGroup) return reply(sock, msg, ctx, '👥 Só em grupos.');
-    const on = args[0]?.toLowerCase() !== 'off';
-    await botConfigCache.set('saida:' + ctx.remoteJid, on);
-    return reply(sock, msg, ctx, `🚪 *MENSAGEM DE SAÍDA* ${on ? 'ACTIVA ✅' : 'DESACTIVADA ❌'}`);
+    const GroupSettings = require('../../database/models/GroupSettings');
+    const a = String(args[0] || '').toLowerCase();
+    const gs = await GroupSettings.findOneAndUpdate(
+      { groupJid: ctx.remoteJid },
+      { $setOnInsert: { groupJid: ctx.remoteJid } },
+      { upsert: true, new: true },
+    );
+    if (['off', 'desativar', 'desligar', '0'].includes(a)) gs.goodbyeEnabled = false;
+    else if (['on', 'ativar', 'ligar', '1', ''].includes(a) || !a) gs.goodbyeEnabled = true;
+    await gs.save();
+    const p = prefix || '!';
+    return reply(sock, msg, ctx,
+      `🚪 *MENSAGEM DE SAÍDA* ${gs.goodbyeEnabled !== false ? 'ACTIVA ✅' : 'DESACTIVADA ❌'}\n\n` +
+      `Define o texto: *${p}legendasaiu <texto>*\n` +
+      `Foto: *${p}fotosaiu* (marca uma imagem)`,
+    );
   },
   async capturalink({ sock, msg, ctx, args }) {
     if (!ctx.isGroup) return reply(sock, msg, ctx, '👥 Só em grupos.');

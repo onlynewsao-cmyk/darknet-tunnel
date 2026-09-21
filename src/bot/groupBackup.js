@@ -29,6 +29,7 @@ const BACKUP_FIELDS = [
   // welcome/goodbye
   'welcome', 'goodbye', 'customWelcome', 'customGoodbye',
   'welcomeEnabled', 'goodbyeEnabled', 'customWelcomeMsg', 'customGoodbyeMsg',
+  'welcomeWithMedia', 'goodbyeWithMedia', 'welcome2', 'welcm3',
   'welcomeWithPhoto', 'welcomeWithMedia',
   // marca de stickers
   'stickerPackName', 'stickerAuthorName', 'stickerWmEnabled', 'stickerChannelUrl',
