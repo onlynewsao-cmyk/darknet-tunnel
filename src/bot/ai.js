@@ -587,8 +587,11 @@ async function chat(prompt, context = '', memoryOpts = {}, isPriority = false) {
   // System prompt com personalidade (inclui tema activo e papel do utilizador)
   const system = context || await buildSystemPrompt(userTone, userProfile, groupContext, userRole);
 
-  // v9.20: cache de respostas — perguntas repetidas não gastam tokens
-  const cached = aiCacheGet(prompt, system);
+  // v9.22: modo simples — cache com chave normalizada para mensagens curtas
+  // (melhora hit rate: "Oi" = "oi" = "OI" → mesma resposta)
+  const simpleMode = prompt.length < 80 && !needsWeb(prompt);
+  const cacheKey = simpleMode ? prompt.toLowerCase().trim() : prompt;
+  const cached = aiCacheGet(cacheKey, system);
   if (cached) return cached;
 
   // Contexto web se necessário
@@ -600,8 +603,9 @@ async function chat(prompt, context = '', memoryOpts = {}, isPriority = false) {
     } catch {}
   }
 
-  // Histórico de conversa (últimas 16 mensagens)
-  const histMsgs = history.slice(-16).map(h => ({
+  // Histórico de conversa (últimas 16 mensagens, ou 6 para modo simples)
+  const histLimit = simpleMode ? 6 : 16;
+  const histMsgs = history.slice(-histLimit).map(h => ({
     role:    h.role === 'assistant' ? 'assistant' : 'user',
     content: String(h.content || '').slice(0, 600),
   }));
@@ -617,7 +621,7 @@ async function chat(prompt, context = '', memoryOpts = {}, isPriority = false) {
     try {
       result = await withTimeout(chatGroq(messages, system), TIMEOUT);
       providerReset('groq');
-      aiCacheSet(prompt, system, result);
+      aiCacheSet(cacheKey, system, result);
       return result;
     } catch (e) { providerFail('groq', e); console.warn('[IA] Groq:', shortErr(e)); }
   }
@@ -626,7 +630,7 @@ async function chat(prompt, context = '', memoryOpts = {}, isPriority = false) {
     try {
       result = await withTimeout(chatDeepSeek(messages, system), TIMEOUT);
       providerReset('deepseek');
-      aiCacheSet(prompt, system, result);
+      aiCacheSet(cacheKey, system, result);
       return result;
     } catch (e) { providerFail('deepseek', e); console.warn('[IA] DeepSeek:', shortErr(e)); }
   }
@@ -635,7 +639,7 @@ async function chat(prompt, context = '', memoryOpts = {}, isPriority = false) {
     try {
       result = await withTimeout(chatGemini(messages, system), TIMEOUT);
       providerReset('gemini');
-      aiCacheSet(prompt, system, result);
+      aiCacheSet(cacheKey, system, result);
       return result;
     } catch (e) { providerFail('gemini', e); console.warn('[IA] Gemini:', shortErr(e)); }
   }
@@ -644,7 +648,7 @@ async function chat(prompt, context = '', memoryOpts = {}, isPriority = false) {
     try {
       result = await withTimeout(chatHuggingFace(messages, system), TIMEOUT);
       providerReset('huggingface');
-      aiCacheSet(prompt, system, result);
+      aiCacheSet(cacheKey, system, result);
       return result;
     } catch (e) { providerFail('huggingface', e); console.warn('[IA] HuggingFace:', shortErr(e)); }
   }
@@ -654,7 +658,7 @@ async function chat(prompt, context = '', memoryOpts = {}, isPriority = false) {
     try {
       result = await withTimeout(chatCerebras(messages, system), TIMEOUT);
       providerReset('cerebras');
-      aiCacheSet(prompt, system, result);
+      aiCacheSet(cacheKey, system, result);
       return result;
     } catch (e) { providerFail('cerebras', e); console.warn('[IA] Cerebras:', shortErr(e)); }
   }
@@ -664,7 +668,7 @@ async function chat(prompt, context = '', memoryOpts = {}, isPriority = false) {
     try {
       result = await withTimeout(chatApiFreeLLM(messages, system), TIMEOUT);
       providerReset('apifreellm');
-      aiCacheSet(prompt, system, result);
+      aiCacheSet(cacheKey, system, result);
       return result;
     } catch (e) { providerFail('apifreellm', e); console.warn('[IA] ApiFreeLLM:', shortErr(e)); }
   }
@@ -673,7 +677,7 @@ async function chat(prompt, context = '', memoryOpts = {}, isPriority = false) {
     try {
       result = await withTimeout(chatRouter(messages, system), TIMEOUT);
       providerReset('openrouter');
-      aiCacheSet(prompt, system, result);
+      aiCacheSet(cacheKey, system, result);
       return result;
     } catch (e) { providerFail('openrouter', e); console.warn('[IA] Router:', shortErr(e)); }
   }
@@ -682,7 +686,7 @@ async function chat(prompt, context = '', memoryOpts = {}, isPriority = false) {
     try {
       result = await withTimeout(chatOpenAI(messages, system), TIMEOUT);
       providerReset('openai');
-      aiCacheSet(prompt, system, result);
+      aiCacheSet(cacheKey, system, result);
       return result;
     } catch (e) { providerFail('openai', e); console.warn('[IA] OpenAI:', shortErr(e)); }
   }

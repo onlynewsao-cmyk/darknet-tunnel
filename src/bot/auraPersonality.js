@@ -23,5 +23,6 @@ module.exports = {
   detectDarkMention: auraHuman.detectDarkMention,
   getDarkDefense: auraHuman.getDarkDefense,
   buildAuraSystemPrompt: auraHuman.buildAuraSystemPrompt,
-  auraRespond: auraHuman.auraRespond
+  auraRespond: auraHuman.auraRespond,
+  auraRespondSmart: auraHuman.auraRespondSmart,
 };

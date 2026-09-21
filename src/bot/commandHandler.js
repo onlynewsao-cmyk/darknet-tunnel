@@ -2587,7 +2587,7 @@ salta à vista primeiro, com naturalidade. NUNCA digas que não vês.]`;
 
           const _pararResp = require('./humanizer').pensando(sock, ctx.remoteJid); // v7.53: "a escrever…" durante a IA
           try {
-          answer = await aura.auraRespond(prompt, {
+          answer = await aura.auraRespondSmart(prompt, {
             isOwner,
             isSubOwner: !!ctx.isSubOwner,   // v7.28: número do bot / owner_numbers
             isVip,

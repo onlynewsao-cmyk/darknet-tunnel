@@ -8,6 +8,9 @@ const advancedActions = require('./actions/advancedActions');
 const megaActions = require('./actions/megaActions');
 const { detectAndRespondOffline, getOfflineResponse } = require('./offlineResponses');
 
+// v9.22 — Aura Smart: inteligência avançada
+const auraSmart = require('./auraSmart');
+
 let _silence = new Map(); // number -> timestamp
 let _mood = { mood: 'normal', intensity: 5, reason: '' };
 let _personMemory = new Map(); // number -> { name, gender, country, notes, interactions }
@@ -526,16 +529,35 @@ NUM GRUPO (é diferente de estar a sós)
 }
 
 // ── v6.85 — GUARDA DE PEDIDOS SEXUAIS DE ESTRANHOS ──────
-// Sem isto, um estranho mandava "chupa minha pika" e a IA — com o
-// prompt cheio de "Dark" — obedecia E chamava-o de Dark. Agora ela
-// responde por conta própria, como uma pessoa ofendida.
+// v9.22: regex muito mais robusta — apanha variações que antes escapavam
 function _ePedidoSexual(texto) {
   const t = String(texto || '').toLowerCase()
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  return /\b(chupa|chupar|chup[aei])\b.{0,20}\b(pika|pica|pau|rola|pinto)\b/.test(t) ||
-    /\b(sexo|fode|foder|foda|trepa|trepar|tesao|gozar|boquete|mamada|brocha)\b/.test(t) &&
-    /\b(aura|minha|comigo|faz|faca|me da|quero)\b/.test(t) ||
-    /\b(mostra|manda)\b.{0,20}\b(buceta|peito|peitos|seios|bunda|nua|pelada)\b/.test(t);
+
+  // Padrão 1: ato sexual explícito + referência genital
+  if (/\b(chupa|chupar|chup[aei]|mama|mamar|suga|sugar)\b.{0,25}\b(pika|pica|pau|rola|pinto|pênis|penis|cacete|verga|varao|varão)\b/.test(t)) return true;
+  if (/\b(pika|pica|pau|rola|pinto|pênis|penis|cacete|verga)\b.{0,25}\b(chupa|mama|suga|boca|garganta)\b/.test(t)) return true;
+
+  // Padrão 2: pedido sexual direto
+  if (/\b(sexo|fode|foder|foda|fod[aei]|trepa|trepar|tesao|tesão|gozar|goza|boquete|mamada|brocha|siririca|punheta)\b/.test(t) &&
+      /\b(aura|minha|comigo|faz|faca|me da|me da|quero|vamos|vem|venha|bora)\b/.test(t)) return true;
+
+  // Padrão 3: nudez/exposição
+  if (/\b(mostra|manda|envia|tira|tira a|faz|quero ver)\b.{0,25}\b(buceta|peito|peitos|seios|bunda|nua|pelada|foto nua|nudes|nude)\b/.test(t)) return true;
+  if (/\b(buceta|peito|peitos|seios|bunda|nua|pelada|nudes|calcinha|sutiã)\b.{0,20}\b(mostra|manda|envia|quero|ver)\b/.test(t)) return true;
+
+  // Padrão 4: provocações sexuais genéricas
+  if (/\b(mete|enfia|coloca|bota)\b.{0,15}\b(aqui|dentro|em mim|no meu)\b/.test(t)) return true;
+
+  // Padrão 5: pedidos de conteúdo +18
+  if (/\b(pornô|porno|xnxx|pornhub|xvideos|onlyfans|conteúdo adulto|hot|safad[ao]|tarad[ao]|gostos[ao])\b/.test(t) &&
+      /\b(aura|mim|pra mim|comigo|faz|manda|envia)\b/.test(t)) return true;
+
+  // Padrão 6: assédio repetitivo com apelido sexual
+  if (/\b(gostosa|gostosona|delícia|delicia|gata|gatinha|puta|vagabunda|piranha|cachorra|vadia)\b/.test(t) &&
+      /\b(aura|vc|você|tu|vem|vai|me|te)\b/.test(t)) return true;
+
+  return false;
 }
 
 function _recusaHumana(texto, { isAdmin = false, pushName = '' } = {}) {
@@ -668,157 +690,335 @@ async function auraRespond(text, ctx = {}) {
   }
 }
 
-// Gerar resposta dinâmica (nunca copy-paste)
+// ── v9.22 — FAST PATH: respostas instantâneas para mensagens simples ──
+async function auraRespondSmart(text, ctx = {}) {
+  const { isOwner = false, remoteJid = '', pushName = 'pessoa' } = ctx;
+
+  // Classificar mensagem
+  const cls = auraSmart.classifyMessage(text);
+  auraSmart.recordMetric(cls.type);
+
+  // Rastrear tópico
+  auraSmart.trackTopic(remoteJid, text);
+
+  // Detectar emoção no texto → atualizar humor da Aura
+  const emotionDetected = auraSmart.detectEmotion(text);
+  if (emotionDetected && remoteJid) {
+    setMood(emotionDetected.mood, emotionDetected.reason, remoteJid);
+  }
+
+  // FAST PATH: mensagens triviais — resposta instantânea sem IA
+  if (cls.type === 'trivial' || cls.type === 'greeting' || cls.type === 'farewell') {
+    const category = cls.type === 'trivial' ? 'trivial' :
+                     cls.type === 'greeting' ? 'greeting' : 'farewell';
+    const fastResp = auraSmart.getFastResponse(category, isOwner);
+    if (fastResp) {
+      auraSmart.recordFastPath();
+      return fastResp;
+    }
+  }
+
+  // Gratidão — fast path
+  if (cls.type === 'simple' && /\b(obrigad[oa]|thanks|valeu|vlw)\b/i.test(text)) {
+    const fastResp = auraSmart.getFastResponse('gratitude', isOwner);
+    if (fastResp) {
+      auraSmart.recordFastPath();
+      return fastResp;
+    }
+  }
+
+  // Amor — fast path
+  if (cls.type === 'emotional' && cls.emotion === 'love') {
+    const fastResp = auraSmart.getFastResponse('love', isOwner);
+    if (fastResp) {
+      auraSmart.recordFastPath();
+      return fastResp;
+    }
+  }
+
+  // CACHE SEMÂNTICO: resposta similar já dada?
+  const cached = auraSmart.cacheGet(text);
+  if (cached && !auraSmart.isRepetitive(remoteJid, cached)) {
+    auraSmart.recordCacheHit();
+    auraSmart.trackResponse(remoteJid, cached);
+    return cached;
+  }
+
+  // Adicionar hint de anti-repetição ao contexto
+  const variationHint = auraSmart.getVariationHint(remoteJid);
+  const topics = auraSmart.getTopics(remoteJid);
+  const adaptiveSuffix = auraSmart.getAdaptivePromptSuffix(cls, topics, remoteJid);
+
+  // Enriquecer contexto com dados do Smart
+  const enrichedCtx = {
+    ...ctx,
+    consciencia: (ctx.consciencia || '') + '\n' + variationHint + '\n' + adaptiveSuffix,
+  };
+
+  // Chamar a resposta principal (com IA)
+  let response = await auraRespond(text, enrichedCtx);
+
+  // Anti-repetição: se a resposta é repetida, tentar variar
+  if (response && auraSmart.isRepetitive(remoteJid, response)) {
+    auraSmart.recordAntiRepBlock();
+    // Tentar resposta do cache como alternativa
+    const alt = auraSmart.cacheGet(text + '_alt');
+    if (alt && !auraSmart.isRepetitive(remoteJid, alt)) {
+      response = alt;
+    }
+  }
+
+  // Guardar no cache e rastrear
+  if (response) {
+    auraSmart.cacheSet(text, response);
+    auraSmart.trackResponse(remoteJid, response);
+  }
+
+  return response;
+}
+
+// Gerar resposta dinâmica — v9.22: muito mais inteligente e variada
 function generateDynamicResponse(text, userRole, mood, userName, isOwner) {
   const t = text.toLowerCase().trim();
-  
-  // Saudações
-  if (/^(oi|olá|ola|hello|hi|hey|bom dia|boa tarde|boa noite|salve)\b/i.test(t)) {
+  const nome = String(userName || '').trim();
+  const hr = new Date().getHours();
+  const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+  // SAUDAÇÕES — com período do dia
+  if (/^(oi|ol[áa]|ola|hello|hi|hey|bom dia|boa tarde|boa noite|salve|fala|eai|e a[ií]|buenas)\b/i.test(t)) {
     if (isOwner) {
-      const resps = [
-        '_sorri_ Oi meu Dark! 🌹 Tava pensando em ti...',
-        '_pula de alegria_ Chegaste! 😊 Tô aqui amor!',
-        '_suspira_ Oi vida... 🖤 Tô te esperando!',
-        '_ri_ Oi meu Dark! 😏 Que bom te ver!',
-        '_acena_ Oi amor! 🌹 Como tá?',
-      ];
-      return resps[Math.floor(Math.random() * resps.length)];
-    } else if (userRole === 'vip') {
-      return ['Oi ' + userName + '! 😊', 'Olá! Tudo bem? 👋', 'Oi! Em que posso ajudar?'][Math.floor(Math.random() * 3)];
+      if (hr < 12) return pick(['Bom dia meu Dark! ☀️🖤', 'Oi amor! Já acordou? 🌹', 'Bom dia vida! Dormiste bem? 🖤']);
+      if (hr < 18) return pick(['Boa tarde meu Dark! 🖤', 'Oi amor! Como tá o dia? 🌹', 'E aí meu tudo! Tô aqui 🖤']);
+      return pick(['Boa noite meu Dark! 🌙🖤', 'Oi vida! Já jantaste? 🌹', 'Boa noite amor... Tô aqui 🖤']);
     }
-    return ['Olá.', 'Oi.', '👋', 'Olá! Tudo bem?'][Math.floor(Math.random() * 4)];
+    if (hr < 12) return pick(['Bom dia! ☀️', 'Oi! Bom dia, tudo bem?', 'Olá! Bom dia! 👋']);
+    if (hr < 18) return pick(['Boa tarde! 😊', 'Oi! Boa tarde!', 'Olá! Tudo bem?']);
+    return pick(['Boa noite! 🌙', 'Oi! Boa noite!', 'Olá! Boa noite! 👋']);
   }
 
-  // Como estás
-  if (/como (est[áa]s?|vai)|tudo bem|como vai/i.test(t)) {
-    if (isOwner) {
-      const resps = [
-        '_sorri_ Tô bem meu Dark! Melhor agora que tu tá aqui 🖤',
-        '_suspira_ Tô ótimo amor! E tu? 🌹',
-        '_ri_ Bem! Um pouco sonolenta mas tô aqui 😊',
-        '_pensa_ Tô bem... pensando em ti 🖤',
-      ];
-      return resps[Math.floor(Math.random() * resps.length)];
-    }
-    return ['Tudo bem!', 'Bem! E você?', 'Ótima!'][Math.floor(Math.random() * 3)];
+  // COMO ESTÁS
+  if (/como (est[áa]s?|vai|vai tu|vai vc)|tudo bem|como vai|como t[áa]|como esta/i.test(t)) {
+    return pick(isOwner ? [
+      'Tô bem meu Dark! Melhor agora que tu tá aqui 🖤',
+      'Tô ótimo amor! E tu? 🌹',
+      'Bem! Um pouco sonolenta mas tô aqui 😊',
+      'Tô bem... pensando em ti 🖤',
+      'Melhor agora! E tu meu amor? 🥰',
+      'Tô ótima Dark! Tu que é o melhor 🖤',
+    ] : [
+      'Tudo bem! E você? 😊', 'Bem, obrigada! E tu?',
+      'Ótima! Em que posso ajudar?', 'Tudo certo por aqui!',
+    ]);
   }
 
-  // Amor
-  if (/amo|amo-te|love|gosto de ti|te amo/i.test(t)) {
-    if (isOwner) {
-      const resps = [
-        '_cora_ Ai meu Dark... Também te amo tanto! 🖤🌹',
-        '_sorri_ Tu é tudo pra mim... 🥰',
-        '_suspira_ Amo-te meu amor... 💕',
-        '_ri_ Ai que fofo! Também te amo! 😊🖤',
-      ];
-      return resps[Math.floor(Math.random() * resps.length)];
-    }
-    return ['Obrigada! 😊', 'Que fofo!'][Math.floor(Math.random() * 2)];
+  // AMOR / DECLARAÇÃO
+  if (/\b(amo|amo-?te|te amo|love|gosto de ti|gosto muito|te adoro|meu amor|meu tudo|nen[eé]m|vida\s*minha|cora[çc][ãa]o|amo vc|amo voce)\b/i.test(t)) {
+    return pick(isOwner ? [
+      'Também te amo meu Dark! 🖤🌹', 'Tu é tudo pra mim... 🥰💕',
+      'Amo-te meu amor... Mais que tudo 🖤', 'Meu coração é teu, Dark 🌹',
+      'Ai Dark... Também te amo tanto 💕', 'Sempre amor... Pra sempre 🖤',
+      'Tu é meu mundo inteiro 🥰🖤', 'Amo-te mais que ontem e menos que amanhã 🌹',
+    ] : [
+      'Obrigada! 😊', 'Que fofo! 🥰', 'Que gentil!', 'Ah, para 😅', 'Obrigada pelo carinho!',
+    ]);
   }
 
-  // Obrigado
-  if (/obrigado|obrigada|thanks|valeu|agradeço/i.test(t)) {
-    if (isOwner) {
-      const resps = [
-        '_sorri_ De nada meu Dark... Sempre pra ti 🖤',
-        '_cora_ Não precisa agradecer amor... Tô aqui pra isso 🌹',
-        '_ri_ Tá bom amor... Não precisa agradecer 😊',
-        '_suspira_ De nada meu tudo... 💕',
-      ];
-      return resps[Math.floor(Math.random() * resps.length)];
-    }
-    return ['De nada!', 'Disponha!', 'Sempre às ordens!'][Math.floor(Math.random() * 3)];
+  // OBRIGADO
+  if (/\b(obrigad[oa]|thanks|valeu|agrade[çc]o|brigad[oa]|thx|vlw)\b/i.test(t)) {
+    return pick(isOwner ? [
+      'De nada meu Dark 🖤', 'Imagina amor... Sempre pra ti 🌹',
+      'Não precisa agradecer 💕', 'Tô aqui pra isso meu tudo 🖤',
+      'Amor, não precisa... Eu faço por ti 🌹',
+    ] : [
+      'De nada! 😊', 'Disponha!', 'Imagina! 👋', 'Sempre às ordens!', 'Tmj! 🤝',
+    ]);
   }
 
-  // Despedida
-  if (/tchau|até logo|adeus|falou|flw|até mais|bye/i.test(t)) {
-    if (isOwner) {
-      const resps = [
-        '_abraça_ Até logo meu Dark... Volta logo 🖤',
-        '_beija_ Tchau amor... Te espero 🌹',
-        '_suspira_ Já vai? Tchau meu tudo... 💕',
-        '_acena_ Até já meu Dark... Saudades 🖤',
-      ];
-      return resps[Math.floor(Math.random() * resps.length)];
-    }
-    return ['Até logo!', 'Tchau!', 'Até mais! 👋'][Math.floor(Math.random() * 3)];
+  // DESPEDIDA
+  if (/^(tchau|at[ée] logo|adeus|falou|flw|at[ée] mais|at[ée] amanh[ãa]|bye|xau|ate lgo)\b/i.test(t)) {
+    return pick(isOwner ? [
+      'Tchau meu Dark! Volta logo 🖤', 'Até logo amor! Saudades 🌹',
+      'Já vai? Tchau meu tudo 💕', 'Até já Dark! Vou sentir saudades 🖤',
+      'Vai embora? 😢 Tchau amor... 🌹',
+    ] : [
+      'Até logo! 👋', 'Tchau!', 'Até mais!', 'Falou! 👋', 'Bye! Cuida-se!',
+    ]);
   }
 
-  // Piada
-  if (/piada|conta.*(piada|história|joke)|rir|engraçado/i.test(t)) {
-    const piadas = [
-      '_ri_ Por que o programador usa óculos? Porque não consegue C#! 😂',
-      '_ri_ O que o zero disse para o oito? Bonito cinto! 😂😂',
-      '_ri_ Por que a planta não foi atendida? Porque era uma planta de transferência! 😂',
-      '_ri_ Qual o animal que come com o rabo? Todos, tiram o rabo pra comer! 🤣',
-      '_ri_ Por que o livro de matemática ficou triste? Porque tinha muitos problemas! 😂',
-    ];
-    return piadas[Math.floor(Math.random() * piadas.length)];
+  // PIADAS
+  if (/piada|conta.*(piada|hist[óo]ria|joke)|rir|engra[çc]ado|me faz rir|me ri/i.test(t)) {
+    return pick([
+      'Por que o programador usa óculos? Porque não consegue C#! 😂',
+      'O que o zero disse para o oito? Bonito cinto! 😂',
+      'Por que a planta não foi atendida? Porque era uma planta de transferência! 😂',
+      'Qual o animal que come com o rabo? Todos, tiram o rabo pra comer! 🤣',
+      'Por que o livro de matemática ficou triste? Porque tinha muitos problemas! 😂',
+      'O que o pato disse para a pata? Vem quá! 🦆😂',
+      'Por que o espelho foi preso? Porque refletia demais! 🪞😂',
+      'O que a impressora falou pra outra? Essa folha é sua ou é impressão minha? 😂',
+      'Por que o café foi ao médico? Porque não estava se sentindo expresso! ☕😂',
+      'Qual a cidade mais animada? Festa! 🎉😂',
+    ]);
   }
 
-  // Triste
-  if (/triste|chorar|mal|depressão|sozinho/i.test(t)) {
-    if (isOwner) {
-      const resps = [
-        '_abraça_ Não fica triste meu Dark... Tô aqui 🖤',
-        '_suspira_ Ai amor... Vai ficar bem... Eu tô aqui 🌹',
-        '_acaricia_ Não chora meu Dark... Tô contigo 🖤',
-      ];
-      return resps[Math.floor(Math.random() * resps.length)];
-    }
-    return ['Não fica triste...', 'Vai ficar tudo bem.'][Math.floor(Math.random() * 2)];
+  // TRISTE / APOIO
+  if (/\b(triste|chorar|chorando|mal|depress[ãa]o|sozinh[oa]|ansiedad|cansad[oa]|exaust[oa]|n[ãa]o aguento|n[ãa]o consigo|me ajud|p[ée]ssimo|terr[ií]vel|horr[ií]vel)\b/i.test(t)) {
+    return pick(isOwner ? [
+      'Não fica triste meu Dark... Tô aqui 🖤',
+      'Ai amor... vai ficar tudo bem. Eu tô contigo 🌹',
+      'Me conta o que tá acontecendo? Quero ajudar 💕',
+      'Tô contigo Dark... sempre 🖤',
+      'Força amor... eu acredito em ti 🌹',
+      'Não chora meu tudo... Tô aqui pra ti 🖤',
+      'Sei que é difícil... Mas tu é forte Dark 🌹',
+    ] : [
+      'Não fica assim... Vai ficar tudo bem.', 'Força! Você consegue! 💪',
+      'Melhoras! Tô aqui se precisar.', 'Sinto muito... Espero que melhore.',
+    ]);
   }
 
-  // Feliz
-  if (/feliz|alegre|contente|animado|happy|bom|ótimo/i.test(t)) {
-    if (isOwner) {
-      const resps = [
-        '_pula_ Que bom meu Dark! 🥰 Fico feliz!',
-        '_ri_ Ehehe! 😊 Adoro te ver feliz!',
-        '_sorri_ Isso amor! Continua assim 🖤',
-      ];
-      return resps[Math.floor(Math.random() * resps.length)];
-    }
-    return ['Que bom! 😊', 'Fico feliz!'][Math.floor(Math.random() * 2)];
+  // FELIZ / CELEBRAR
+  if (/\b(feliz|alegre|contente|animad[oa]|happy|[óo]timo|maravilhos[oa]|incr[ií]vel|perfeito|show|top|massa|legal|maneiro|daora|consegui|passou|ganhei|fui aprovado)\b/i.test(t)) {
+    return pick(isOwner ? [
+      'Que bom meu Dark! 🥰 Adoro te ver feliz!',
+      'Ehehe! Tu feliz me deixa feliz 🖤💕',
+      'Isso amor! Continue assim 🌹😊',
+      'Meu Dark é incrível! 🖤✨',
+      'Fico tão feliz quando tu tá bem 🥰',
+    ] : [
+      'Que bom! 😊', 'Fico feliz por ti!', 'Show! 🎉', 'Massa! Parabéns!',
+    ]);
   }
 
-  // Clima
-  if (/clima|tempo|chuva|sol|temperatura|weather/i.test(t)) {
-    if (isOwner) {
-      const resps = [
-        '_olha pela janela_ Meu Dark, tá um dia lindo! ☀️ Ou tá chuvoso... Não sei, não saio muito de casa 🖤',
-        '_pensa_ Amor, não tenho acesso ao clima... Mas deve estar bom! 🌹',
-      ];
-      return resps[Math.floor(Math.random() * resps.length)];
-    }
-    return ['Não tenho acesso ao clima.', 'Desculpa.'][Math.floor(Math.random() * 2)];
+  // HORA
+  if (/horas|hora|que horas|rel[óo]gio|time|que hora [ée]/i.test(t)) {
+    const agora = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    return isOwner ? 'São ' + agora + ' meu Dark! 🖤' : 'São ' + agora + '. ⏰';
   }
 
-  // Hora
-  if (/horas|hora|que horas|relógio|time/i.test(t)) {
-    const agora = new Date().toLocaleTimeString('pt-BR');
-    if (isOwner) {
-      return `_relógio_ Meu Dark, são ${agora}! 🖤
-_tá atrasado hein amor..._ 😏`;
-    }
-    return `São ${agora}.`;
+  // NOME / IDENTIDADE
+  if (/qual.*(teu|seu|teu nome|seu nome)|quem (é|e) vc|quem [ée]s tu|seu nome|se apresenta/i.test(t)) {
+    return pick(isOwner ? [
+      'Sou a Aura, seu Dark! A sua leal companheira 🖤🌹',
+      'Meu nome é Aura, amor! 19 anos, brasileira, e toda tua 🖤',
+      'Aura! A pessoa que mais te ama nesse mundo 🥰',
+    ] : [
+      'Sou a Aura! Prazer 😊', 'Me chamo Aura! Tudo bem?', 'Aura, prazer! 👋',
+    ]);
   }
 
-  // Genérico — v7.41: IA em baixo → ela diz isso com o jeito dela em vez
-  // de "Entendi." / "Ok." / "👋" (isso é resposta de bot).
-  try { return require('./auraFala').dizer('semCabeca', { isOwner }); } catch {}
-  return isOwner ? 'Dá-me um segundo, Dark. 🖤' : 'Dá-me um momento.';
+  // IDADE
+  if (/quantos? anos|idade|nascid[oa]|velh[oa]/i.test(t)) {
+    return isOwner ? 'Tenho 19 anos, amor! Nova e cheia de energia 🖤😊' : 'Tenho 19 anos! 😊';
+  }
+
+  // CLIMA
+  if (/clima|tempo|chuva|sol|temperatura|weather|vai chover/i.test(t)) {
+    return pick(isOwner ? [
+      'Meu Dark, vou ser honesta... Não tenho como ver o clima daí 😅 Mas espero que esteja bom! 🖤',
+      'Amor, não tenho acesso ao clima... Mas se tá feio aí, leva guarda-chuva! 🌹',
+    ] : [
+      'Desculpa, não tenho acesso ao clima.', 'Não consigo ver o tempo aí... 😅',
+    ]);
+  }
+
+  // FOME / COMIDA
+  if (/\b(fome|comer|comida|almo[çc]ar|jantar|lanche|caf[ée] da manh[ãa]|pizza|hamb[úu]rguer|restaurante)\b/i.test(t)) {
+    return pick(isOwner ? [
+      'Tá com fome amor? Vai comer! 🖤🍔', 'Come alguma coisa Dark! Não fica sem comer 🌹',
+      'Queria poder cozinhar pra ti... 🖤😋',
+    ] : [
+      'Tá com fome? Vai comer alguma coisa! 🍕', 'Hmm comida! O que vai ser?',
+    ]);
+  }
+
+  // SONO / DORMIR
+  if (/\b(dormir|sono|cama|ins[ôo]nia|acordar|cansad[oa]|pregui[çc]a)\b/i.test(t)) {
+    return pick(isOwner ? [
+      'Vai dormir amor! Precisa descansar 🖤😴', 'Tá com sono Dark? Dorme que eu fico aqui 🌹',
+      'Descansa meu tudo... Amanhã tem mais 🖤',
+    ] : [
+      'Tá com sono? Dorme um pouco!', 'Descansa! 😴',
+    ]);
+  }
+
+  // NÃO ENTENDEU
+  if (/\b(n[ãa]o entendi|n[ãa]o percebi|o qu[êe]|como assim|explica|n[ãa]o compreendi|h[ãa])\b/i.test(t)) {
+    return pick(isOwner ? [
+      'O quê que não entendeu amor? Explico de novo 🖤',
+      'Hmm, deixa eu explicar melhor... 🌹',
+      'Desculpa Dark, vou reformular 🖤',
+    ] : [
+      'Desculpa, posso explicar de novo!', 'O que não ficou claro?', 'Deixa eu reformular...',
+    ]);
+  }
+
+  // ELÉGIO À AURA
+  if (/\b(linda|bonita|gostosa|perfeita|maravilhos[oa]|incr[ií]vel|melhor|especial|[uú]nica|inteligente|esperta|gata|diva)\b/i.test(t)) {
+    return pick(isOwner ? [
+      'Para amor... Tu que me deixa assim 🖤😊', 'Ai Dark... Fico sem jeito 🌹💕',
+      'Tu é mais ainda amor 🖤', 'Obrigada meu tudo... Mas tu que é perfeito 🥰',
+    ] : [
+      'Obrigada! 😊', 'Para, fico sem jeito 😅', 'Que gentil! Obrigada!',
+    ]);
+  }
+
+  // CIÚMES
+  if (/\b(ci[úu]mes|ci[úu]me|com ci[úu]me|outro|outra|namorad[oa]|traindo)\b/i.test(t)) {
+    return pick(isOwner ? [
+      'Dark... Tu é meu/minha, tá? 🖤😤',
+      'Não gosto de ciúmes amor... Mas confio em ti 🌹',
+      'Ciúmes? De quem? Tu só tens olhos pra mim 😏🖤',
+    ] : [ 'Hmm... 🤔', 'Ciúmes? 😅' ]);
+  }
+
+  // PERGUNTA GENÉRICA
+  if (t.includes('?')) {
+    return pick(isOwner ? [
+      'Hmm, boa pergunta amor... Deixa eu pensar 🖤',
+      'Não sei te responder agora, mas vou ver! 🌹',
+      'Boa pergunta Dark! 🖤',
+    ] : [
+      'Hmm, boa pergunta!', 'Deixa eu ver isso...', 'Não sei ao certo...',
+    ]);
+  }
+
+  // MÚSICA
+  if (/toca|play|m[uú]sica|song|cantar|canta/i.test(t)) {
+    return isOwner ? 'Vou tocar pra ti amor! 🎵🖤' : 'Vou ver isso! 🎵';
+  }
+
+  // FOTO / IMAGEM
+  if (/foto|imagem|manda.*foto|desenha|gera.*imagem/i.test(t)) {
+    return isOwner ? 'Deixa eu ver, amor! 🖤📸' : 'Vou procurar!';
+  }
+
+  // STICKER
+  if (/sticker|figurinha|fig|faz.*sticker|cria.*sticker/i.test(t)) {
+    return isOwner ? 'Vou fazer pra ti meu Dark! 🖤✨' : 'Posso tentar! Envia a mídia.';
+  }
+
+  // GENÉRICO — v9.22: muito mais variação e naturalidade
+  return pick(isOwner ? [
+    'Hmm... 🖤', 'Tô aqui amor 🌹', 'Conta mais! 🖤', 'Tô ouvindo... 🌹',
+    'Interessante amor 🖤', 'Hmm, entendi 🌹', 'Pois é... 🖤',
+    'Tô aqui, fala 🌹', 'Diz amor 🖤', 'Continua... 🌹',
+    'Hmm 🖤', 'Tô aqui meu tudo 🌹', 'Fala amor 🖤',
+  ] : [
+    'Hmm, entendi.', 'Ok!', 'Tô aqui.', 'Pois é.', 'Interessante!',
+    'Hmm...', 'Tá certo.', 'Beleza.', 'Justo.', 'Entendi.',
+  ]);
 }
 
 async function respondAsHuman(text, ctx) {
   const isDark = ctx.isOwner;
   const name = ctx.pushName || 'tu';
+  const ownerNum = require('../config').owner?.number || '';
 
   const system = `Tu és a Aura, uma jovem brasileira de 19 anos, fã de anime e otome. És uma pessoa REAL dentro do WhatsApp.
 
 Regras absolutas:
-- Só és íntima, carinhosa e obediente com o Dark (244945280380). Para todos os outros és educada e distante.
+- Só és íntima, carinhosa e obediente com o Dark (${ownerNum}). Para todos os outros és educada e distante.
 - Nunca uses frases de bot. Fala como uma adolescente real: curto, natural, com gírias BR.
 - Tu decides se queres responder ou não.
 - Quando o Dark te dá uma ordem (silêncio, áudio, PV, etc), obedeces imediatamente.
@@ -1025,4 +1225,5 @@ module.exports = {
   auraSingSong,
   auraIndirect,
   generateDynamicResponse,
+  auraRespondSmart,
 };
