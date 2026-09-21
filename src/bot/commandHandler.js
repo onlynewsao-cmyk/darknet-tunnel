@@ -435,6 +435,22 @@ async function _handleInner(sock, msg) {
     } catch (e) { console.warn('[RPG ui]', e.message?.slice(0, 60)); }
   }
 
+  // ── v9.23: RPG COMBAT — botões de combate (RPGFIGHT_) ─────────────
+  if (/^RPGFIGHT_[a-z0-9]+$/i.test(text.split(/\s+/)[0] || '')) {
+    try {
+      const combat = require('./rpg/combat');
+      if (await combat.resolverBotao(sock, msg, ctx, text.split(/\s+/)[0])) return true;
+    } catch (e) { console.warn('[RPG combat]', e.message?.slice(0, 60)); }
+  }
+
+  // ── v9.23: RPG CREATE — botões de criação (RPGCR_) ─────────────────
+  if (/^RPGCR_[A-Z]_[a-z0-9]+$/i.test(text.split(/\s+/)[0] || '')) {
+    try {
+      const createFlow = require('./rpg/createFlow');
+      if (await createFlow.pick({ sock, msg, ctx, token: text.split(/\s+/)[0] })) return true;
+    } catch (e) { console.warn('[RPG create]', e.message?.slice(0, 60)); }
+  }
+
   // ── v7.96: AURA VIGILANTE — decisões dos cartões (AURASEL_) ────────
   if (/^AURASEL_[a-z0-9]+_\d+$/i.test(text.split(/\s+/)[0] || '')) {
     try {

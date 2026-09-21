@@ -342,8 +342,24 @@ function addXP(p, amount) {
     p.maxMp += 5 + (p.stats?.int || 5);
     p.hp = p.maxHp;
     p.mp = p.maxMp;
+    // v9.23: pontos de stats livres (point-buy) em vez de aleatório
+    if (typeof p.statPoints !== 'number') p.statPoints = 0;
+    p.statPoints += 2; // 2 pontos por nível
+    // Bónus aleatório pequeno (mantém a surpresa)
     const stats = ['str','dex','int','vit','luk'];
     p.stats[stats[Math.floor(Math.random() * stats.length)]]++;
+    // Skills desbloqueadas por nível
+    const skillsClasse = SKILLS?.[p.class] || [];
+    const nivelDesbloqueio = [1, 3, 5, 8, 12, 16, 20, 25, 30, 40];
+    for (let i = 0; i < nivelDesbloqueio.length; i++) {
+      if (p.level >= nivelDesbloqueio[i] && skillsClasse[i]) {
+        const skillNome = skillsClasse[i].name;
+        if (!Array.isArray(p.skills)) p.skills = [];
+        if (!p.skills.includes(skillNome)) {
+          p.skills.push(skillNome);
+        }
+      }
+    }
     leveled = true;
   }
   return leveled;

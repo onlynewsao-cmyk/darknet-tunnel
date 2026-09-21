@@ -191,86 +191,102 @@ module.exports = function registerRPG2(registerCase) {
     return tReply(sock, msg, ctx, quest.titulo, linhas);
   }, true);
 
-  // ═══ COMBATE NARRATIVO ═══
+  // ═══ COMBATE INTERACTIVO (v9.23 — com botões!) ═══
   registerCase(['lutar', 'fight', 'combate'], async ({ sock, msg, ctx, args }) => {
+    const combat = require('../rpg/combat');
+    const tipo = args[0] === 'boss' ? 'boss' : args[0] === 'elite' ? 'elite' : 'normal';
+    return combat.iniciarCombate(sock, msg, ctx, tipo);
+  }, true);
+
+  // ═══ LOJA COM BOTÕES (v9.23) ═══
+  registerCase(['loja', 'shop', 'mercado'], async ({ sock, msg, ctx }) => {
+    const itens = Object.entries(rpg.ITEMS || {}).filter(([, v]) => v.price);
+    if (!itens.length) return tReply(sock, msg, ctx, '🏪 LOJA', ['Sem itens à venda.']);
+
     const p = await rpg.getPlayer(ctx.senderNumber);
-    // v6.90: o `return` estava fora do `if` (chavetas perdidas) — o comando
-    // respondia sempre esta mensagem e nunca fazia nada.
-    if (p.hp <= 0) {
-      return tReply(sock, msg, ctx, '💀 MORTO', ['💀 Estás morto! Usa !descansar ou !poção']);
+    const linhas = [
+      `💰 Tens *${p.coins}* coins`,
+      '',
+      ...itens.slice(0, 8).map(([k, v]) => `${v.emoji || '📦'} *${k}* — ${v.price} coins`),
+    ].join('\n');
+
+    const opcoes = itens.slice(0, 10).map(([k, v]) => ({
+      label: `${v.emoji || '📦'} ${k} — ${v.price}💰`,
+      desc: v.type === 'heal' ? `Cura ${v.effect?.hp || 0} HP` : v.type === 'food' ? `Comida: +${v.effect?.hp || 0} HP` : 'Material',
+    }));
+
+    const uiMod = require('../rpg/ui');
+    return uiMod.escolher(sock, msg, ctx, {
+      titulo: '🏪 LOJA',
+      subtitulo: 'COMPRAR',
+      linhas: [`💰 Tens *${p.coins}* coins`, '', 'Escolhe o que comprar:'],
+      opcoes,
+      onEscolha: async (idx) => {
+        const [nome, item] = itens[idx];
+        const jogador = await rpg.getPlayer(ctx.senderNumber);
+        if (jogador.coins < item.price) {
+          return tReply(sock, msg, ctx, '🏪 LOJA', [`❌ Precisas de ${item.price} coins (tens ${jogador.coins})`]);
+        }
+        jogador.coins -= item.price;
+        jogador.inventory.push(nome);
+        await rpg.savePlayer(jogador);
+        return tReply(sock, msg, ctx, '🏪 COMPRA', [
+          `${item.emoji || '📦'} Compraste *${nome}* por ${item.price} coins!`,
+          `💰 Saldo: ${jogador.coins} coins`,
+        ]);
+      },
+    });
+  }, true);
+
+  // ═══ LEVEL UP — alocação de ponto ═══
+  registerCase(['levelup', 'lvlup', 'subirnivel'], async ({ sock, msg, ctx, args }) => {
+    const p = await rpg.getPlayer(ctx.senderNumber);
+    if (!p.statPoints || p.statPoints <= 0) {
+      return tReply(sock, msg, ctx, '📊 LEVEL UP', ['❌ Sem pontos livres. Sobe de nível primeiro!']);
     }
-    // v6.90: o `return` estava fora do `if` (chavetas perdidas) — o comando
-    // respondia sempre esta mensagem e nunca fazia nada.
-    if (p.lives <= 0) {
-      return tReply(sock, msg, ctx, '💀 SEM VIDAS', ['💀 Sem vidas! Espera respawn ou usa !reviver']);
+    const stat = (args[0] || '').toLowerCase();
+    const validStats = ['str', 'dex', 'int', 'vit', 'luk'];
+    if (!validStats.includes(stat)) {
+      const uiMod = require('../rpg/ui');
+      return uiMod.escolher(sock, msg, ctx, {
+        titulo: `💎 ${p.statPoints} PONTOS LIVRES`,
+        subtitulo: 'STATS',
+        linhas: [
+          `⚔️ STR: ${p.stats.str} | 🏃 DEX: ${p.stats.dex}`,
+          `🔮 INT: ${p.stats.int} | 🛡️ VIT: ${p.stats.vit}`,
+          `🍀 LUK: ${p.stats.luk}`,
+        ],
+        opcoes: validStats.map(s => ({
+          label: `${{str:'⚔️',dex:'🏃',int:'🔮',vit:'🛡️',luk:'🍀'}[s]} ${s.toUpperCase()}: ${p.stats[s]}`,
+          desc: `+1 ${s.toUpperCase()} (${p.statPoints} pts restantes)`,
+        })),
+        onEscolha: async (idx) => {
+          const j = await rpg.getPlayer(ctx.senderNumber);
+          if (!j.statPoints || j.statPoints <= 0) return tReply(sock, msg, ctx, '📊', ['Sem pontos!']);
+          const s = validStats[idx];
+          j.stats[s]++;
+          j.statPoints--;
+          // Recalcular HP/MP
+          j.maxHp = 100 + (j.stats.vit || 6) * 10;
+          j.maxMp = 50 + (j.stats.int || 6) * 5;
+          await rpg.savePlayer(j);
+          return tReply(sock, msg, ctx, '📊 STAT UP', [
+            `✅ ${s.toUpperCase()} → ${j.stats[s]}`,
+            `💎 Pontos restantes: ${j.statPoints}`,
+            `❤️ HP máx: ${j.maxHp} | 💙 MP máx: ${j.maxMp}`,
+          ]);
+        },
+      });
     }
-
-    const enemyType = args[0] === 'boss' ? 'boss' : args[0] === 'elite' ? 'elite' : 'normal';
-    const enemy = rpg.generateEnemy(p.level + R(-1, 2), enemyType);
-
-    // Combate por turnos (simplificado — 3 rounds)
-    const rounds = [];
-    let pHp = p.hp;
-    let eHp = enemy.hp;
-
-    for (let i = 0; i < 5; i++) {
-      if (pHp <= 0 || eHp <= 0) break;
-      // Jogador ataca
-      const skills = ['basic', 'heavy', 'magic'];
-      const pSkill = P(skills);
-      const pAtk = rpg.calcDamage(p, enemy, pSkill);
-      eHp -= pAtk.dmg;
-      rounds.push(`${pAtk.crit ? '💥 CRÍTICO!' : '⚔️'} ${p.name} usa *${pSkill}* → ${pAtk.dmg} dmg`);
-
-      if (eHp <= 0) break;
-
-      // Inimigo ataca
-      const eAtk = rpg.calcDamage(enemy, p, 'basic');
-      pHp -= eAtk.dmg;
-      rounds.push(`${eAtk.crit ? '💥' : '🗡️'} ${enemy.name} ataca → ${eAtk.dmg} dmg`);
-    }
-
-    p.hp = Math.max(0, pHp);
-    const win = eHp <= 0;
-
-    if (win) {
-      const loot = R(10, 50) * (enemyType === 'boss' ? 10 : enemyType === 'elite' ? 3 : 1);
-      const xp = R(20, 60) * (enemyType === 'boss' ? 5 : enemyType === 'elite' ? 2 : 1);
-      p.coins += loot;
-      p.kills++;
-      const leveled = rpg.addXP(p, xp);
-      const items = enemyType === 'boss' ? ['💎 Gema Lendária'] : enemyType === 'elite' && Math.random() < 0.3 ? ['⚔️ Arma Rara'] : [];
-      items.forEach(i => p.inventory.push(i));
-
-      await rpg.savePlayer(p);
-
-
-      return tReply(sock, msg, ctx, `⚔️ VITÓRIA vs ${enemy.name}`, [
-        `⚔️ *${enemy.name}* (Nv.${enemy.level}) DERROTADO!`,
-        '',
-        ...rounds,
-        '',
-        `💰 +${loot} coins | ⭐ +${xp} XP`,
-        ...items.map(i => `🎒 +${i}`),
-        leveled ? `🎉 *NÍVEL ${p.level}!*` : '',
-        `❤️ HP: ${p.hp}/${p.maxHp}`,
-      ].filter(Boolean));
-    }
-
-    // Derrota
-    p.deaths++;
-    p.lives = Math.max(0, p.lives - 1);
+    p.stats[stat]++;
+    p.statPoints--;
+    p.maxHp = 100 + (p.stats.vit || 6) * 10;
+    p.maxMp = 50 + (p.stats.int || 6) * 5;
     await rpg.savePlayer(p);
-
-    return tReply(sock, msg, ctx, `💀 DERROTA vs ${enemy.name}`, [
-      `💀 *${enemy.name}* venceu!`,
-      '',
-      ...rounds,
-      '',
-      `❤️ HP: ${p.hp}/${p.maxHp}`,
-      `♥️ Vidas: ${p.lives}/3`,
-      p.lives <= 0 ? '⚠️ *SEM VIDAS!* Usa !reviver ou espera 1h' : '',
-    ].filter(Boolean));
+    return tReply(sock, msg, ctx, '📊 STAT UP', [
+      `✅ ${stat.toUpperCase()} → ${p.stats[stat]}`,
+      `💎 Pontos restantes: ${p.statPoints}`,
+    ]);
   }, true);
 
   // ═══ EXPLORAÇÃO NARRATIVA ═══
