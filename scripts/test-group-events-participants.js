@@ -44,6 +44,18 @@ Module.prototype.require = function (id) {
   if (s.endsWith('antiFoba')) return { onJoin: async () => [] };
   if (s.endsWith('autoApresentar')) return { onParticipantsUpdate: async () => {} };
   if (s.endsWith('liveBroadcaster')) return { groupEvent: () => {} };
+  if (s.endsWith('GroupMemberActivity') || s.endsWith('models/GroupMemberActivity')) {
+    return {
+      findOne: () => ({
+        sort: () => ({ lean: async () => null, catch: async () => null }),
+        lean: async () => null,
+        catch: async () => null,
+      }),
+    };
+  }
+  if (s.endsWith('Economy') || s.endsWith('models/Economy')) {
+    return { findOne: () => ({ lean: async () => null, catch: async () => null }) };
+  }
   if (s.endsWith('/config') || s.endsWith('src/config')) {
     return { bot: { name: 'DARK BOT', prefix: '!' }, owner: { name: 'Dark', number: '244900000' } };
   }
@@ -109,9 +121,12 @@ const sock = {
   assert.ok((wel.mentions || []).some(m => String(m).includes('244555666777')), 'menção PN');
   console.log('✔ ADD object → welcome com número real + menção');
 
-  // 3) X9 no add
-  assert.ok(sent.some(s => /X9:.*entrou/.test(s.text || '')), 'x9 no add');
-  console.log('✔ X9 anuncia entrada');
+  // 3) X9 profissional no add
+  const x9 = sent.find(s => /X9/i.test(s.text || '') && /Entrou/i.test(s.text || ''));
+  assert.ok(x9, 'x9 no add: ' + JSON.stringify(sent.map(s => s.text)));
+  assert.ok(/actividade|atividade/i.test(x9.text), 'x9 header profissional');
+  assert.ok(/@244555666777/.test(x9.text), 'x9 menciona número');
+  console.log('✔ X9 profissional anuncia entrada');
 
   // 4) REMOVE object → goodbye
   sent.length = 0;
@@ -147,6 +162,75 @@ const sock = {
   // onBotAdded envia trial text — não OI welcome
   assert.ok(!sent.some(s => /OI @/.test(s.text || '')), 'bot add não é welcome de membro');
   console.log('✔ bot adicionado → onBotAdded (não welcome membro)');
+
+  // 7) resolveDisplayName + NOME no art (não número)
+  const nome = await ge.resolveDisplayName(sock, {
+    number: '244700700700',
+    mentionJid: '244700700700@s.whatsapp.net',
+    part: {
+      number: '244700700700',
+      pnJid: '244700700700@s.whatsapp.net',
+      notify: 'maria silva',
+      name: '',
+      raw: { notify: 'maria silva' },
+    },
+    meta: { participants: [] },
+  });
+  assert.strictEqual(nome, 'Maria Silva');
+  console.log('✔ resolveDisplayName usa notify (title-case)');
+
+  const x9pro = ge.buildX9Text('promote', '244111', 'João');
+  assert.ok(/Promovido/i.test(x9pro) && /\*João\*/.test(x9pro) && /@244111/.test(x9pro));
+  assert.ok(!/^🕵️ X9:/.test(x9pro), 'não é o one-liner antigo');
+  console.log('✔ buildX9Text profissional');
+
+  // 8) welcome2 passa NAME (não número) para artCard
+  let artOpts = null;
+  // re-mock welcomeArt via cache wipe + require patch
+  Module.prototype.require = function (id) {
+    const s = String(id);
+    if (s.endsWith('welcomeArt')) {
+      return {
+        artCard: async (opts) => { artOpts = opts; return Buffer.alloc(3000, 1); },
+        artGif: async () => null,
+      };
+    }
+    return _orig.apply(this, arguments);
+  };
+  // force re-require path used by groupEvents — patch via on-the-fly:
+  // groupEvents already loaded welcomeArt lazily inside onJoin; replace require cache
+  const waPath = require.resolve('../src/bot/welcomeArt');
+  require.cache[waPath] = {
+    id: waPath, filename: waPath, loaded: true, exports: {
+      artCard: async (opts) => { artOpts = opts; return Buffer.alloc(3000, 1); },
+      artGif: async () => null,
+    },
+  };
+  // also ensure GroupSettings etc still mocked — groupEvents already in cache with old requires
+  // call onJoin path via handle with welcome2
+  _gs.welcome2 = true;
+  _gs.welcm3 = false;
+  _gs.customWelcomeMsg = 'OI {user}';
+  sent.length = 0;
+  artOpts = null;
+  ge._welDebug._ultimoWel.clear();
+  await ge.handle(sock, {
+    id: '120363TEST@g.us',
+    action: 'add',
+    participants: [{
+      id: '555@lid',
+      phoneNumber: '244700700700@s.whatsapp.net',
+      notify: 'Ana Costa',
+    }],
+  });
+  assert.ok(sent.some(s => s.image), 'welcome2 image sent');
+  assert.ok(artOpts, 'artCard chamado: ' + JSON.stringify(artOpts));
+  assert.strictEqual(artOpts.name, 'Ana Costa', 'art usa NOME não número: ' + JSON.stringify(artOpts));
+  assert.ok(!/244700700700/.test(artOpts.name), 'nome não é o telefone');
+  // caption default/custom sem moldura de tema
+  const cap = sent.find(s => s.image)?.caption || '';
+  assert.ok(!/╭━━|╰━━|> sombra|> x\b/.test(cap), 'caption sem frame/vibe: ' + cap);
+  console.log('✔ welcome2 artCard recebe NOME + caption limpa');
 
   console.log('\n✅ group-events participants OK\n');
 })().catch((e) => { console.error(e); process.exit(1); });

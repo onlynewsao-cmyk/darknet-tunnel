@@ -134,6 +134,18 @@ Module.prototype.require = function (id) {
   if (s.endsWith('liveBroadcaster') || s.endsWith('/liveBroadcaster')) {
     return { groupEvent: () => {} };
   }
+  if (s.endsWith('GroupMemberActivity') || s.endsWith('models/GroupMemberActivity')) {
+    return {
+      findOne: () => ({
+        sort: () => ({ lean: async () => null, catch: async () => null }),
+        lean: async () => null,
+        catch: async () => null,
+      }),
+    };
+  }
+  if (s.endsWith('Economy') || s.endsWith('models/Economy')) {
+    return { findOne: () => ({ lean: async () => null, catch: async () => null }) };
+  }
   if (s.endsWith('/config') || s.endsWith('src/config')) {
     return {
       bot: { name: 'DARK BOT', prefix: '!' },
