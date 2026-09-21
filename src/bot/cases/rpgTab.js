@@ -95,14 +95,10 @@ async function _render(sock, msg, ctx, p, abaKey) {
   const rpg = require('../rpg/engine');
   const rank = rpg.getRank(p.level || 1);
   const aba = ABAS[abaKey];
-  const RE = require('../renderEngine');
-  const t = await RE.getTheme(ctx.remoteJid).catch(() => null);
+  const rpgTheme = require('../rpg/rpgTheme');
   const linhas = aba.linhas(p, rank, rpg);
   const titulo = `📑 ${String(p.name || 'Aventureiro').toUpperCase()} — ${aba.label}`;
-  const corpo = t
-    ? RE.renderBlock(t, titulo, linhas, { botName: config.bot.name })
-    : `*${titulo}*\n\n${linhas.join('\n')}`;
-  await sock.sendMessage(ctx.remoteJid, { text: corpo }, { quoted: msg }).catch(() => {});
+  await rpgTheme.rpgReply(sock, msg, ctx, titulo, linhas);
 }
 
 /** Abre o hub (escolher) — o onEscolha renderiza e reabre, navegação infinita. */

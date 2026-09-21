@@ -124,6 +124,43 @@ const SKILLS = {
 };
 
 // ══════════════════════════════════════════════════════════════
+// v11.1 — ESTRATÉGIAS DE COMBATE
+// O jogador escolhe UMA estratégia antes do combate. Muda o estilo
+// da luta: agressivo ruge, defensivo aguenta, evasivo desvia.
+// ══════════════════════════════════════════════════════════════
+const STRATEGIES = {
+  agressiva: {
+    id: 'agressiva', name: 'Agressiva', emoji: '⚔️',
+    desc: '+30% ATK · -20% DEF — ruge e mata primeiro',
+    atkMult: 1.3, defMult: 0.8, dodgeBonus: 0,
+  },
+  defensiva: {
+    id: 'defensiva', name: 'Defensiva', emoji: '🛡️',
+    desc: '+50% DEF · -15% ATK — aguenta e contra-ataca',
+    atkMult: 0.85, defMult: 1.5, dodgeBonus: 0,
+  },
+  equilibrada: {
+    id: 'equilibrada', name: 'Equilibrada', emoji: '⚖️',
+    desc: 'Sem bónus — a via do meio',
+    atkMult: 1.0, defMult: 1.0, dodgeBonus: 0,
+  },
+  evasiva: {
+    id: 'evasiva', name: 'Evasiva', emoji: '🌀',
+    desc: '+30% esquiva · -10% ATK — dança com o inimigo',
+    atkMult: 0.9, defMult: 0.9, dodgeBonus: 0.30,
+  },
+  sorrateira: {
+    id: 'sorrateira', name: 'Sorrateira', emoji: '🗡️',
+    desc: '+25% crítico · -10% DEF — golpe certeiro',
+    atkMult: 1.0, defMult: 0.9, dodgeBonus: 0, critBonus: 0.25,
+  },
+};
+
+function getStrategy(id) {
+  return STRATEGIES[String(id || 'equilibrada').toLowerCase()] || STRATEGIES.equilibrada;
+}
+
+// ══════════════════════════════════════════════════════════════
 // ARMAS (20+)
 // ══════════════════════════════════════════════════════════════
 const WEAPONS = {
@@ -806,6 +843,7 @@ module.exports = {
     { rarity:'Raro', chance:100, emoji:'🔵' },
   ],
   SHOP, REFINEMENT, DAILY_REWARDS, ACHIEVEMENTS,
+  STRATEGIES, getStrategy, // v11.1: estratégias de combate
   ITEMS,   // v6.90: o catálogo que faltava (eat/vender/loja)
   // v6.62: compatibilidade com cases/rpg2.js
   RACES, CLASSES, BIOMES, QUESTS, NPCS, RECIPES, generateEnemy, calcDamage, generateLoot,

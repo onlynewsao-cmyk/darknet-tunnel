@@ -12,6 +12,7 @@ const path = require('path');
 const rpg = require('./engine');
 const combat = require('./combat');
 const config = require('../../config');
+const rpgTheme = require('./rpgTheme');
 
 const R = (a, b) => Math.floor(Math.random() * (b - a + 1)) + a;
 const P = (a) => a[Math.floor(Math.random() * a.length)];
@@ -1521,14 +1522,15 @@ async function getProgress(p, worldId) {
 // ══════════════════════════════════════════════════════════════
 
 async function tReply(sock, msg, ctx, title, lines) {
-  const RE = require('../renderEngine');
-  const t = await RE.getTheme(ctx.remoteJid).catch(() => null);
-  return sock.sendMessage(ctx.remoteJid, {
-    text: RE.renderBlock(t, title, lines, { botName: config.bot.name })
-  }, { quoted: msg });
+  return rpgTheme.rpgReply(sock, msg, ctx, title, lines);
 }
 
 async function enviarBotoes(sock, msg, ctx, corpo, botoes) {
+  return rpgTheme.rpgBotoes(sock, msg, ctx, corpo, botoes);
+}
+
+// Original enviarBotoes (fallback)
+async function _enviarBotoesOriginal(sock, msg, ctx, corpo, botoes) {
   try {
     const { generateWAMessageFromContent, proto } = require('@systemzero/baileys');
     const m = generateWAMessageFromContent(ctx.remoteJid, {
@@ -1556,6 +1558,11 @@ async function enviarBotoes(sock, msg, ctx, corpo, botoes) {
 }
 
 async function enviarLista(sock, msg, ctx, titulo, rows, corpo) {
+  return rpgTheme.rpgLista(sock, msg, ctx, titulo, rows, corpo);
+}
+
+// Original enviarLista (fallback)
+async function _enviarListaOriginal(sock, msg, ctx, titulo, rows, corpo) {
   try {
     const { generateWAMessageFromContent, proto } = require('@systemzero/baileys');
     const m = generateWAMessageFromContent(ctx.remoteJid, {
@@ -1642,6 +1649,11 @@ async function enviarCarrossel(sock, msg, ctx, cards) {
 }
 
 async function enviarImagem(sock, msg, ctx, imagePath, caption, botoes) {
+  return rpgTheme.rpgImagem(sock, msg, ctx, imagePath, caption, botoes);
+}
+
+// Original enviarImagem (fallback)
+async function _enviarImagemOriginal(sock, msg, ctx, imagePath, caption, botoes) {
   try {
     if (fs.existsSync(imagePath)) {
       const buffer = fs.readFileSync(imagePath);
@@ -1709,6 +1721,7 @@ async function mostrarStatus(sock, msg, ctx) {
     '', '\u2694\uFE0F *COMBATE*',
     '\u{1f480} ' + p.kills + ' kills | \u2620\uFE0F ' + p.deaths + ' mortes | \u{1f451} ' + p.bossKills + ' bosses',
     '\u{1f525} Streak: ' + p.streak + ' | Melhor: ' + p.bestStreak,
+    '\u{1f9e0} Estrategia: ' + (rpg.getStrategy ? rpg.getStrategy(p.strategy).name : p.strategy || 'Equilibrada'),
   ].filter(Boolean));
 }
 
@@ -2061,8 +2074,364 @@ async function _processarProximo(sock, msg, ctx, worldId, chapterId, nextNodeId)
   }
 }
 
+
+
+// ══════════════════════════════════════════════════════════════
+// SISTEMA DE MISSOES DE EQUIPA
+// ══════════════════════════════════════════════════════════════
+
+const MISSOES_EQUIPA = [
+  {
+    id: 'raid_konoha', nome: 'Raid: Invasao de Konoha',
+    descricao: 'Defende Konoha do ataque da Akatsuki! Equipa de 2-5 jogadores.',
+    mundo: 'naruto', nivelMin: 5, maxJogadores: 5,
+    boss: { nome: 'Pain (6 Caminhos)', emoji: '\u{1f300}', hp: 15000, atk: 200, def: 80, xp: 3000, coins: 5000 },
+    recompensas: { xp: 2000, coins: 3000, item: 'Pergaminho de Pain', title: 'Defensor de Konoha' },
+  },
+  {
+    id: 'raid_enies', nome: 'Raid: Enies Lobby',
+    descricao: 'Invade o tribunal do mundo para salvar Robin! Equipa de 2-5.',
+    mundo: 'onepiece', nivelMin: 8, maxJogadores: 5,
+    boss: { nome: 'Rob Lucci', emoji: '\u{1f406}', hp: 12000, atk: 180, def: 70, xp: 2500, coins: 4000 },
+    recompensas: { xp: 1800, coins: 2500, item: 'Key of Justice', title: 'Invasor de Enies Lobby' },
+  },
+  {
+    id: 'raid_jeju', nome: 'Raid: Ilha de Jeju',
+    descricao: 'Elimina a colonia de formigas gigantes! Equipa de 2-5.',
+    mundo: 'sololeveling', nivelMin: 12, maxJogadores: 5,
+    boss: { nome: 'Rei das Formigas', emoji: '\u{1f41c}', hp: 18000, atk: 250, def: 100, xp: 4000, coins: 8000 },
+    recompensas: { xp: 3000, coins: 6000, item: 'Ant Egg', title: 'Heroi de Jeju' },
+  },
+  {
+    id: 'raid_shibuya', nome: 'Raid: Incidente de Shibuya',
+    descricao: 'Liberta Shibuya das maldições! Equipa de 2-5.',
+    mundo: 'jjk', nivelMin: 15, maxJogadores: 5,
+    boss: { nome: 'Mahito (Final)', emoji: '\u{1f480}', hp: 20000, atk: 280, def: 100, xp: 5000, coins: 10000 },
+    recompensas: { xp: 4000, coins: 8000, item: 'Cursed Finger', title: 'Herói de Shibuya' },
+  },
+  {
+    id: 'raid_namek', nome: 'Raid: Batalha de Namek',
+    descricao: 'Derrota Frieza no planeta Namek! Equipa de 2-5.',
+    mundo: 'dragonball', nivelMin: 20, maxJogadores: 5,
+    boss: { nome: 'Frieza (Forma Final)', emoji: '\u{1f47f}', hp: 25000, atk: 350, def: 130, xp: 6000, coins: 12000 },
+    recompensas: { xp: 5000, coins: 10000, item: 'Esfera do Dragão', title: 'Guerreiro de Namek' },
+  },
+  {
+    id: 'raid_mugen', nome: 'Raid: Trem Infinito',
+    descricao: 'Derrota Enmu no comboio demoníaco! Equipa de 2-5.',
+    mundo: 'demonslayer', nivelMin: 10, maxJogadores: 5,
+    boss: { nome: 'Enmu + Akaza', emoji: '\u{1f682}', hp: 16000, atk: 220, def: 90, xp: 3500, coins: 7000 },
+    recompensas: { xp: 2500, coins: 5000, item: 'Ticket do Comboio', title: 'Heroi do Trem' },
+  },
+];
+
+// Estado das raids ativas
+const _raidsAtivas = new Map(); // raidId -> { ...estado }
+
+async function listarMissoesEquipa(sock, msg, ctx) {
+  const p = await rpg.getPlayer(ctx.senderNumber);
+  const rows = [];
+  for (const m of MISSOES_EQUIPA) {
+    const desbloqueado = p.level >= m.nivelMin;
+    const status = desbloqueado ? '\u2705 Disponivel' : '\u{1f512} Nv.' + m.nivelMin;
+    rows.push({
+      title: m.emoji + ' ' + m.nome,
+      description: status + ' | ' + m.maxJogadores + ' jogadores',
+      id: 'RTEAM_' + m.id,
+    });
+  }
+  const corpo = [
+    '\u2694\uFE0F *MISSOES DE EQUIPA*',
+    '\u{1f465} Junta-te a outros jogadores para raids epicas!',
+    '',
+    '\u{1f3af} Bosses com HP massivo',
+    '\u{1f381} Recompensas exclusivas',
+    '\u{1f4aa} Trabalho em equipa obrigatorio',
+    '',
+    '> Escolhe uma raid para ver detalhes!',
+  ].join('\n');
+  await enviarLista(sock, msg, ctx, '\u2694\uFE0F RAIDS', rows, corpo);
+}
+
+async function verDetalheRaid(sock, msg, ctx, raidId) {
+  const p = await rpg.getPlayer(ctx.senderNumber);
+  const m = MISSOES_EQUIPA.find(r => r.id === raidId);
+  if (!m) return tReply(sock, msg, ctx, '\u274C', ['Raid nao encontrada.']);
+  const desbloqueado = p.level >= m.nivelMin;
+  const bossHpBar = '\u2764\uFE0F'.repeat(Math.min(10, Math.ceil(m.boss.hp / 5000)));
+  const info = [
+    m.emoji + ' *' + m.nome + '*',
+    m.descricao,
+    '',
+    '\u{1f4ca} Nivel min: ' + m.nivelMin + ' | ' + (desbloqueado ? '\u2705' : '\u{1f512}'),
+    '\u{1f465} Max: ' + m.maxJogadores + ' jogadores',
+    '',
+    '*\u2500\u2500 BOSS \u2500\u2500*',
+    m.boss.emoji + ' *' + m.boss.nome + '*',
+    bossHpBar + ' HP: ' + m.boss.hp,
+    '\u2694\uFE0F ATK: ' + m.boss.atk + ' | \u{1f6e1}\uFE0F DEF: ' + m.boss.def,
+    '',
+    '*\u2500\u2500 RECOMPENSAS \u2500\u2500*',
+    '\u2B50 ' + m.recompensas.xp + ' XP | \u{1f4b0} ' + m.recompensas.coins + ' coins',
+    '\u{1f381} ' + m.recompensas.item + ' | \u{1f3c5} ' + m.recompensas.title,
+  ];
+  const botoes = [];
+  if (desbloqueado) {
+    botoes.push({ text: '\u{1f195} Criar Equipa', id: 'RTEAMCREATE_' + m.id });
+    botoes.push({ text: '\u{1f465} Ver Equipas', id: 'RTEAMLIST_' + m.id });
+  }
+  botoes.push({ text: '\u{1f4d6} Voltar', id: 'RTEAM_MENU' });
+  await enviarImagem(sock, msg, ctx, path.join(IMAGES_DIR, m.mundo + '.jpg'), info.join('\n'), botoes);
+}
+
+async function criarEquipeRaid(sock, msg, ctx, raidId) {
+  const p = await rpg.getPlayer(ctx.senderNumber);
+  const m = MISSOES_EQUIPA.find(r => r.id === raidId);
+  if (!m) return;
+  if (p.level < m.nivelMin) return tReply(sock, msg, ctx, '\u{1f512} BLOQUEADO', ['Nivel *' + m.nivelMin + '* necessario.']);
+
+  const equipeId = 'eq_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+  _raidsAtivas.set(equipeId, {
+    raidId: m.id,
+    lider: ctx.senderNumber,
+    membros: [ctx.senderNumber],
+    nomes: [p.name],
+    estado: 'espera',
+    hpBoss: m.boss.hp,
+    maxHp: m.boss.hp,
+    round: 0,
+    criada: Date.now(),
+  });
+
+  await tReply(sock, msg, ctx, m.emoji + ' EQUIPA CRIADA', [
+    '\u{1f195} *Equipa para ' + m.nome + '*',
+    '\u{1f465} Membros: 1/' + m.maxJogadores,
+    '\u{1f451} Lider: ' + p.name,
+    '',
+    '\u{1f4e2} Partilha o ID da equipa para outros se juntarem:',
+    '`' + equipeId + '`',
+    '',
+    '> Usa *!raid entrar ' + equipeId + '* para participar',
+    '> Usa *!raid iniciar* quando estiverem prontos',
+  ]);
+
+  // Auto-expire after 5 minutes
+  setTimeout(() => {
+    const raid = _raidsAtivas.get(equipeId);
+    if (raid && raid.estado === 'espera') {
+      _raidsAtivas.delete(equipeId);
+    }
+  }, 5 * 60 * 1000);
+}
+
+async function entrarEquipeRaid(sock, msg, ctx, equipeId) {
+  const p = await rpg.getPlayer(ctx.senderNumber);
+  const equipe = _raidsAtivas.get(equipeId);
+  if (!equipe) return tReply(sock, msg, ctx, '\u274C', ['Equipa nao encontrada ou expirada.']);
+  if (equipe.estado !== 'espera') return tReply(sock, msg, ctx, '\u274C', ['Esta equipa ja comecou a raid!']);
+  if (equipe.membros.includes(ctx.senderNumber)) return tReply(sock, msg, ctx, '\u274C', ['Ja estas nesta equipa!']);
+
+  const m = MISSOES_EQUIPA.find(r => r.id === equipe.raidId);
+  if (!m) return;
+  if (equipe.membros.length >= m.maxJogadores) return tReply(sock, msg, ctx, '\u274C', ['Equipa cheia!']);
+  if (p.level < m.nivelMin) return tReply(sock, msg, ctx, '\u{1f512}', ['Nivel *' + m.nivelMin + '* necessario.']);
+
+  equipe.membros.push(ctx.senderNumber);
+  equipe.nomes.push(p.name);
+
+  await tReply(sock, msg, ctx, m.emoji + ' MEMBRO ADICIONADO', [
+    '\u{1f464} *' + p.name + '* juntou-se!',
+    '\u{1f465} Membros: ' + equipe.membros.length + '/' + m.maxJogadores,
+    '',
+    equipe.membros.length >= 2 ? '\u2705 Equipa pronta! O lider pode iniciar!' : '\u23F3 Esperando mais membros...',
+  ]);
+}
+
+async function iniciarRaid(sock, msg, ctx) {
+  const p = await rpg.getPlayer(ctx.senderNumber);
+  let equipe = null;
+  for (const [id, eq] of _raidsAtivas) {
+    if (eq.lider === ctx.senderNumber && eq.estado === 'espera') {
+      equipe = eq;
+      break;
+    }
+  }
+  if (!equipe) return tReply(sock, msg, ctx, '\u274C', ['Nenhuma equipa tua em espera.']);
+  if (equipe.membros.length < 2) return tReply(sock, msg, ctx, '\u274C', ['Precisas de pelo menos 2 jogadores!']);
+
+  const m = MISSOES_EQUIPA.find(r => r.id === equipe.raidId);
+  if (!m) return;
+
+  equipe.estado = 'combate';
+  equipe.round = 1;
+
+  const bossHpBar = '\u2764\uFE0F'.repeat(10);
+  const membrosStr = equipe.nomes.map(n => '\u2694\uFE0F ' + n).join(', ');
+
+  const botoes = [
+    { text: '\u2694\uFE0F Atacar Boss', id: 'RTEAMFIGHT_' + equipeId(equipe) },
+    { text: '\u{1f4aa} Ataque Coordenado', id: 'RTEAMCOORD_' + equipeId(equipe) },
+    { text: '\u{1f9ea} Cura em Equipa', id: 'RTEAMHEAL_' + equipeId(equipe) },
+  ];
+
+  await enviarBotoes(sock, msg, ctx, [
+    m.emoji + ' *RAID: ' + m.nome + '*',
+    '\u2694\uFE0F Equipa: ' + membrosStr,
+    '',
+    m.boss.emoji + ' *' + m.boss.nome + '*',
+    bossHpBar + ' HP: ' + equipe.hpBoss + '/' + equipe.maxHp,
+    '\u2694\uFE0F ATK: ' + m.boss.atk + ' | \u{1f6e1}\uFE0F DEF: ' + m.boss.def,
+    '',
+    '\u{1f3af} Round ' + equipe.round,
+    '',
+    '> Escolhe a acao da equipa!',
+  ].join('\n'), botoes);
+}
+
+function equipeId(equipe) {
+  for (const [id, eq] of _raidsAtivas) {
+    if (eq === equipe) return id;
+  }
+  return '';
+}
+
+async function processarAcaoRaid(sock, msg, ctx, equipeIdStr, acao) {
+  const equipe = _raidsAtivas.get(equipeIdStr);
+  if (!equipe || equipe.estado !== 'combate') return tReply(sock, msg, ctx, '\u274C', ['Raid nao encontrada ou terminada.']);
+  if (!equipe.membros.includes(ctx.senderNumber)) return tReply(sock, msg, ctx, '\u274C', ['Nao fazes parte desta equipa!']);
+
+  const m = MISSOES_EQUIPA.find(r => r.id === equipe.raidId);
+  if (!m) return;
+  const p = await rpg.getPlayer(ctx.senderNumber);
+
+  let dano = 0;
+  let msgAcao = '';
+
+  switch (acao) {
+    case 'atacar': {
+      const baseDmg = 8 + p.level * 3 + (p.stats?.str || 6) * 2;
+      dano = Math.round(baseDmg * (0.8 + Math.random() * 0.4));
+      const crit = Math.random() < 0.15;
+      if (crit) { dano = Math.round(dano * 1.8); msgAcao = '\u{1f4a5} *CRITICO!* ' + p.name + ' -> ' + dano + ' dmg!'; }
+      else msgAcao = '\u2694\uFE0F ' + p.name + ' ataca -> ' + dano + ' dmg';
+      break;
+    }
+    case 'coordenado': {
+      const baseDmg = 15 + p.level * 4 + (p.stats?.str || 6) * 3;
+      dano = Math.round(baseDmg * (0.9 + Math.random() * 0.2));
+      msgAcao = '\u{1f4aa} *ATAQUE COORDENADO!* ' + p.name + ' -> ' + dano + ' dmg!';
+      break;
+    }
+    case 'curar': {
+      const cura = 20 + (p.stats?.int || 6) * 3;
+      // Heal all team members
+      for (const membroId of equipe.membros) {
+        const membro = await rpg.getPlayer(membroId);
+        membro.hp = Math.min(membro.maxHp, membro.hp + cura);
+        await rpg.savePlayer(membro);
+      }
+      msgAcao = '\u{1f49a} ' + p.name + ' cura a equipa! +' + cura + ' HP';
+      dano = 0;
+      break;
+    }
+  }
+
+  // Apply damage to boss
+  equipe.hpBoss = Math.max(0, equipe.hpBoss - dano);
+  equipe.round++;
+
+  // Boss attacks back
+  let bossDmgMsg = '';
+  if (equipe.hpBoss > 0) {
+    const bossDmg = Math.round(m.boss.atk * (0.3 + Math.random() * 0.2));
+    const vitimaIdx = Math.floor(Math.random() * equipe.membros.length);
+    const vitima = await rpg.getPlayer(equipe.membros[vitimaIdx]);
+    vitima.hp = Math.max(1, vitima.hp - bossDmg);
+    await rpg.savePlayer(vitima);
+    bossDmgMsg = m.boss.emoji + ' ' + m.boss.nome + ' ataca ' + vitima.name + ' -> ' + bossDmg + ' dmg';
+  }
+
+  // Check victory
+  if (equipe.hpBoss <= 0) {
+    _raidsAtivas.delete(equipeIdStr);
+    // Give rewards to all members
+    for (const membroId of equipe.membros) {
+      const membro = await rpg.getPlayer(membroId);
+      rpg.addXP(membro, m.recompensas.xp);
+      membro.coins += m.recompensas.coins;
+      if (!membro.inventory.includes(m.recompensas.item)) membro.inventory.push(m.recompensas.item);
+      membro.title = m.recompensas.title;
+      membro.bossKills = (membro.bossKills || 0) + 1;
+      await rpg.savePlayer(membro);
+    }
+    const membrosStr = equipe.nomes.join(', ');
+    return tReply(sock, msg, ctx, '\u{1f3c6} RAID COMPLETA!', [
+      m.boss.emoji + ' *' + m.boss.nome + '* DERROTADO!',
+      '',
+      '\u{1f465} Equipa: ' + membrosStr,
+      '\u{1f3af} Rounds: ' + equipe.round,
+      '',
+      '\u2B50 +' + m.recompensas.xp + ' XP para todos!',
+      '\u{1f4b0} +' + m.recompensas.coins + ' coins para todos!',
+      '\u{1f381} ' + m.recompensas.item,
+      '\u{1f3c5} ' + m.recompensas.title,
+    ]);
+  }
+
+  // Show combat state
+  const hpPct = Math.max(0, Math.min(10, Math.round((equipe.hpBoss / equipe.maxHp) * 10)));
+  const hpBar = '\u2764\uFE0F'.repeat(hpPct) + '\u{1f5a4}'.repeat(10 - hpPct);
+
+  const botoes = [
+    { text: '\u2694\uFE0F Atacar Boss', id: 'RTEAMFIGHT_' + equipeIdStr },
+    { text: '\u{1f4aa} Ataque Coordenado', id: 'RTEAMCOORD_' + equipeIdStr },
+    { text: '\u{1f9ea} Cura em Equipa', id: 'RTEAMHEAL_' + equipeIdStr },
+  ];
+
+  await enviarBotoes(sock, msg, ctx, [
+    msgAcao,
+    bossDmgMsg,
+    '',
+    m.boss.emoji + ' *' + m.boss.nome + '*',
+    hpBar + ' HP: ' + equipe.hpBoss + '/' + equipe.maxHp,
+    '\u{1f3af} Round ' + equipe.round,
+  ].join('\n'), botoes);
+}
+
+async function resolverCliqueTeam(sock, msg, ctx, token) {
+  const tk = String(token || '');
+  
+  if (tk === 'RTEAM_MENU') {
+    await listarMissoesEquipa(sock, msg, ctx);
+    return true;
+  }
+
+  let m = tk.match(/^RTEAM_([a-z_]+)$/i);
+  if (m) { await verDetalheRaid(sock, msg, ctx, m[1]); return true; }
+
+  m = tk.match(/^RTEAMCREATE_([a-z_]+)$/i);
+  if (m) { await criarEquipeRaid(sock, msg, ctx, m[1]); return true; }
+
+  m = tk.match(/^RTEAMLIST_([a-z_]+)$/i);
+  if (m) { await verDetalheRaid(sock, msg, ctx, m[1]); return true; }
+
+  m = tk.match(/^RTEAMFIGHT_(.+)$/i);
+  if (m) { await processarAcaoRaid(sock, msg, ctx, m[1], 'atacar'); return true; }
+
+  m = tk.match(/^RTEAMCOORD_(.+)$/i);
+  if (m) { await processarAcaoRaid(sock, msg, ctx, m[1], 'coordenado'); return true; }
+
+  m = tk.match(/^RTEAMHEAL_(.+)$/i);
+  if (m) { await processarAcaoRaid(sock, msg, ctx, m[1], 'curar'); return true; }
+
+  return false;
+}
+
+
 module.exports = {
   WORLDS, NARUTO_CHAPTERS, listarMundos, jogarMundo, iniciarTeste,
   mostrarStatus, resolverClique, getProgress, _getChapters,
   enviarBotoes, enviarLista, enviarCarrossel, enviarImagem, tReply,
+  listarMissoesEquipa, verDetalheRaid, criarEquipeRaid, entrarEquipeRaid,
+  iniciarRaid, resolverCliqueTeam, MISSOES_EQUIPA,
 };

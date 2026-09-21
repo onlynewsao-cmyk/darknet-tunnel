@@ -15,11 +15,8 @@ const config = require('../../config');
 const world = require('../rpg/world');
 
 async function tReply(sock, msg, ctx, title, lines) {
-  const RE = require('../renderEngine');
-  const t = await RE.getTheme(ctx.remoteJid).catch(() => null);
-  const corpo = t
-    ? RE.renderBlock(t, title, lines, { botName: config.bot.name })
-    : `*${title}*\n\n${(lines || []).join('\n')}`;
+  const rpgTheme = require('../rpg/rpgTheme');
+  return rpgTheme.rpgReply(sock, msg, ctx, title, lines);
   return sock.sendMessage(ctx.remoteJid, { text: corpo }, { quoted: msg });
 }
 

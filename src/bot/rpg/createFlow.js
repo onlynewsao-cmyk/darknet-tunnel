@@ -12,6 +12,7 @@
 const config = require('../../config');
 const rpg = require('./engine');
 const ui = require('./ui');
+const rpgTheme = require('./rpgTheme');
 
 /** Criações em curso: senderNumber → { step, name, gender, age, race, class, bio, appearance, stats, pointsLeft } */
 const _pendentes = new Map();
@@ -88,13 +89,14 @@ async function _enviarLista(sock, msg, ctx, titulo, subtitulo, corpo, rows, roda
     } catch {}
   }
 
-  // Lista single_select
+  // Lista single_select — com TEMA RPG independente
   try {
+    const corpoTema = rpgTheme.rpgRender('', [corpo]);
     const { generateWAMessageFromContent, proto } = require('@systemzero/baileys');
     const m = generateWAMessageFromContent(ctx.remoteJid, {
       interactiveMessage: proto.Message.InteractiveMessage.fromObject({
-        body: proto.Message.InteractiveMessage.Body.fromObject({ text: corpo }),
-        footer: proto.Message.InteractiveMessage.Footer.fromObject({ text: rodape }),
+        body: proto.Message.InteractiveMessage.Body.fromObject({ text: corpoTema }),
+        footer: proto.Message.InteractiveMessage.Footer.fromObject({ text: '⚔️ DarkNet RPG · O Teu Destino' }),
         header: proto.Message.InteractiveMessage.Header.fromObject({ title: '', hasMediaAttachment: false }),
         nativeFlowMessage: proto.Message.InteractiveMessage.NativeFlowMessage.fromObject({
           buttons: [{
@@ -406,8 +408,6 @@ async function _stepFinalizar(sock, msg, ctx) {
   const rank = rpg.getRank(p.level);
   const g = GENEROS.find(x => x.key === p.gender);
 
-  const RE = require('../renderEngine');
-  const t = await RE.getTheme(ctx.remoteJid).catch(() => null);
   const linhas = [
     `${race.emoji || '🧬'} *${p.name.toUpperCase()}*`,
     `${g?.emoji || '🧑'} ${g?.label || ''} · ${p.age || '?'} anos`,
@@ -429,10 +429,7 @@ async function _stepFinalizar(sock, msg, ctx) {
     '> 🗺️ Usa *!viajar floresta* para explorar!',
   ];
 
-  const corpo = t
-    ? RE.renderBlock(t, '🎭 PERSONAGEM CRIADO', linhas, { botName: config.bot.name })
-    : linhas.join('\n');
-  await sock.sendMessage(ctx.remoteJid, { text: corpo }, { quoted: msg }).catch(() => {});
+  await rpgTheme.rpgReply(sock, msg, ctx, '🎭 PERSONAGEM CRIADO', linhas);
 }
 
 // ══════════════════════════════════════════════════════════════

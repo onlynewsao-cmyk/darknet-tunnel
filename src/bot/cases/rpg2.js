@@ -43,9 +43,8 @@ setInterval(() => {
 
 
 async function tReply(sock, msg, ctx, title, lines) {
-  const RE = require('../renderEngine');
-  const t = await RE.getTheme(ctx.remoteJid);
-  return sock.sendMessage(ctx.remoteJid, { text: RE.renderBlock(t, title, lines, { botName: config.bot.name }) }, { quoted: msg });
+  const rpgTheme = require('../rpg/rpgTheme');
+  return rpgTheme.rpgReply(sock, msg, ctx, title, lines);
 }
 
 module.exports = function registerRPG2(registerCase) {
@@ -205,6 +204,62 @@ module.exports = function registerRPG2(registerCase) {
   registerCase(['status', 'stats', 'mystatus'], async ({ sock, msg, ctx }) => {
     const storyMode = require('../rpg/storyMode');
     return storyMode.mostrarStatus(sock, msg, ctx);
+  }, true);
+
+  // ═══ MISSOES DE EQUIPA / RAIDS (v11) ═══
+  registerCase(['raid', 'raids', 'equipe', 'team'], async ({ sock, msg, ctx, args }) => {
+    const storyMode = require('../rpg/storyMode');
+    if (!args[0]) return storyMode.listarMissoesEquipa(sock, msg, ctx);
+    if (args[0] === 'entrar' && args[1]) return storyMode.entrarEquipeRaid(sock, msg, ctx, args[1]);
+    if (args[0] === 'iniciar') return storyMode.iniciarRaid(sock, msg, ctx);
+    if (args[0] === 'criar' && args[1]) return storyMode.verDetalheRaid(sock, msg, ctx, args[1]);
+    return storyMode.listarMissoesEquipa(sock, msg, ctx);
+  }, true);
+
+  // ═══ ESTRATÉGIA DE COMBATE (v11.1) ═══
+  registerCase(['estrategia', 'strategy', 'estilo'], async ({ sock, msg, ctx, args }) => {
+    const rpg = require('../rpg/engine');
+    const rpgTheme = require('../rpg/rpgTheme');
+    const p = await rpg.getPlayer(ctx.senderNumber);
+
+    const escolha = (args[0] || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    if (escolha) {
+      const strat = rpg.STRATEGIES[escolha];
+      if (!strat) {
+        return rpgTheme.rpgReply(sock, msg, ctx, '❌ ESTRATÉGIA', [
+          `«${escolha}» não existe.`,
+          '',
+          'Opções: ' + Object.values(rpg.STRATEGIES).map(s => s.emoji + ' ' + s.id).join(' · '),
+        ]);
+      }
+      p.strategy = strat.id;
+      await rpg.savePlayer(p);
+      return rpgTheme.rpgReply(sock, msg, ctx, strat.emoji + ' ESTRATÉGIA ATIVA', [
+        `*${strat.emoji} ${strat.name}*`,
+        strat.desc,
+        '',
+        '> Vais usar este estilo em todos os combates.',
+        '> Usa *!estrategia* para mudar.',
+      ]);
+    }
+
+    // Sem argumento → mostra as opções com botões
+    const botoes = Object.values(rpg.STRATEGIES).map(s => ({
+      text: `${s.emoji} ${s.name}`,
+      id: `RPGSTRAT_${s.id}`,
+    }));
+    const atual = rpg.getStrategy(p.strategy);
+    const corpo = [
+      '🧠 *ESTRATÉGIAS DE COMBATE*',
+      '',
+      'Escolhe o teu estilo de luta. Muda o cálculo',
+      'de dano em todos os combates:',
+      '',
+      `📌 Atual: *${atual.emoji} ${atual.name}*`,
+      '',
+      '> Toca numa estratégia para activá-la!',
+    ].join('\n');
+    await rpgTheme.rpgBotoes(sock, msg, ctx, corpo, botoes);
   }, true);
 
   // ═══ COMBATE INTERACTIVO (v9.23 — com botões!) ═══

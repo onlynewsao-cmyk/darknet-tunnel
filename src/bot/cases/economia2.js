@@ -11,9 +11,8 @@ const R = (a, b) => Math.floor(Math.random() * (b - a + 1)) + a;
 const P = a => a[Math.floor(Math.random() * a.length)];
 
 async function tReply(sock, msg, ctx, title, lines) {
-  const RE = require('../renderEngine');
-  const t = await RE.getTheme(ctx.remoteJid);
-  return sock.sendMessage(ctx.remoteJid, { text: RE.renderBlock(t, title, lines, { botName: config.bot.name }) }, { quoted: msg });
+  const rpgTheme = require('../rpg/rpgTheme');
+  return rpgTheme.rpgReply(sock, msg, ctx, title, lines);
 }
 
 module.exports = function registerEconomia2(registerCase) {

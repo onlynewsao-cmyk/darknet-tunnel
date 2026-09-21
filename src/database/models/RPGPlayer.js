@@ -101,6 +101,10 @@ const RPGPlayerSchema = new mongoose.Schema({
   storyProgress: { type: mongoose.Schema.Types.Mixed, default: {} },
   _testState:    { type: mongoose.Schema.Types.Mixed, default: {} },
 
+  // v11.1: Estratégia de combate activa
+  // (agressiva | defensiva | equilibrada | evasiva | sorrateira)
+  strategy: { type: String, default: 'equilibrada' },
+
   // Cooldowns
   lastDaily:   { type: Date, default: null },
   lastWork:    { type: Date, default: null },

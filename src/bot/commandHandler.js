@@ -459,6 +459,37 @@ async function _handleInner(sock, msg) {
     } catch (e) { console.warn('[RPG story]', e.message?.slice(0, 60)); }
   }
 
+  // ── v11.1: RPG STRATEGY — botões de estratégia (RPGSTRAT_) ─────
+  if (/^RPGSTRAT_([a-z]+)$/i.test(text.split(/\s+/)[0] || '')) {
+    try {
+      const rpg = require('./rpg/engine');
+      const rpgTheme = require('./rpg/rpgTheme');
+      const stratId = (text.split(/\s+/)[0].match(/^RPGSTRAT_([a-z]+)$/i) || [])[1]?.toLowerCase();
+      const strat = stratId && rpg.STRATEGIES[stratId];
+      if (strat) {
+        const p = await rpg.getPlayer(ctx.senderNumber);
+        p.strategy = strat.id;
+        await rpg.savePlayer(p);
+        await rpgTheme.rpgReply(sock, msg, ctx, strat.emoji + ' ESTRATÉGIA ATIVA', [
+          `*${strat.emoji} ${strat.name}*`,
+          strat.desc,
+          '',
+          '> Vais usar este estilo em todos os combates.',
+          '> Usa *!estrategia* para mudar.',
+        ]);
+      }
+      return true;
+    } catch (e) { console.warn('[RPG strat]', e.message?.slice(0, 60)); }
+  }
+
+  // ── v11.1: RPG TEAM RAID — botões de missões de equipa (RTEAM_) ──
+  if (/^RTEAM[A-Z]*_[a-z0-9_]+$/i.test(text.split(/\s+/)[0] || '')) {
+    try {
+      const storyMode = require('./rpg/storyMode');
+      if (await storyMode.resolverCliqueTeam(sock, msg, ctx, text.split(/\s+/)[0])) return true;
+    } catch (e) { console.warn('[RPG team]', e.message?.slice(0, 60)); }
+  }
+
   // ── v7.96: AURA VIGILANTE — decisões dos cartões (AURASEL_) ────────
   if (/^AURASEL_[a-z0-9]+_\d+$/i.test(text.split(/\s+/)[0] || '')) {
     try {

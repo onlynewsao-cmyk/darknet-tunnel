@@ -10,6 +10,7 @@
 const rpg = require('./engine');
 const ui = require('./ui');
 const config = require('../../config');
+const rpgTheme = require('./rpgTheme');
 
 const R = (a, b) => Math.floor(Math.random() * (b - a + 1)) + a;
 const P = (a) => a[Math.floor(Math.random() * a.length)];
@@ -31,6 +32,11 @@ function getEffectiveStats(p) {
   // Armadura (por enquanto não há catálogo de armaduras, mas预留)
   // Futuramente: bonusDef += armor.def
 
+  // v11.1: estratégia do jogador (escolhida com !estrategia)
+  const strat = rpg.getStrategy ? rpg.getStrategy(p.strategy) : rpg.STRATEGIES?.equilibrada;
+  const atkMult = strat?.atkMult ?? 1;
+  const defMult = strat?.defMult ?? 1;
+
   return {
     str: base.str || 6,
     dex: base.dex || 6,
@@ -39,10 +45,10 @@ function getEffectiveStats(p) {
     luk: base.luk || 6,
     atkBonus: bonusAtk,
     defBonus: bonusDef,
-    totalAtk: 8 + (p.level || 1) * 2 + (base.str || 6) * 1.5 + bonusAtk,
-    totalDef: 3 + (p.level || 1) + (base.vit || 6) * 0.5 + bonusDef,
-    critChance: 0.08 + (base.luk || 6) * 0.01 + (base.dex || 6) * 0.005,
-    dodgeChance: 0.05 + (base.dex || 6) * 0.01,
+    totalAtk: (8 + (p.level || 1) * 2 + (base.str || 6) * 1.5 + bonusAtk) * atkMult,
+    totalDef: (3 + (p.level || 1) + (base.vit || 6) * 0.5 + bonusDef) * defMult,
+    critChance: 0.08 + (base.luk || 6) * 0.01 + (base.dex || 6) * 0.005 + (strat?.critBonus || 0),
+    dodgeChance: Math.min(0.6, 0.05 + (base.dex || 6) * 0.01 + (strat?.dodgeBonus || 0)),
   };
 }
 
@@ -153,8 +159,10 @@ async function _mostrarEstado(sock, msg, ctx, p) {
   // Items úteis
   const temPocao = p.inventory?.includes('poção de vida');
 
+  const strat = rpg.getStrategy ? rpg.getStrategy(p.strategy) : null;
   const linhas = [
     `⚔️ *ROUND ${c.round} — COMBATE*`,
+    strat ? `🧠 Estratégia: *${strat.emoji} ${strat.name}*` : '',
     ``,
     `${c.enemy.emoji} *${c.enemy.name}* (Nv.${c.enemy.level})${c.enemy.boss ? ' 👑 BOSS' : ''}`,
     `❤️ ${hpBar(c.enemy.hp, c.enemy.maxHp)} ${c.enemy.hp}/${c.enemy.maxHp}`,
@@ -167,7 +175,7 @@ async function _mostrarEstado(sock, msg, ctx, p) {
     ...c.log.slice(-4).map(l => `  ${l}`),
     ``,
     `> Escolhe a tua acção 👇`,
-  ];
+  ].filter(l => l !== '');
 
   // Botões de acção
   const botoes = [
@@ -471,11 +479,7 @@ async function resolverBotao(sock, msg, ctx, token) {
 }
 
 async function tReply(sock, msg, ctx, title, lines) {
-  const RE = require('../renderEngine');
-  const t = await RE.getTheme(ctx.remoteJid).catch(() => null);
-  return sock.sendMessage(ctx.remoteJid, {
-    text: RE.renderBlock(t, title, lines, { botName: config.bot.name })
-  }, { quoted: msg });
+  return rpgTheme.rpgReply(sock, msg, ctx, title, lines);
 }
 
 module.exports = {
