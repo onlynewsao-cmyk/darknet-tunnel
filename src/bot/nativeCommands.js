@@ -3123,7 +3123,7 @@ module.exports = {
       const lista = require('./listaEscolha');
       await lista.mostrar(sock, msg, ctx, {
         titulo: `🔥 *Fotos reais* — ${q.slice(0, 36)}`,
-        intro: `*${results.length}* · sex.com/pornpics · mídia REAL · *mais* = +10`,
+        intro: `*${results.length}* · sex.com API REAL (imagex1.sx.cdn.live) · *mais* = +10`,
         linhas: results.map(r => `*${String(r.title || r.type).slice(0, 50)}*\n   📡 ${r.source} · ${r.type || 'photo'}`),
         itens: results, tipo: 'sexcom',
         aoEscolher: async ({ item }) => {
