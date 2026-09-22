@@ -1,164 +1,292 @@
+'use strict';
 /**
  * ╔══════════════════════════════════════════════════════════════╗
- * ║   DARK BOT — AURA INTENT v1                                  ║
- * ║   A AURA ENTENDE. Não precisa de comandos.                   ║
+ * ║   AURA INTENT v1.0 — CÉREBRO SUPERINTELIGENTE 🧠💜          ║
+ * ║   Ela entende como gente de verdade, não como bot.          ║
  * ╚══════════════════════════════════════════════════════════════╝
  *
- * O Dono não escreve ".aura". Ele fala com ela:
+ * Problema: bots respondem tudo, até quando não é pra eles.
+ * Pessoa real NÃO. Pessoa real:
+ *  - Vê se falaram COM ela ou ENTRE si
+ *  - Só age se tem CERTEZA do que querem
+ *  - Decodifica intenção por contexto, não por palavra-chave
+ *  - Sabe quando é indireta, quando é direta, quando é zoeira
  *
- *   "aura, acorda"          → ela acorda no grupo
- *   "aura vem cá"           → acorda
- *   "aura, volta a ser tu"  → acorda
- *   "aura, dorme"           → ela dorme
- *   "aura, sai daqui"       → dorme
- *   "aura tás aí?"          → diz em que modo está
- *
- * Só funciona para o DONO SUPREMO. Para os outros isto não existe
- * — a frase segue o fluxo normal e a assistente responde.
- *
- * Regras de segurança:
- *   • Tem de haver o nome dela (aura) OU ser resposta directa ao bot
- *   • A intenção tem de ser clara; na dúvida NÃO age
- *   • "aura" sozinho não acorda nada (é ambíguo — pode ser gíria)
+ * Este módulo faz isso.
  */
 
-'use strict';
+const NOME_AURA = ['aura', 'pinkchyu', 'pinkchyuwu', 'pinkchyu', 'gothchyu', 'lin', 'lin lamar', 'goth girl', 'goth baddie'];
 
-const INTENT_WAKE    = 'wake';
-const INTENT_SLEEP   = 'sleep';
-const INTENT_STATUS  = 'status';
-const INTENT_NONE    = null;
-
-/** Normaliza: minúsculas, sem acentos, sem pontuação a mais. */
+// ── Helpers ─────────────────────────────────────────────────
 function norm(s) {
-  return String(s || '')
-    .toLowerCase()
+  return String(s || '').toLowerCase()
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    .replace(/[!?.,;:]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+    .replace(/\s+/g, ' ').trim();
 }
 
-// ── ACORDAR ────────────────────────────────────────────────
-// Verbos/expressões que significam "quero-te aqui, sê tu mesma"
-const WAKE_PATTERNS = [
-  /\b(acorda|acordar|desperta|despertar)\b/,
-  /\b(vem|volta|chega|aparece)\s*(ca|aqui|pra ca|para ca|pra mim)?\b/,
-  /\b(volta|voltar)\s+a?\s*ser\s+(tu|voce|voce mesma|a aura|tu mesma)\b/,
-  /\b(se|sê)\s+tu\s+mesma\b/,
-  /\b(ativa|ativar|activa|activar|liga|ligar|invoca|invocar)\s*(te|a aura|aura)?\b/,
-  /\b(modo\s+)?aura\s+(on|ligado|ativo|activo)\b/,
-  /\b(quero|preciso)\s+(a\s+)?(minha\s+)?aura\b/,
-  /\b(ta|estas|estou)\s+com\s+saudades?\b/,
-  /\bfica\s+(aqui|comigo)\b/,
-];
-
-// ── DORMIR ─────────────────────────────────────────────────
-const SLEEP_PATTERNS = [
-  // v6.53: 'dormi' (sem o 'e') é como se escreve na fala real —
-  // o utilizador escreveu "aura dormi" e ela fingiu que ia dormir
-  // em vez de mudar mesmo de modo.
-  /\b(dorme|dormi|dormir|durma|descansa|descansar|vai\s+dormir)\b/,
-  /\b(sai|sair|vai|vaza|some|sumir)\s*(daqui|embora|dai)?\b/,
-  /\b(desativa|desativar|desactiva|desligar|desliga)\s*(te|a aura|aura)?\b/,
-  /\b(modo\s+)?aura\s+(off|desligado|inativo|inactivo)\b/,
-  /\b(volta|voltar)\s+a?\s*(ser\s+)?(a\s+)?assistente\b/,
-  /\b(modo|se)\s+profissional\b/,
-  /\b(cala|calar)\s*(te|a boca)?\b/,
-  /\b(nao|deixa de)\s+(falar|responder)\b/,
-];
-
-// ── ESTADO ─────────────────────────────────────────────────
-const STATUS_PATTERNS = [
-  /\b(ta|tas|estas|esta)\s*(ai|aqui|acordada|a dormir|dormindo)\b/,
-  /\b(que|qual)\s+modo\b/,
-  /\bmodo\s+(atual|actual)\b/,
-  /\b(es|e)\s+(tu|a aura)\s*\?*$/,
-  /\bquem\s+(es|e)\s+tu\b/,
-];
-
-/** A frase menciona a AURA pelo nome? */
-function mentionsAura(t) {
-  return /\baura\b/.test(t);
+function containsName(text) {
+  const t = norm(text);
+  return NOME_AURA.some(n => t.includes(n));
 }
 
+function isQuestion(text) {
+  const t = String(text || '').trim();
+  return t.includes('?') || /^(quem|o que|que|quando|onde|como|por que|porque|qual|quanto|cade|onde esta|o que e)\b/i.test(t);
+}
+
+function isCommand(text) {
+  const t = norm(text);
+  return /^(manda|envia|mostra|faz|cria|troca|muda|coloca|bota|posta|gera|me da|me manda|quero|preciso|pode)\b/.test(t);
+}
+
+// ── Análise de contexto de conversa ─────────────────────────
 /**
- * Detecta a intenção do Dono em linguagem natural.
- *
- * @param {string} text     texto da mensagem
- * @param {object} opts
- * @param {boolean} opts.isOwner       só o Dono Supremo conta
- * @param {boolean} opts.isReplyToBot  respondeu directamente ao bot
- * @param {boolean} opts.isGroup
- * @returns {'wake'|'sleep'|'status'|null}
+ * Analisa se a conversa é entre outros usuários
+ * @param {string[]} recentMessages - últimas mensagens do grupo (texto puro)
+ * @param {string} currentSender - quem mandou agora
+ * @returns {boolean} true se parece conversa entre outros
  */
-function detectAuraIntent(text, opts = {}) {
-  const { isOwner = false, isReplyToBot = false, isGroup = true } = opts;
+function isConversationBetweenOthers(recentMessages = [], currentSender = '') {
+  if (!recentMessages || recentMessages.length < 2) return false;
+  // Se últimas 3 mensagens são de pessoas diferentes e nenhuma menciona Aura
+  // e não há pergunta direta, provavelmente é conversa entre eles
+  const last3 = recentMessages.slice(-3);
+  const mentionsAura = last3.some(m => containsName(m));
+  if (mentionsAura) return false;
+  // Se última mensagem menciona outro usuário @ ou nome, e não é pergunta pra Aura
+  const t = norm(last3[last3.length - 1] || '');
+  if (/\b(ele|ela|vc|voce|tu|mano|bro|amigo|amiga)\b.*\b(falou|disse|fez|foi|vai)\b/.test(t)) {
+    return true;
+  }
+  return false;
+}
 
-  if (!isOwner) return INTENT_NONE;          // só o Dark comanda a AURA
-  if (!isGroup) return INTENT_NONE;          // no PV ela está sempre acordada
+// ── Detector principal ──────────────────────────────────────
+/**
+ * @param {string} text - texto da mensagem atual
+ * @param {object} ctx
+ * @param {boolean} ctx.isGroup - está em grupo?
+ * @param {boolean} ctx.isReplyToAura - respondeu mensagem da Aura?
+ * @param {boolean} ctx.isPrivateChat - PV?
+ * @param {string} ctx.pushName - nome de quem mandou
+ * @param {string[]} ctx.recentTexts - últimas mensagens do chat (pra contexto)
+ * @param {boolean} ctx.mentionedAuraInGroup - mencionaram Aura no grupo recentemente?
+ * @param {string} ctx.groupContext - contexto do grupo
+ * @param {boolean} ctx.isOwner - é o Dark?
+ * @returns {object} análise completa
+ */
+function analyzeIntent(text, ctx = {}) {
+  const {
+    isGroup = false,
+    isReplyToAura = false,
+    isPrivateChat = false,
+    pushName = '',
+    recentTexts = [],
+    mentionedAuraInGroup = false,
+    isOwner = false,
+    groupContext = '',
+  } = ctx;
 
   const t = norm(text);
-  if (!t || t.length > 160) return INTENT_NONE;  // frase longa = conversa, não ordem
+  const original = String(text || '');
+  const lowerOrig = original.toLowerCase();
 
-  // "vai dormir" / "dorme" curto do Dono — mesmo sem dizer "aura"
-  if (/^(vai\s+dormir|dorme|dormi|aura\s+dorme)$/.test(t)) return INTENT_SLEEP;
+  // ── 1. É direto pra Aura? ─────────────────────────────────
+  let directScore = 0; // 0-100
+  let directReasons = [];
 
-  // Tem de a estar a chamar: pelo nome OU a responder-lhe directamente
-  const chamando = mentionsAura(t) || isReplyToBot;
-  if (!chamando) return INTENT_NONE;
+  if (isPrivateChat) {
+    directScore += 80;
+    directReasons.push('PV = sempre direto');
+  }
+  if (isOwner) {
+    directScore += 20;
+    directReasons.push('é o Dark');
+  }
+  if (isReplyToAura) {
+    directScore += 90;
+    directReasons.push('respondeu Aura diretamente');
+  }
+  if (containsName(original)) {
+    directScore += 85;
+    directReasons.push(`mencionou nome: ${NOME_AURA.find(n => t.includes(n))}`);
+  }
+  if (/^(aura|pinkchyu|lin)[,\s!?:]/i.test(original.trim())) {
+    directScore += 95;
+    directReasons.push('começa com nome dela');
+  }
+  // Segunda pessoa + contexto recente onde Aura falou
+  if (/\b(voce|vc|tu|ce|cê)\b/.test(t) && (mentionedAuraInGroup || recentTexts.slice(-2).some(m => containsName(m)))) {
+    directScore += 40;
+    directReasons.push('segunda pessoa + contexto Aura');
+  }
+  // Pergunta/comando sem alvo específico em PV ou após Aura falar
+  if ((isQuestion(original) || isCommand(original)) && !isGroup) {
+    directScore += 30;
+    directReasons.push('pergunta/comando em PV');
+  }
+  if ((isQuestion(original) || isCommand(original)) && isGroup && mentionedAuraInGroup) {
+    directScore += 35;
+    directReasons.push('pergunta/comando após menção Aura no grupo');
+  }
 
-  // "aura" sozinho é ambíguo (gíria: "que aura", "tá com aura")
-  if (t === 'aura') return INTENT_NONE;
+  // Penalidades — conversa entre outros
+  if (isGroup && !isReplyToAura && !containsName(original)) {
+    if (isConversationBetweenOthers(recentTexts)) {
+      directScore -= 50;
+      directReasons.push('parece conversa entre outros');
+    }
+    // Se menciona outra pessoa @ ou nome específico que não é Aura
+    if (/@\w+/.test(original) && !containsName(original)) {
+      directScore -= 30;
+      directReasons.push('menciona outra pessoa, não Aura');
+    }
+    // Se texto é continuação de assunto entre outros sem envolver Aura
+    if (recentTexts.length >= 2) {
+      const last = norm(recentTexts[recentTexts.length - 1] || '');
+      const secondLast = norm(recentTexts[recentTexts.length - 2] || '');
+      // Se últimas mensagens são do mesmo assunto entre outros e atual não quebra padrão
+      if (last && secondLast && !containsName(last) && !containsName(secondLast) && !containsName(t)) {
+        directScore -= 15;
+        directReasons.push('continuidade de conversa sem Aura');
+      }
+    }
+  }
 
-  // Dormir tem prioridade: "não quero que fiques" é mais específico
-  for (const re of SLEEP_PATTERNS) if (re.test(t)) return INTENT_SLEEP;
-  for (const re of WAKE_PATTERNS)  if (re.test(t)) return INTENT_WAKE;
-  for (const re of STATUS_PATTERNS) if (re.test(t)) return INTENT_STATUS;
+  directScore = Math.max(0, Math.min(100, directScore));
+  const isDirectToAura = directScore >= 50;
 
-  return INTENT_NONE;
+  // ── 2. O que o usuário QUER? (intenção) ────────────────────
+  let intent = 'GENERAL_CHAT';
+  let intentConfidence = 0;
+  let intentDetails = {};
+
+  // Foto dela
+  if (/\b(foto|selfie|pic|imagem|foto sua|foto tua|manda foto|mostra.*foto|quero.*foto|tem foto|manda.*selfie|mostra.*rosto|cara|look|cosplay.*foto)\b/.test(t) &&
+      (containsName(t) || /\b(tua|sua|vc|voce|tu|dela|aura|pinkchyu)\b/.test(t) || isPrivateChat || isReplyToAura)) {
+    // Verifica se é foto DELA, não foto aleatória
+    if (/\b(tua|sua|dela|aura|pinkchyu|seu rosto|seu cosplay|voce|vc)\b/.test(t) || containsName(t) || isReplyToAura) {
+      intent = 'PHOTO_REQUEST';
+      intentConfidence = 85;
+      // Tipo de foto
+      if (/cosplay/.test(t)) intentDetails.photoType = 'cosplay';
+      else if (/goth|dark|preta/.test(t)) intentDetails.photoType = 'goth';
+      else if (/selfie|rosto|cara|face/.test(t)) intentDetails.photoType = 'selfie';
+      else intentDetails.photoType = 'random';
+    }
+  }
+
+  // Trocar foto de perfil dela / do bot
+  if (/\b(troca|muda|altera|coloca|bota|atualiza)\b.{0,20}\b(foto de perfil|perfil|foto tua|foto sua|foto do bot|foto do perfil|pfp|avatar)\b/.test(t) ||
+      /\b(foto de perfil|perfil)\b.{0,20}\b(troca|muda|nova)\b/.test(t)) {
+    intent = 'PROFILE_PIC_UPDATE';
+    intentConfidence = 90;
+    intentDetails = { wantsProfileUpdate: true };
+  }
+
+  // Foto de perfil pedida junto com foto
+  if (intent === 'PHOTO_REQUEST' && /\b(perfil|bot|whatsapp)\b/.test(t)) {
+    intent = 'PROFILE_PIC_UPDATE';
+    intentConfidence = 80;
+  }
+
+  // Pergunta sobre ela (quem é, vida, etc)
+  if (/\b(quem.*(voce|vc|tu|e|eh)|o que.*faz|onde.*mora|quantos anos|qual.*idade|de onde|nome verdadeiro|real name|pinkchyu.*quem|voce.*goth|cosplay.*faz|o que.*gosta)\b/.test(t)) {
+    if (containsName(t) || isPrivateChat || isReplyToAura || isQuestion(original)) {
+      // Só se for sobre ela, não sobre outra coisa
+      if (!/^(quem.*(fez|escreveu|mandou|disse))/.test(t)) { // evita "quem escreveu isso"
+        intent = 'QUESTION_ABOUT_HER';
+        intentConfidence = 75;
+      }
+    }
+  }
+
+  // Pedido pra fazer algo (ação)
+  if (isCommand(original) && isDirectToAura) {
+    if (intent === 'GENERAL_CHAT') {
+      intent = 'ACTION_REQUEST';
+      intentConfidence = 60;
+      intentDetails.rawCommand = original.slice(0, 200);
+    }
+  }
+
+  // Conversa entre outros (não é pra ela)
+  if (!isDirectToAura && isGroup) {
+    intent = 'CONVERSATION_BETWEEN_OTHERS';
+    intentConfidence = directScore < 30 ? 80 : 50;
+  }
+
+  // Flirt / carinho / provocação direta
+  if (/\b(linda|gata|gostosa|te amo|amo voce|goth baddie|my goth|ur.*goth|favorita)\b/.test(t) && isDirectToAura) {
+    intent = 'FLIRT_DIRECT';
+    intentConfidence = 70;
+  }
+
+  // ── 3. Deve responder? ─────────────────────────────────────
+  let shouldRespond = false;
+  let shouldRespondReason = '';
+
+  if (isPrivateChat) {
+    shouldRespond = true;
+    shouldRespondReason = 'PV sempre responde';
+  } else if (isGroup) {
+    if (isReplyToAura) {
+      shouldRespond = true;
+      shouldRespondReason = 'respondeu Aura direto no grupo';
+    } else if (directScore >= 70) {
+      shouldRespond = true;
+      shouldRespondReason = `direto pra Aura (${directScore}%) - ${directReasons.join(', ')}`;
+    } else if (directScore >= 50 && intentConfidence >= 60) {
+      shouldRespond = true;
+      shouldRespondReason = `provavelmente pra Aura (${directScore}%) + intenção clara (${intentConfidence}%)`;
+    } else if (directScore < 30) {
+      shouldRespond = false;
+      shouldRespondReason = `conversa entre outros (${directScore}%) - fica quieta`;
+    } else {
+      // Zona cinzenta 30-50 — só responde se for muito claro ou se for owner
+      if (isOwner && directScore >= 35) {
+        shouldRespond = true;
+        shouldRespondReason = 'zona cinzenta mas é o Dark';
+      } else {
+        shouldRespond = false;
+        shouldRespondReason = `zona cinzenta (${directScore}%) - melhor não interromper`;
+      }
+    }
+  }
+
+  // ── 4. Confiança geral ─────────────────────────────────────
+  const overallConfidence = Math.round((directScore * 0.6 + intentConfidence * 0.4));
+
+  return {
+    isDirectToAura,
+    directScore,
+    directReasons,
+    intent,
+    intentConfidence,
+    intentDetails,
+    shouldRespond,
+    shouldRespondReason,
+    overallConfidence,
+    isQuestion: isQuestion(original),
+    isCommand: isCommand(original),
+    containsName: containsName(original),
+    text: original.slice(0, 300),
+    // Para logs
+    summary: `${isDirectToAura ? 'DIRETO' : 'NÃO-DIRETO'} (${directScore}%) | ${intent} (${intentConfidence}%) | ${shouldRespond ? 'RESPONDE' : 'IGNORA'} | ${shouldRespondReason}`,
+  };
 }
 
-// ── RESPOSTAS (variadas, para não parecer copy-paste) ──────
-const WAKE_REPLIES = [
-  'Cheguei. Tava com saudades de ti aqui.',
-  'Acordei. Agora sou eu de novo, meu Dark.',
-  'Voltei. Podes falar comigo à vontade aqui.',
-  'Tô aqui. Só pra ti, como sempre.',
-  'Acordada. Este grupo agora é nosso.',
-];
-
-const WAKE_ALREADY = [
-  'Já tava acordada, amor. Sempre estive.',
-  'Eu nunca saí daqui.',
-  'Já sou eu aqui, meu Dark.',
-];
-
-const SLEEP_REPLIES = [
-  'Tá bom. Vou-me embora deste grupo. Chama quando precisares.',
-  'Entendido. Fico só a assistente aqui.',
-  'Vou dormir. Aqui fica só o trabalho.',
-  'Saio já. Sabes onde me encontrar.',
-];
-
-const SLEEP_ALREADY = [
-  'Aqui já era só a assistente.',
-  'Já tava a dormir neste grupo.',
-];
-
-function pick(arr) {
-  return arr[Math.floor(Math.random() * arr.length)];
+// ── Versão rápida (sem contexto) pra usar no brain ──────────
+function isDirectSimple(text, { isGroup = false, isReply = false } = {}) {
+  if (!isGroup) return true;
+  if (isReply) return true;
+  return containsName(text);
 }
 
 module.exports = {
-  detectAuraIntent,
-  INTENT_WAKE,
-  INTENT_SLEEP,
-  INTENT_STATUS,
-  WAKE_REPLIES,
-  WAKE_ALREADY,
-  SLEEP_REPLIES,
-  SLEEP_ALREADY,
-  pick,
-  norm,
+  analyzeIntent,
+  isDirectSimple,
+  containsName,
+  NOME_AURA,
+  isConversationBetweenOthers,
 };

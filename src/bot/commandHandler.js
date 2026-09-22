@@ -1908,7 +1908,63 @@ _Desculpa meu Dark, ainda não sei cantar de verdade... Mas um dia aprendo! 🌹
     emConversa: (grupoAFalar && !_respostaAOutro) || _interacaoConvidada,
     sat: require('../aura/auraVontade').saturacao(ctx.remoteJid, ctx.senderNumber),
   });
-  const _auraMayReply = isBotMentioned || replyHasText || replyHasMedia || mentionedWithMedia || auraTriggerActive || isOwnerFreeText || pvDeTodos || grupoAFalar || _interacaoConvidada;
+  // ── v12.0 PINKCHYU SUPERINTENT — decode user want with certainty ──
+  let _superIntent = null;
+  let _isConversationBetweenOthers = false;
+  try {
+    if (_auraSuperIntent && text) {
+      _superIntent = _auraSuperIntent.analyzeIntent(text, {
+        isGroup: ctx.isGroup,
+        isPrivate: isPv,
+        isOwner,
+        isReplyToAura: isReplyToBot,
+        isBotMentioned,
+        isAuraTrigger: auraTriggerActive,
+        mentionedJids: allMentioned || [],
+        quotedParticipant: ctxParticipant || '',
+        pushName: ctx.pushName,
+        botNum,
+        botLid,
+        remoteJid: ctx.remoteJid,
+        senderNumber: ctx.senderNumber,
+        isMedia: !!(msg.message?.imageMessage || msg.message?.videoMessage || msg.message?.audioMessage || msg.message?.stickerMessage),
+      });
+      ctx._superIntent = _superIntent;
+      _isConversationBetweenOthers = _superIntent.isConversationBetweenOthers || _superIntent.intent === 'CONVERSATION_BETWEEN_OTHERS';
+      // If it's clearly conversation between others with low direct score, don't reply
+      if (_isConversationBetweenOthers && _superIntent.directScore < 20 && !isOwnerFreeText && !pvDeTodos) {
+        console.log('[SuperIntent] Ignorando conversa entre outros:', _superIntent.summary);
+      }
+      // Photo request detection with high confidence
+      if (_superIntent.intent === 'PHOTO_REQUEST' && _superIntent.intentConfidence >= 60) {
+        ctx._photoIntent = _superIntent;
+      }
+    }
+  } catch (e) { console.warn('[SuperIntent]', e.message?.slice(0,60)); }
+
+  const _auraMayReplyRaw = isBotMentioned || replyHasText || replyHasMedia || mentionedWithMedia || auraTriggerActive || isOwnerFreeText || pvDeTodos || grupoAFalar || _interacaoConvidada;
+  // Superintelligent gate: if superIntent says it's conversation between others and not direct, block
+  let _auraMayReply = _auraMayReplyRaw;
+  if (_superIntent) {
+    if (_isConversationBetweenOthers && !_superIntent.isDirectToAura && !isOwner) {
+      // In group, if directScore < 30 and it's conversation between others, silence
+      if (_superIntent.directScore < 30 && ctx.isGroup) {
+        _auraMayReply = false;
+      }
+    }
+    // If directScore >= 50, force reply even if other gates said no (except blocked)
+    if (_superIntent.isDirectToAura && _superIntent.directScore >= 70) {
+      _auraMayReply = true;
+    }
+    // Owner always direct in PV or when mentioning
+    if (isOwner && isPv && _superIntent.directScore >= 20) {
+      _auraMayReply = true;
+    }
+  }
+  // Log for debugging
+  if (_superIntent && _superIntent.isDirectToAura) {
+    console.log('[SuperIntent] Direct to Aura:', _superIntent.directScore, _superIntent.intent, _superIntent.summary);
+  }
   // Debounce por chat: evita duas respostas simultâneas quando o WhatsApp
   // entrega eventos duplicados ou quando a AURA recebe várias mensagens
   // seguidas. Não interfere com comandos prefixados.
@@ -2997,6 +3053,82 @@ salta à vista primeiro, com naturalidade. NUNCA digas que não vês.]`;
         const stFotos2 = await _fotosPedidas(sock, msg, ctx, cleanText);
         if (stFotos2 === 'enviadas' || stFotos2 === 'falhou') return true;
         // null → não era pedido de foto explícito; segue o texto normal
+      }
+
+      // ── v12.0 PINKCHYU SELFIE — foto dela pedida com certeza ──
+      if (ctx._photoIntent || (ctx._superIntent && ctx._superIntent.intent === 'PHOTO_REQUEST')) {
+        try {
+          const selfieMod = require('../aura/auraSelfie');
+          const photoIntent = selfieMod.handlePhotoIntent(cleanText || text, {
+            isOwner, isGroup: ctx.isGroup, isReplyToAura: isReplyToBot, isBotMentioned,
+          });
+          if (photoIntent.shouldSend && photoIntent.confidence >= 50) {
+            const isDirect = ctx._superIntent?.isDirectToAura || isOwner || isPv;
+            if (isDirect || photoIntent.confidence >= 70) {
+              console.log('[Pinkchyu Photo] Enviando selfie tipo:', photoIntent.type, 'conf:', photoIntent.confidence);
+              // Try to get existing selfie
+              let selfiePath = null;
+              try { selfiePath = selfieMod.getSelfie(photoIntent.type); } catch {}
+              if (selfiePath) {
+                const caption = selfieMod.getCaptionForType(photoIntent.type, isOwner);
+                await sock.sendMessage(ctx.remoteJid, {
+                  image: { url: selfiePath },
+                  caption,
+                }, { quoted: msg }).catch(async () => {
+                  // fallback try buffer
+                  try {
+                    const fs = require('fs');
+                    if (fs.existsSync(selfiePath)) {
+                      const buf = fs.readFileSync(selfiePath);
+                      await sock.sendMessage(ctx.remoteJid, { image: buf, caption }, { quoted: msg });
+                    }
+                  } catch {}
+                });
+                // Offer profile update if owner asked
+                if (isOwner && /perfil|profile|coloca|atualiza|foto do bot/i.test(cleanText || '')) {
+                  try {
+                    const fs = require('fs');
+                    if (fs.existsSync(selfiePath)) {
+                      const buf = fs.readFileSync(selfiePath);
+                      await selfieMod.updateProfilePicture(sock, buf);
+                      await sock.sendMessage(ctx.remoteJid, { text: 'Atualizei minha foto de perfil pra essa 🖤 rawr' }, { quoted: msg });
+                    }
+                  } catch (e) { console.warn('[Selfie profile]', e.message?.slice(0,60)); }
+                }
+                return true;
+              } else {
+                // No selfie file yet, generate or fallback to AI image
+                try {
+                  const aiMod = require('./ai');
+                  const promptMap = {
+                    selfie: 'goth girl selfie, pink hair, dark makeup, cute, 23yo latina, aesthetic, instagram style',
+                    cosplay: 'goth girl cosplay Kafka Honkai Star Rail, purple hair, goth outfit, cute, high quality',
+                    goth: 'goth baddie girl, black outfit, chains, dark makeup, pink hair, cute goth aesthetic',
+                    cute: 'cute goth girl selfie, kawaii, pinkchyu style, 23yo, aesthetic',
+                    stream: 'goth gamer girl streaming setup, purple lights, cute, pinkchyu twitch style',
+                  };
+                  const prompt = promptMap[photoIntent.type] || promptMap.selfie;
+                  const imgBuf = await aiMod.generateImage(prompt).catch(() => null);
+                  if (imgBuf && imgBuf.length > 500) {
+                    const caption = selfieMod.getCaptionForType(photoIntent.type, isOwner);
+                    await sock.sendMessage(ctx.remoteJid, { image: imgBuf, caption }, { quoted: msg });
+                    // Save for future
+                    try {
+                      const path = require('path');
+                      const fs = require('fs');
+                      const dir = path.join(__dirname, '..', 'assets', 'aura_selfies');
+                      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+                      const fileName = `${photoIntent.type}_${Date.now()}.jpg`;
+                      fs.writeFileSync(path.join(dir, fileName), imgBuf);
+                    } catch {}
+                    return true;
+                  }
+                } catch (e) { console.warn('[Selfie gen]', e.message?.slice(0,60)); }
+                // If still no image, let aura respond with text saying she will send
+              }
+            }
+          }
+        } catch (e) { console.warn('[Pinkchyu Photo]', e.message?.slice(0,60)); }
       }
 
       // v6.53: PEDIDO DE ÁUDIO — ela dizia "não posso enviar áudios"

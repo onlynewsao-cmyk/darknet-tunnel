@@ -494,9 +494,14 @@ const CAPACIDADES = [
     gatilhos: [/\b(muda|troca|poe|coloca|altera)\b.{0,20}\b(foto|imagem)\b.{0,16}\bgrupo\b/],
   },
   {
+    id: 'foto_aura', nivel: 'todos', arg: 'tipo', risco: 'seguro',
+    desc: 'Mostrar foto dela mesma — Pinkchyu selfie (goth, cosplay, cute, stream)',
+    gatilhos: [/\b(foto tua|foto sua|manda foto|mostra foto|selfie tua|foto da aura|manda selfie|quero.*foto.*tua|quero.*te.*ver|mostra.*voce)\b/, /\b(pinkchyu|aura).*\b(foto|selfie)\b/],
+  },
+  {
     id: 'foto_perfil', nivel: 'dono', arg: 'nenhum', risco: 'seguro',
-    desc: 'Mudar a foto de perfil do bot para a imagem enviada',
-    gatilhos: [/\b(muda|troca|poe|coloca|altera)\b.{0,20}\b(tua foto|foto de perfil|teu perfil|minha foto)\b/],
+    desc: 'Mudar a foto de perfil do bot para a imagem enviada ou colocar selfie dela como perfil',
+    gatilhos: [/\b(muda|troca|poe|coloca|altera|atualiza)\b.{0,20}\b(tua foto|foto de perfil|teu perfil|minha foto|perfil do bot)\b/, /\b(coloca|poe).{0,12}\b(tua|essa|minha)\b.{0,12}\b(perfil|foto)\b/],
   },
   {
     id: 'listar_membros', nivel: 'admin', arg: 'nenhum', risco: 'seguro',

@@ -593,13 +593,78 @@ async function executar(id, arg, { sock, msg, ctx, texto, isOwner, isAdmin }) {
         : { ok: false, msg: `Não deu: ${r?.message || 'erro'}` };
     }
 
+    case 'foto_aura': {
+      try {
+        const selfieMod = require('./auraSelfie');
+        const intent = selfieMod.handlePhotoIntent(ctx.texto || '', { isOwner: ctx.isOwner });
+        const tipo = intent.type || arg || 'selfie';
+        let pathSelfie = null;
+        try { pathSelfie = selfieMod.getSelfie(tipo); } catch {}
+        if (pathSelfie) {
+          const fs = require('fs');
+          if (fs.existsSync(pathSelfie)) {
+            const buf = fs.readFileSync(pathSelfie);
+            await sock.sendMessage(jid, { image: buf, caption: selfieMod.getCaptionForType(tipo, ctx.isOwner) }, { quoted: msg });
+            return { ok: true, silencioso: true };
+          }
+        }
+        // fallback generate
+        try {
+          const aiMod = require('../bot/ai');
+          const prompts = {
+            selfie: 'goth girl selfie, pink hair, dark makeup, cute, 23yo latina, aesthetic, instagram style, high quality',
+            cosplay: 'goth girl cosplay Kafka Honkai Star Rail, purple hair, goth outfit, cute',
+            goth: 'goth baddie girl, black outfit, chains, dark makeup, pink hair, cute goth aesthetic',
+            cute: 'cute goth girl selfie, kawaii, pinkchyu style',
+            stream: 'goth gamer girl streaming setup, purple lights, cute, pinkchyu twitch style',
+          };
+          const imgBuf = await aiMod.generateImage(prompts[tipo] || prompts.selfie);
+          if (imgBuf && imgBuf.length > 500) {
+            await sock.sendMessage(jid, { image: imgBuf, caption: selfieMod.getCaptionForType(tipo, ctx.isOwner) }, { quoted: msg });
+            return { ok: true, silencioso: true };
+          }
+        } catch {}
+        return { ok: false, msg: 'Ainda não tenho fotinha desse tipo salva 😔 mas já já tiro uma pra ti 🖤' };
+      } catch (e) {
+        return { ok: false, msg: 'Não consegui mandar minha foto agora 😔' };
+      }
+    }
+
     case 'foto_perfil': {
+      // Se tem imagem na mensagem citada/enviada → usa ela
+      // Se não, tenta usar selfie dela como perfil (pedido tipo "coloca tua foto no perfil")
       const img = await imagemDaMensagem(msg, sock);
-      if (!img) return { ok: false, msg: 'Manda a foto que eu ponho no meu perfil.' };
-      const r = await mega.setProfilePicture(sock, img);
-      return r?.success
-        ? { ok: true, msg: 'Mudei a minha foto. Que tal? 😏' }
-        : { ok: false, msg: `Não deu: ${r?.message || 'erro'}` };
+      if (img) {
+        const r = await mega.setProfilePicture(sock, img);
+        return r?.success
+          ? { ok: true, msg: 'Mudei a minha foto. Que tal? 😏🖤 rawr' }
+          : { ok: false, msg: `Não deu: ${r?.message || 'erro'}` };
+      }
+      // Sem imagem enviada → usa selfie dela
+      try {
+        const selfieMod = require('./auraSelfie');
+        const tipo = (ctx.texto && /cosplay/i.test(ctx.texto)) ? 'cosplay' : (ctx.texto && /goth/i.test(ctx.texto) ? 'goth' : 'selfie');
+        let pathSelfie = null;
+        try { pathSelfie = selfieMod.getSelfie(tipo); } catch {}
+        if (pathSelfie) {
+          const fs = require('fs');
+          if (fs.existsSync(pathSelfie)) {
+            const buf = fs.readFileSync(pathSelfie);
+            const r = await selfieMod.updateProfilePicture(sock, buf);
+            return r?.success ? { ok: true, msg: 'Coloquei minha fotinha no perfil 🖤 que tal, meu Dark? rawr' } : { ok: false, msg: 'Não consegui atualizar 😔' };
+          }
+        }
+        // gerar e colocar
+        try {
+          const aiMod = require('../bot/ai');
+          const imgBuf = await aiMod.generateImage('goth girl selfie, pink hair, dark makeup, cute, 23yo latina, aesthetic, instagram style, high quality');
+          if (imgBuf && imgBuf.length > 500) {
+            const r = await selfieMod.updateProfilePicture(sock, imgBuf);
+            return r?.success ? { ok: true, msg: 'Coloquei minha fotinha nova no perfil 🖤 rawr' } : { ok: false, msg: 'Gerei mas não consegui colocar 😔' };
+          }
+        } catch {}
+      } catch {}
+      return { ok: false, msg: 'Manda a foto que eu ponho no meu perfil, ou diz "coloca tua foto no perfil" 🖤' };
     }
 
     case 'listar_membros': {
