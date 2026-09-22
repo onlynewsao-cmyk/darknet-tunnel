@@ -172,6 +172,21 @@ async function getAlbum(url, limit = 10) {
 // ─── Baixa as mídias de UM álbum ──
 // v11.2.5: por defeito manda QUASE tudo o que o post tem (teto 30).
 // Antes limit=5 cortava o álbum e o user só via uma fracção.
+function isHtmlBuf(buf) {
+  if (!buf || buf.length < 20) return true;
+  const s = buf.slice(0, 500).toString('utf8').toLowerCase();
+  return s.includes('<html') || s.includes('<!doctype') || (s.trim().startsWith('<') && s.includes('<head'));
+}
+function detectKind(buf) {
+  if (!buf || buf.length < 12) return 'unknown';
+  if (buf.slice(4,8).toString() === 'ftyp') return 'mp4';
+  if (buf[0]===0xFF && buf[1]===0xD8) return 'jpeg';
+  if (buf.slice(0,4).toString() === '\x89PNG') return 'png';
+  if (buf.slice(0,4).toString() === 'RIFF' && buf.slice(8,12).toString() === 'WEBP') return 'webp';
+  if (buf.slice(0,3).toString() === 'GIF') return 'gif';
+  return 'unknown';
+}
+
 async function albumToMedia(albumUrl, limit = 30, { videosOnly = false, photosOnly = false } = {}) {
   const hardCap = Math.min(Math.max(Number(limit) || 30, 1), 40);
   const album = await getAlbum(albumUrl, hardCap);
@@ -183,7 +198,14 @@ async function albumToMedia(albumUrl, limit = 30, { videosOnly = false, photosOn
           headers: { ...HEADERS, Accept: 'image/*,*/*' },
           timeout: 45000,
         });
-        if (buf && buf.length > 1000) media.push({ url, buf, type: 'photo' });
+        if (!buf || buf.length < 1000) continue;
+        if (isHtmlBuf(buf)) continue;
+        const kind = detectKind(buf);
+        if (!['jpeg','png','webp','gif'].includes(kind)) {
+          // ainda aceita se >1KB e não HTML, pode ser jpeg sem marca?
+          if (buf.length < 2000) continue;
+        }
+        media.push({ url, buf, type: 'photo' });
       } catch {}
       if (media.length >= hardCap) break;
     }
@@ -200,11 +222,16 @@ async function albumToMedia(albumUrl, limit = 30, { videosOnly = false, photosOn
           maxContentLength: 55 * 1024 * 1024,
         });
         const buf = Buffer.from(r.data);
-        if (buf && buf.length > 5000) media.push({ url, buf, type: 'video' });
+        if (!buf || buf.length < 10000) continue;
+        if (isHtmlBuf(buf)) continue;
+        // erome videos já são mp4, mas valida ftyp ou tamanho
+        const kind = detectKind(buf);
+        if (kind !== 'mp4' && buf.length < 20000) continue;
+        media.push({ url, buf, type: 'video' });
       } catch {}
     }
   }
-  if (!media.length) throw new Error('Sem mídias neste álbum.');
+  if (!media.length) throw new Error('Sem mídias válidas neste álbum (todas inválidas/HTML).');
   return {
     media,
     name: album.name,

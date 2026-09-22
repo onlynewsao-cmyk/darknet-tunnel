@@ -74,6 +74,80 @@ function _ytdlpBin() {
   return 'yt-dlp';
 }
 
+function getFfmpegBin() {
+  try { return require('ffmpeg-static') || 'ffmpeg'; } catch { return 'ffmpeg'; }
+}
+
+function detectContainer(buf) {
+  if (!buf || buf.length < 16) return 'unknown';
+  const head = buf.slice(0,16);
+  if (head.slice(0,3).toString() === 'GIF') return 'gif';
+  if (head[0]===0xFF && head[1]===0xD8) return 'jpeg';
+  if (head.slice(0,4).toString() === '\x89PNG') return 'png';
+  if (head.slice(0,4).toString() === 'RIFF' && buf.slice(8,12).toString() === 'WEBP') return 'webp';
+  if (buf.slice(4,8).toString() === 'ftyp') return 'mp4';
+  if (head[0]===0x1A && head[1]===0x45 && head[2]===0xDF && head[3]===0xA3) return 'webm';
+  if (head.slice(0,4).toString() === 'RIFF' && buf.slice(8,12).toString() === 'AVI ') return 'avi';
+  if (head.slice(0,4).toString() === 'OggS') return 'ogg';
+  if (head[0]===0x47) return 'ts';
+  return 'unknown';
+}
+
+function isHtmlBuffer(buf) {
+  if (!buf || buf.length < 20) return true;
+  const s = buf.slice(0, 500).toString('utf8').toLowerCase();
+  return s.includes('<html') || s.includes('<!doctype') || (s.trim().startsWith('<') && s.includes('<head'));
+}
+
+function isValidImageBuffer(buf) {
+  if (!buf || buf.length < 1000) return false;
+  if (isHtmlBuffer(buf)) return false;
+  const c = detectContainer(buf);
+  return ['jpeg','png','webp','gif'].includes(c);
+}
+
+function isValidVideoBuffer(buf) {
+  if (!buf || buf.length < 10000) return false;
+  if (isHtmlBuffer(buf)) return false;
+  const c = detectContainer(buf);
+  // mp4 é ideal, mas aceita webm, avi, etc para depois converter
+  return ['mp4','webm','avi','ogg','ts','gif','webp','unknown'].includes(c) ? buf.length > 10000 : false;
+  // unknown mas >10KB pode ser mp4 sem ftyp no início? aceita para tentar converter
+}
+
+async function ensureMp4(buf) {
+  if (!buf || buf.length < 5000) throw new Error('video vazio');
+  if (isHtmlBuffer(buf)) throw new Error('video retornou HTML (bloqueio)');
+  const kind = detectContainer(buf);
+  if (kind === 'mp4') return buf;
+  // converte qualquer coisa para mp4 compatível WhatsApp
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dark-vid-'));
+  const inputPath = path.join(tmpDir, `input.${kind === 'unknown' ? 'bin' : kind}`);
+  const outputPath = path.join(tmpDir, 'output.mp4');
+  try {
+    fs.writeFileSync(inputPath, buf);
+    await execFileAsync(getFfmpegBin(), [
+      '-y',
+      '-i', inputPath,
+      '-map', '0:v:0?',
+      '-map', '0:a:0?',
+      '-c:v', 'libx264',
+      '-preset', 'veryfast',
+      '-pix_fmt', 'yuv420p',
+      '-c:a', 'aac',
+      '-b:a', '128k',
+      '-movflags', '+faststart',
+      '-shortest',
+      outputPath,
+    ], { stdio: 'ignore', timeout: 180000 });
+    const out = fs.readFileSync(outputPath);
+    if (!out || out.length < 5000 || detectContainer(out) !== 'mp4') throw new Error('ffmpeg não gerou mp4 válido');
+    return out;
+  } finally {
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+  }
+}
+
 async function ytdlpDownload(url, { maxMb = 45, format = 'mp4' } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dark-adult-'));
   const outTpl = path.join(dir, 'v.%(ext)s');
@@ -91,8 +165,12 @@ async function ytdlpDownload(url, { maxMb = 45, format = 'mp4' } = {}) {
     const files = fs.readdirSync(dir).filter(f => !f.endsWith('.part'));
     if (!files.length) throw new Error('yt-dlp sem ficheiro');
     const fp = path.join(dir, files.sort((a, b) => fs.statSync(path.join(dir, b)).size - fs.statSync(path.join(dir, a)).size)[0]);
-    const buf = fs.readFileSync(fp);
+    let buf = fs.readFileSync(fp);
     if (buf.length < 5000) throw new Error('ficheiro demasiado pequeno');
+    if (isHtmlBuffer(buf)) throw new Error('yt-dlp retornou HTML');
+    // garante mp4
+    try { buf = await ensureMp4(buf); } catch {}
+    if (!isValidVideoBuffer(buf)) throw new Error('video inválido após download');
     return { buf, path: fp, size: buf.length, title: path.basename(fp) };
   } finally {
     try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
@@ -105,6 +183,7 @@ async function _fetchBuf(url, referer) {
     timeout: 90000,
   });
   if (!buf || buf.length < 800) throw new Error('download vazio');
+  if (isHtmlBuffer(buf)) throw new Error('download retornou HTML (bloqueio/404)');
   return buf;
 }
 
@@ -142,6 +221,7 @@ async function xvideosSearch(query, limit = 20) {
 async function xvideosDownload(url) {
   try {
     const r = await ytdlpDownload(url, { maxMb: 50 });
+    if (!isValidVideoBuffer(r.buf)) throw new Error('xvideos yt-dlp inválido');
     return { ...r, source: 'xvideos', url, type: 'video' };
   } catch (e1) {
     const html = await _getHtml(url, { Referer: 'https://www.xvideos.com/' });
@@ -150,8 +230,11 @@ async function xvideosDownload(url) {
       || html.match(/setVideoUrlHigh\("([^"]+)"\)/);
     if (!m) throw new Error(`xvideos download: ${e1.message}`);
     const stream = _decode(m[1]);
-    const buf = await _fetchBuf(stream, 'https://www.xvideos.com/');
+    let buf = await _fetchBuf(stream, 'https://www.xvideos.com/');
     if (buf.length < 10000) throw new Error('xvideos stream vazio');
+    if (isHtmlBuffer(buf)) throw new Error('xvideos stream retornou HTML');
+    try { buf = await ensureMp4(buf); } catch {}
+    if (!isValidVideoBuffer(buf)) throw new Error('xvideos stream inválido');
     return { buf, size: buf.length, source: 'xvideos', url, title: 'xvideos', type: 'video' };
   }
 }
@@ -187,7 +270,10 @@ async function pornhubSearch(query, limit = 20) {
 
 async function pornhubDownload(url) {
   const r = await ytdlpDownload(url, { maxMb: 50 });
-  return { ...r, source: 'pornhub', url, type: 'video' };
+  if (!isValidVideoBuffer(r.buf)) throw new Error('pornhub video inválido');
+  let buf = r.buf;
+  try { buf = await ensureMp4(buf); } catch {}
+  return { ...r, buf, source: 'pornhub', url, type: 'video' };
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -270,11 +356,12 @@ async function pornpicsDownload(item) {
   const url = item.url || item;
   try {
     const buf = await _fetchBuf(url, 'https://www.pornpics.com/');
+    if (!isValidImageBuffer(buf)) throw new Error('pornpics imagem inválida');
     return { buf, type: 'photo', title: item.title || 'pornpics', source: 'pornpics', url };
   } catch {
-    // fallback thumb 460
     const thumb = item.thumb || String(url).replace('/1280/', '/460/');
     const buf = await _fetchBuf(thumb, 'https://www.pornpics.com/');
+    if (!isValidImageBuffer(buf)) throw new Error('pornpics thumb inválida');
     return { buf, type: 'photo', title: item.title || 'pornpics', source: 'pornpics', url: thumb };
   }
 }
@@ -442,11 +529,14 @@ async function sexcomResolve(item) {
   if (item.source === 'pornpics' || item.via === 'sex.com-fallback-real' || /pornpics\.com/i.test(item.url || '')) {
     return pornpicsDownload(item);
   }
-  // VIDEO / SHORTS - tenta yt-dlp primeiro
+  // VIDEO / SHORTS - tenta yt-dlp primeiro, NUNCA manda foto como fallback de vídeo (mídia inválida)
   if (item.type === 'video' || item.type === 'shorts' || item.type === 'short' || /\/en\/videos\//i.test(item.url || '')) {
     try {
       const dl = await ytdlpDownload(item.url, { maxMb: 50 });
-      return { buf: dl.buf, type: item.type === 'shorts' || item.type === 'short' ? 'shorts' : 'video', title: item.title || 'sex.com video', source: 'sex.com', url: item.url };
+      if (!isValidVideoBuffer(dl.buf)) throw new Error('sex.com video inválido após yt-dlp');
+      let buf = dl.buf;
+      try { buf = await ensureMp4(buf); } catch {}
+      return { buf, type: item.type === 'shorts' || item.type === 'short' ? 'shorts' : 'video', title: item.title || 'sex.com video', source: 'sex.com', url: item.url };
     } catch (e) {
       // tenta scrape og:video
       try {
@@ -456,14 +546,13 @@ async function sexcomResolve(item) {
                       (html.match(/<source[^>]+src="([^"]+\.mp4[^"]*)"/i) || [])[1];
         if (ogVid) {
           const mediaUrl = _decode(ogVid);
-          const buf = await _fetchBuf(mediaUrl.startsWith('/') ? SEXCOM_IMG_BASE + mediaUrl : mediaUrl, 'https://www.sex.com/');
+          let buf = await _fetchBuf(mediaUrl.startsWith('/') ? SEXCOM_IMG_BASE + mediaUrl : mediaUrl, 'https://www.sex.com/');
+          if (!isValidVideoBuffer(buf)) throw new Error('sex.com og:video inválido');
+          try { buf = await ensureMp4(buf); } catch {}
           return { buf, type: 'video', title: item.title || 'sex.com', source: 'sex.com', url: mediaUrl };
         }
       } catch {}
-      // fallback para foto real para não quebrar
-      const pp = await pornpicsSearch(item.title || 'sexy', 3);
-      if (pp[0]) return pornpicsDownload(pp[0]);
-      throw new Error('sex.com video: ' + e.message);
+      throw new Error('sex.com video falhou (sem fallback foto para não mandar mídia inválida): ' + e.message);
     }
   }
   if (item.source === 'sex.com' && (item.uri || /imagex1\.sx\.cdn\.live|pinporn/i.test(item.url || ''))) {

@@ -96,7 +96,54 @@ function detectKind(buf) {
   if (head.slice(0,3).toString() === 'GIF') return 'gif';
   if (head.slice(0,4).toString() === 'RIFF' && head.slice(8,12).toString() === 'WEBP') return 'webp';
   if (buf.slice(4,8).toString() === 'ftyp') return 'mp4';
+  if (head[0]===0xFF && head[1]===0xD8) return 'jpeg';
+  if (head.slice(0,4).toString() === '\x89PNG') return 'png';
+  if (head[0]===0x1A && head[1]===0x45 && head[2]===0xDF && head[3]===0xA3) return 'webm';
   return 'unknown';
+}
+
+function isHtmlBuffer(buf) {
+  if (!buf || buf.length < 20) return true;
+  const s = buf.slice(0, 500).toString('utf8').toLowerCase();
+  return s.includes('<html') || s.includes('<!doctype') || (s.trim().startsWith('<') && s.includes('<head'));
+}
+
+function isValidImage(buf) {
+  if (!buf || buf.length < 1000) return false;
+  if (isHtmlBuffer(buf)) return false;
+  const k = detectKind(buf);
+  return ['jpeg','png','webp','gif'].includes(k) || buf.length > 2000;
+}
+
+function isValidVideo(buf) {
+  if (!buf || buf.length < 10000) return false;
+  if (isHtmlBuffer(buf)) return false;
+  return true;
+}
+
+async function ensureMp4Video(buf) {
+  if (!buf || buf.length < 5000) throw new Error('video vazio');
+  if (isHtmlBuffer(buf)) throw new Error('video é HTML');
+  const kind = detectKind(buf);
+  if (kind === 'mp4') return buf;
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dark-vid-'));
+  const inputPath = path.join(tmpDir, `input.${kind === 'unknown' ? 'bin' : kind}`);
+  const outputPath = path.join(tmpDir, 'output.mp4');
+  try {
+    fs.writeFileSync(inputPath, buf);
+    await execFileAsync(getFfmpegBin(), [
+      '-y','-i', inputPath,
+      '-map','0:v:0?','-map','0:a:0?',
+      '-c:v','libx264','-preset','veryfast','-pix_fmt','yuv420p',
+      '-c:a','aac','-b:a','128k','-movflags','+faststart','-shortest',
+      outputPath,
+    ], { stdio: 'ignore', timeout: 180000 });
+    const out = fs.readFileSync(outputPath);
+    if (!out || out.length < 5000) throw new Error('ffmpeg mp4 vazio');
+    return out;
+  } finally {
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+  }
 }
 
 async function convertToMp4ForGif(buffer, kind = 'gif') {
@@ -415,27 +462,36 @@ async function tentarNumero(sock, msg, ctx, text) {
 
     for (const med of arr) {
       if (!med?.buf) continue;
+      if (isHtmlBuffer(med.buf)) {
+        console.warn('[pinAlbum] buffer HTML descartado', med.url?.slice(0,60));
+        continue;
+      }
       const kind = detectKind(med.buf);
       const cap = sent === 0
-        ? `${isAlbum ? '📚 *ÁLBUM*' : isGif ? '🎞️ *GIF*' : '📸 *FOTO*'} — *${String(med.title || item.title || '').slice(0, 60)}*\n📡 ${med.source || item.source || ''}${isAlbum ? ` · ${arr.length} fotos` : isGif ? ' · reproduz' : ' · viva' }`
+        ? `${isAlbum ? '📚 *ÁLBUM*' : isGif ? '🎞️ *GIF*' : (med.type === 'video' || med.type === 'shorts' ? '🎬 *VÍDEO*' : '📸 *FOTO*')} — *${String(med.title || item.title || '').slice(0, 60)}*\n📡 ${med.source || item.source || ''}${isAlbum ? ` · ${arr.length} fotos` : isGif ? ' · reproduz' : ' · viva' }`
         : `📡 ${med.source || ''}`;
 
-      // GIF FIX: se for gif/webp animado → converte para mp4 e envia com gifPlayback
+      // GIF FIX: gif/webp animado → MP4 gifPlayback
       if (med.type === 'gif' || isGifItem(item, med) || kind === 'gif' || kind === 'webp') {
+        if (!isValidImage(med.buf) && kind !== 'gif' && kind !== 'webp') {
+          console.warn('[pinAlbum] gif inválido descartado');
+          continue;
+        }
         try {
           let mp4 = med.buf;
           if (kind === 'gif' || kind === 'webp') {
-            mp4 = await convertToMp4ForGif(med.buf, kind).catch(() => med.buf);
+            mp4 = await convertToMp4ForGif(med.buf, kind).catch(() => null);
           }
-          const mp4Kind = detectKind(mp4);
-          if (mp4Kind === 'mp4' || kind === 'gif' || kind === 'webp') {
-            await sendAdultMediaPersist(sock, ctx, { video: mp4, mimetype: 'video/mp4', gifPlayback: true, caption: cap }, msg);
+          if (mp4 && isValidVideo(mp4)) {
+            const finalMp4 = detectKind(mp4) === 'mp4' ? mp4 : await ensureMp4Video(mp4).catch(()=>mp4);
+            await sendAdultMediaPersist(sock, ctx, { video: finalMp4, mimetype: 'video/mp4', gifPlayback: true, caption: cap }, msg);
             sent++;
             await new Promise(r => setTimeout(r, 600));
             continue;
           }
-        } catch {}
-        // fallback: tenta como video gifPlayback direto
+        } catch (e) {
+          console.warn('[pinAlbum] gif->mp4 falhou', e.message?.slice(0,80));
+        }
         try {
           await sendAdultMediaPersist(sock, ctx, { video: med.buf, gifPlayback: true, caption: cap }, msg);
           sent++;
@@ -445,15 +501,25 @@ async function tentarNumero(sock, msg, ctx, text) {
       }
 
       if (med.type === 'video' || med.type === 'shorts' || med.type === 'short') {
-        await sendAdultMediaPersist(sock, ctx, { video: med.buf, mimetype: 'video/mp4', caption: cap }, msg);
-      } else if (med.type === 'gif') {
-        // último fallback gif
+        if (!isValidVideo(med.buf)) {
+          console.warn('[pinAlbum] video inválido descartado', med.url?.slice(0,60), med.buf.length);
+          continue;
+        }
         try {
-          await sendAdultMediaPersist(sock, ctx, { video: med.buf, mimetype: 'video/mp4', gifPlayback: true, caption: cap }, msg);
-        } catch {
-          await sendAdultMediaPersist(sock, ctx, { image: med.buf, caption: cap }, msg);
+          let vbuf = med.buf;
+          if (detectKind(vbuf) !== 'mp4') {
+            vbuf = await ensureMp4Video(vbuf).catch(()=>vbuf);
+          }
+          await sendAdultMediaPersist(sock, ctx, { video: vbuf, mimetype: 'video/mp4', caption: cap }, msg);
+        } catch (e) {
+          console.warn('[pinAlbum] video send falhou', e.message?.slice(0,80));
+          continue;
         }
       } else {
+        if (!isValidImage(med.buf)) {
+          console.warn('[pinAlbum] imagem inválida descartada', med.url?.slice(0,60), med.buf.length);
+          continue;
+        }
         await sendAdultMediaPersist(sock, ctx, { image: med.buf, caption: cap }, msg);
       }
       sent++;
