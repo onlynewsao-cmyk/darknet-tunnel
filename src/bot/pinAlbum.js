@@ -1,23 +1,26 @@
 'use strict';
 /**
- * DARK BOT v11.2.8 — PIN ALBUM PERSISTENTE
- * Módulo igual do pin de enviar várias fotos por álbum se aparecer na pesquisa
- * e se for uma foto a pesquisa continua viva pra poder escolher outra depois.
- *
- * - Álbum/galeria (erome, xhamster-photos gallery, tipo album/gallery) → envia VÁRIAS fotos (até maxAlbum)
- * - Foto única (sex.com API REAL imagex1.sx.cdn.live, pornpics cdni, etc) → envia 1 e MANTÉM a pesquisa viva
- * - Comandos: número 1-10 escolhe, "mais"/"avança" próxima página, "volta" anterior, "sair"/"fechar" fecha
- *
- * Usa adultSources real-only (sem furry/animal) e respeita adultMode (grupo ON → grupo, senão PV)
+ * DARK BOT v11.2.9 — PIN ALBUM PERSISTENTE + GIF FIX + ANTI-DUPLICADO + SHORTS
+ * - Álbum/galeria → envia VÁRIAS fotos (até maxAlbum)
+ * - Foto única → envia 1 e MANTÉM viva 5min
+ * - GIF fix: webp animado / gif → converte para MP4 e envia com gifPlayback:true para reproduzir
+ * - Anti-duplicado: rastreia enviados, não reenvia mesmo nº, mostra ✅ já enviados
+ * - Comandos: número 1-10, mais/avança, volta, sair/fechar
  */
 
 const GroupSettings = require('../database/models/GroupSettings');
 const BotConfig = require('../database/models/BotConfig');
 const mediaHandler = require('./mediaHandler');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { execFile } = require('child_process');
+const { promisify } = require('util');
+const execFileAsync = promisify(execFile);
 
-const TTL = 5 * 60 * 1000; // 5 min para poder escolher várias
+const TTL = 5 * 60 * 1000;
 const PAGE = 10;
-const _pendentes = new Map(); // `${remoteJid}::${senderNumber}` → state
+const _pendentes = new Map();
 
 function _key(ctx = {}) {
   return `${ctx.remoteJid || ctx.chat || ''}::${ctx.senderNumber || ctx.sender || ''}`;
@@ -72,10 +75,63 @@ function isAlbumItem(item = {}) {
   return false;
 }
 
+function isGifItem(item = {}, med = {}) {
+  const t = String(item.type || med.type || '').toLowerCase();
+  const src = String(item.source || med.source || '').toLowerCase();
+  const url = String(item.url || med.url || '');
+  if (t === 'gif' || t === 'short' || t === 'shorts') return true;
+  if (/\.gif(\?|$)/i.test(url)) return true;
+  if (/\.webp(\?|$)/i.test(url) && (t === 'gif' || /sex\.com|gifs/i.test(url + src))) return true;
+  if (/imagex1.*\.webp/i.test(url)) return true; // sex.com gifs are webp
+  return false;
+}
+
+function getFfmpegBin() {
+  try { return require('ffmpeg-static') || 'ffmpeg'; } catch { return 'ffmpeg'; }
+}
+
+async function convertToMp4ForGif(buffer, kind = 'gif') {
+  if (!buffer || buffer.length < 100) throw new Error('buffer vazio');
+  // já é mp4?
+  if (buffer.length > 12 && buffer.slice(4,8).toString() === 'ftyp') return buffer;
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dark-gif-'));
+  const ext = kind === 'webp' ? 'webp' : kind === 'gif' ? 'gif' : 'bin';
+  const inputPath = path.join(tmpDir, `input.${ext}`);
+  const outputPath = path.join(tmpDir, 'output.mp4');
+  try {
+    fs.writeFileSync(inputPath, buffer);
+    await execFileAsync(getFfmpegBin(), [
+      '-y',
+      '-i', inputPath,
+      '-vf', "scale='min(480,iw)':-2:flags=lanczos,format=yuv420p",
+      '-c:v', 'libx264',
+      '-preset', 'veryfast',
+      '-crf', '26',
+      '-an',
+      '-movflags', '+faststart',
+      '-t', '15',
+      outputPath,
+    ], { stdio: 'ignore', timeout: 60000 });
+    const out = fs.readFileSync(outputPath);
+    if (!out || out.length < 1000) throw new Error('ffmpeg não gerou mp4');
+    return out;
+  } finally {
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+  }
+}
+
+function detectKind(buf) {
+  if (!buf || buf.length < 12) return 'unknown';
+  const head = buf.slice(0,12);
+  if (head.slice(0,3).toString() === 'GIF') return 'gif';
+  if (head.slice(0,4).toString() === 'RIFF' && head.slice(8,12).toString() === 'WEBP') return 'webp';
+  if (buf.slice(4,8).toString() === 'ftyp') return 'mp4';
+  return 'unknown';
+}
+
 async function defaultResolver(item, maxAlbum = 8) {
   const adult = require('./adultSources');
   if (!item) throw new Error('item vazio');
-  // Álbum → várias fotos
   if (isAlbumItem(item)) {
     try {
       const many = await adult.cosplayDownloadMany(item, maxAlbum);
@@ -88,14 +144,12 @@ async function defaultResolver(item, maxAlbum = 8) {
         url: m.url || item.url,
       }));
     } catch (e) {
-      // fallback single
       const one = await adult.cosplayDownload(item);
       const single = Array.isArray(one) ? one[0] : one;
       if (!single?.buf) throw e;
       return [{ buf: single.buf, type: single.type || 'photo', title: single.title || item.title, source: single.source || item.source, url: single.url || item.url }];
     }
   }
-  // Foto única sex.com REAL
   if (item.source === 'sex.com' || /imagex1\.sx\.cdn\.live|pinporn/i.test(item.url || '')) {
     const m = await adult.sexcomResolve(item);
     return [{ buf: m.buf, type: m.type || 'photo', title: m.title || item.title, source: m.source, url: m.url }];
@@ -108,13 +162,11 @@ async function defaultResolver(item, maxAlbum = 8) {
     const arr = await adult.xhamsterPhotoDownload(item);
     return (Array.isArray(arr) ? arr : [arr]).map(m => ({ buf: m.buf, type: m.type || 'photo', title: m.title || item.title, source: m.source, url: m.url }));
   }
-  // URL direta imagem
   if (/\.(jpe?g|png|webp)(\?|$)/i.test(item.url || '')) {
     const buf = await mediaHandler.fetchBuffer(item.url, 15000).catch(() => null);
     if (!buf) throw new Error('download falhou');
     return [{ buf, type: 'photo', title: item.title || 'foto', source: item.source || 'direct', url: item.url }];
   }
-  // último recurso: tenta resolver genérico
   if (item.url) {
     const buf = await mediaHandler.fetchBuffer(item.url, 15000).catch(() => null);
     if (buf) return [{ buf, type: 'photo', title: item.title || 'foto', source: item.source || 'direct', url: item.url }];
@@ -130,18 +182,21 @@ async function _renderPage(sock, msg, ctx, state) {
   const numeradas = [];
   for (let i = 0; i < n; i++) {
     const it = sliceItens[i];
-    const albumMark = isAlbumItem(it) ? '📚 ÁLBUM' : '📸 FOTO';
-    numeradas.push(`*${i + 1}.* ${albumMark} — ${sliceLinhas[i]}`);
+    const globalIdx = start + i;
+    const jaEnviado = state.enviados?.has(globalIdx);
+    const albumMark = isAlbumItem(it) ? '📚 ÁLBUM' : isGifItem(it) ? '🎞️ GIF' : (it.type === 'video' || it.type === 'shorts' ? '🎬 VÍDEO' : '📸 FOTO');
+    const check = jaEnviado ? '✅ ' : '';
+    numeradas.push(`*${i + 1}.* ${check}${albumMark} — ${sliceLinhas[i]}${jaEnviado ? ' · já enviado' : ''}`);
   }
 
   const pageInfo = pages > 1
     ? `\n📄 Página *${page + 1}/${pages}* · ${start + 1}–${end} de *${total}*`
     : `\n📋 *${total}* resultado${total === 1 ? '' : 's'}`;
-
   const nav = pages > 1 ? `\n> ▶️ *mais* / *avança* · ◀️ *volta*` : '';
+  const enviadosInfo = state.enviados?.size ? `\n> ✅ Já enviados: ${[...state.enviados].map(i=>i+1).join(', ')}` : '';
   const persistInfo = state.manterVivo
-    ? `\n> 📸 Foto = pesquisa continua viva | 📚 Álbum = envia várias | *sair* fecha`
-    : `\n> Digite *sair* para fechar`;
+    ? `\n> 📸 Foto = viva | 📚 Álbum = várias | 🎞️ GIF reproduz | *sair* fecha${enviadosInfo}`
+    : `\n> Digite *sair* para fechar${enviadosInfo}`;
 
   const texto =
     `${state.titulo}\n${state.intro ? state.intro + '\n' : ''}\n` +
@@ -150,8 +205,8 @@ async function _renderPage(sock, msg, ctx, state) {
 
   const corpoCurto =
     `${state.titulo}\n${state.intro ? state.intro + '\n' : ''}` +
-    `📄 *${page + 1}/${pages}* · ${total} resultados\n` +
-    `> 📸 foto mantém viva | 📚 álbum envia várias\n` +
+    `📄 *${page + 1}/${pages}* · ${total} resultados${state.enviados?.size ? ` · ✅ ${state.enviados.size} já` : ''}\n` +
+    `> 📸 foto viva | 📚 álbum várias | 🎞️ GIF reproduz\n` +
     `> Toca em *ESCOLHER* ▾ ou responde *1–${n}*` +
     (pages > 1 ? `\n> *mais* = próxima página` : '') +
     `\n> *sair* fecha`;
@@ -166,11 +221,13 @@ async function _renderPage(sock, msg, ctx, state) {
     for (let i = 0; i < n; i++) {
       const partes = String(sliceLinhas[i]).split('\n');
       const it = sliceItens[i];
-      const mark = isAlbumItem(it) ? '📚' : '📸';
+      const globalIdx = start + i;
+      const ja = state.enviados?.has(globalIdx);
+      const mark = isAlbumItem(it) ? '📚' : isGifItem(it) ? '🎞️' : (it.type === 'video' || it.type === 'shorts' ? '🎬' : '📸');
       rows.push({
-        title: `${mark} ${limpaSafe(partes[0]).slice(0, 22) || `Opção ${i + 1}`}`,
-        id: `PINNUM_${i + 1}`,
-        description: limpaSafe(partes.slice(1).join(' ')).slice(0, 68) || (isAlbumItem(it) ? 'Álbum — várias fotos' : 'Foto — pesquisa continua viva'),
+        title: `${ja ? '✅ ' : ''}${mark} ${limpaSafe(partes[0]).slice(0, 20) || `Opção ${i + 1}`}${ja ? ' · já' : ''}`,
+        id: ja ? `PIN_SENT_${i+1}` : `PINNUM_${i + 1}`,
+        description: limpaSafe(partes.slice(1).join(' ')).slice(0, 66) || (ja ? 'Já enviado — escolhe outro' : (isAlbumItem(it) ? 'Álbum — várias fotos' : isGifItem(it) ? 'GIF — reproduz' : 'Foto — pesquisa viva')),
       });
     }
     if (pages > 1 && page + 1 < pages) {
@@ -184,7 +241,7 @@ async function _renderPage(sock, msg, ctx, state) {
     const m = generateWAMessageFromContent(ctx.remoteJid, {
       interactiveMessage: proto.Message.InteractiveMessage.fromObject({
         body: { text: corpoCurto },
-        footer: { text: `📌 ${state.tipo} · pág ${page + 1}/${pages} · ${total} · viva 5min` },
+        footer: { text: `📌 ${state.tipo} · pág ${page + 1}/${pages} · ${total} · viva 5min${state.enviados?.size ? ` · ${state.enviados.size} enviados` : ''}` },
         header: { title: '', hasMediaAttachment: false },
         nativeFlowMessage: {
           buttons: [{
@@ -227,6 +284,7 @@ async function mostrar(sock, msg, ctx, { titulo, intro = '', linhas = [], itens 
     manterVivo: !!manterVivo,
     maxAlbum: Math.min(Math.max(Number(maxAlbum) || 8, 1), 20),
     resolver: resolver || defaultResolver,
+    enviados: new Set(),
   };
   return _renderPage(sock, msg, ctx, state);
 }
@@ -285,7 +343,6 @@ async function tentarNumero(sock, msg, ctx, text) {
   const p = _pendentes.get(key);
   if (!p) return false;
 
-  // Evita conflito se música card for mais novo
   try {
     const somTs = require('./musicaCard')._pendentes?.get(key)?.ts || 0;
     if (somTs > p.ts) return false;
@@ -300,6 +357,15 @@ async function tentarNumero(sock, msg, ctx, text) {
     return true;
   }
   const globalIdx = start + localIdx;
+
+  // ANTI-DUPLICADO: já enviado?
+  if (p.enviados?.has(globalIdx)) {
+    await sock.sendMessage(ctx.remoteJid, {
+      text: `⚠️ *Já enviei o nº ${globalIdx + 1}* antes — não vou repetir.\n> Escolhe outro número (1–${sliceItens.length}), *mais* para próxima, ou *sair* para fechar.\n> ✅ Já enviados: ${[...p.enviados].map(i=>i+1).join(', ')}`,
+    }, { quoted: msg }).catch(() => {});
+    return true;
+  }
+
   const item = p.itens[globalIdx];
 
   try {
@@ -309,18 +375,48 @@ async function tentarNumero(sock, msg, ctx, text) {
     const arr = Array.isArray(medias) ? medias : [medias];
     let sent = 0;
     const isAlbum = arr.length > 1 || isAlbumItem(item);
+    const isGif = arr.some(m => m?.type === 'gif' || isGifItem(item, m));
 
     for (const med of arr) {
       if (!med?.buf) continue;
+      const kind = detectKind(med.buf);
       const cap = sent === 0
-        ? `${isAlbum ? '📚 *ÁLBUM*' : '📸 *FOTO*'} — *${String(med.title || item.title || '').slice(0, 60)}*\n📡 ${med.source || item.source || ''}${isAlbum ? ` · ${arr.length} fotos` : ' · pesquisa viva'}`
+        ? `${isAlbum ? '📚 *ÁLBUM*' : isGif ? '🎞️ *GIF*' : '📸 *FOTO*'} — *${String(med.title || item.title || '').slice(0, 60)}*\n📡 ${med.source || item.source || ''}${isAlbum ? ` · ${arr.length} fotos` : isGif ? ' · reproduz' : ' · viva' }`
         : `📡 ${med.source || ''}`;
-      if (med.type === 'video') {
+
+      // GIF FIX: se for gif/webp animado → converte para mp4 e envia com gifPlayback
+      if (med.type === 'gif' || isGifItem(item, med) || kind === 'gif' || kind === 'webp') {
+        try {
+          let mp4 = med.buf;
+          if (kind === 'gif' || kind === 'webp') {
+            mp4 = await convertToMp4ForGif(med.buf, kind).catch(() => med.buf);
+          }
+          const mp4Kind = detectKind(mp4);
+          if (mp4Kind === 'mp4' || kind === 'gif' || kind === 'webp') {
+            await sendAdultMediaPersist(sock, ctx, { video: mp4, mimetype: 'video/mp4', gifPlayback: true, caption: cap }, msg);
+            sent++;
+            await new Promise(r => setTimeout(r, 600));
+            continue;
+          }
+        } catch {}
+        // fallback: tenta como video gifPlayback direto
+        try {
+          await sendAdultMediaPersist(sock, ctx, { video: med.buf, gifPlayback: true, caption: cap }, msg);
+          sent++;
+          await new Promise(r => setTimeout(r, 600));
+          continue;
+        } catch {}
+      }
+
+      if (med.type === 'video' || med.type === 'shorts' || med.type === 'short') {
         await sendAdultMediaPersist(sock, ctx, { video: med.buf, mimetype: 'video/mp4', caption: cap }, msg);
-      } else if (med.type === 'gif' && med.buf.slice(0, 3).toString() === 'GIF') {
-        await sendAdultMediaPersist(sock, ctx, { video: med.buf, gifPlayback: true, caption: cap }, msg).catch(async () => {
+      } else if (med.type === 'gif') {
+        // último fallback gif
+        try {
+          await sendAdultMediaPersist(sock, ctx, { video: med.buf, mimetype: 'video/mp4', gifPlayback: true, caption: cap }, msg);
+        } catch {
           await sendAdultMediaPersist(sock, ctx, { image: med.buf, caption: cap }, msg);
-        });
+        }
       } else {
         await sendAdultMediaPersist(sock, ctx, { image: med.buf, caption: cap }, msg);
       }
@@ -329,20 +425,31 @@ async function tentarNumero(sock, msg, ctx, text) {
     }
     if (!sent) throw new Error('download vazio');
 
+    // marca como enviado - expira
+    if (!p.enviados) p.enviados = new Set();
+    p.enviados.add(globalIdx);
+
     if (p.manterVivo) {
-      // Mantém viva — atualiza timestamp e re-renderiza dica
       p.ts = Date.now();
       _pendentes.set(key, p);
       const { page, pages, total } = _pageSlice(p);
+      const restantes = total - p.enviados.size;
       await sock.sendMessage(ctx.remoteJid, {
-        text: `✅ *${sent} ${isAlbum ? 'fotos do álbum' : 'foto'} enviada${sent > 1 ? 's' : ''}*!\n📌 Pesquisa ainda viva — *${total}* itens, pág ${page + 1}/${pages}\n> Escolhe outro número (1–10), *mais* para próxima, ou *sair* para fechar.`,
+        text: `✅ *${sent} ${isAlbum ? 'fotos do álbum' : isGif ? 'GIF' : 'foto'} enviada${sent > 1 ? 's' : ''}*! (nº ${globalIdx+1} expira ✅, não repete)\n📌 Viva — *${total}* itens, pág ${page+1}/${pages} · ✅ ${p.enviados.size} enviados · ${restantes} restantes\n> Escolhe outro número (1–10), *mais* para próxima, ou *sair* para fechar.`,
       }, { quoted: msg }).catch(() => {});
+      // re-renderiza lista com ✅
+      if (restantes > 0) {
+        await new Promise(r => setTimeout(r, 800));
+        await _renderPage(sock, msg, ctx, p).catch(()=>{});
+      } else {
+        await sock.sendMessage(ctx.remoteJid, { text: `✅ Todos os ${total} itens enviados! Pesquisa encerrada.` }, { quoted: msg }).catch(()=>{});
+        _pendentes.delete(key);
+      }
     } else {
       _pendentes.delete(key);
     }
   } catch (e) {
     await sock.sendMessage(ctx.remoteJid, { text: `❌ ${String(e?.message || e).slice(0, 150)}` }, { quoted: msg }).catch(() => {});
-    // Em caso de erro, mantém viva se configurado
     if (p.manterVivo) {
       p.ts = Date.now();
       _pendentes.set(key, p);
@@ -358,6 +465,14 @@ async function tentarToken(sock, msg, ctx, text) {
   if (/^PINNAV_NEXT$/i.test(t)) return _nav(sock, msg, ctx, 'next');
   if (/^PINNAV_PREV$/i.test(t)) return _nav(sock, msg, ctx, 'prev');
   if (/^PINNAV_CLOSE$/i.test(t)) return _nav(sock, msg, ctx, 'close');
+  if (/^PIN_SENT_/i.test(t)) {
+    const key = _key(ctx);
+    const p = _pendentes.get(key);
+    if (p) {
+      await sock.sendMessage(ctx.remoteJid, { text: `⚠️ Esse item já foi enviado — escolhe outro número, *mais*, ou *sair*.\n✅ Já: ${[...p.enviados].map(i=>i+1).join(', ')}` }, { quoted: msg }).catch(() => {});
+    }
+    return true;
+  }
   const m = t.match(/^PINNUM_(10|[1-9])$/i);
   if (!m) return false;
   return tentarNumero(sock, msg, ctx, m[1]);
@@ -372,7 +487,9 @@ module.exports = {
   PAGE,
   _pageSlice,
   isAlbumItem,
+  isGifItem,
   defaultResolver,
   resolveAdultDest,
   sendAdultMediaPersist,
+  convertToMp4ForGif,
 };

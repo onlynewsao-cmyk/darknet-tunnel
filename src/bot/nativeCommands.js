@@ -1452,6 +1452,8 @@ module.exports = {
       '💎 ' + p + 'xvideos <termo> — alias xvid',
       '💎 ' + p + 'pornhub <termo> — Pornhub (lista + dl)',
       '💎 ' + p + 'ph <termo> — alias pornhub',
+      '💎 ' + p + 'phshort <termo> — Pornhub SHORTS (reels, GIF reproduz)',
+      '💎 ' + p + 'pornhubshorts <termo> — alias phshort',
       '👑 ' + p + 'xvideodl <url> — baixa link directo',
       '👑 ' + p + 'adultvideo [termo] — API externa',
       '',
@@ -3078,7 +3080,7 @@ module.exports = {
 
   async pornhub({ sock, msg, ctx, args }) {
     const q = portal18.cleanQuery(args.join(' '));
-    if (!q) return reply(sock, msg, ctx, '🎬 Uso: *pornhub <termo>* · viva 5min · *sair* fecha');
+    if (!q) return reply(sock, msg, ctx, '🎬 Uso: *pornhub <termo>* · viva 5min · *sair* fecha\nShorts: *phshort <termo>* / *pornhubshorts*');
     if (portal18.isBlocked(q)) return reply(sock, msg, ctx, '🚫 Termo bloqueado.');
     if (!(await isAdultEnabled(ctx))) return reply(sock, msg, ctx, '🛑 Adult mode OFF. ADM: *adultmode on*');
     await react(sock, msg, '🔍');
@@ -3089,7 +3091,7 @@ module.exports = {
       if (!results.length) throw new Error('Sem resultados (site pode bloquear o IP)');
       await pinAlbum.mostrar(sock, msg, ctx, {
         titulo: `🟠 *Pornhub PIN* — ${q.slice(0, 36)}`,
-        intro: `*${results.length}* vídeos · viva 5min · nº ou *mais* · *sair* fecha`,
+        intro: `*${results.length}* vídeos · viva 5min · nº ou *mais* · *sair* fecha · 🎞️ shorts: *phshort*`,
         linhas: results.map(r => `*${String(r.title).slice(0, 60)}*\n   📡 Pornhub · 🎬 VÍDEO`),
         itens: results.map(r=>({ ...r, source:'pornhub', type:'video', url:r.url, title:r.title })),
         tipo: 'pornhub',
@@ -3106,7 +3108,46 @@ module.exports = {
       return reply(sock, msg, ctx, '❌ Pornhub: ' + e.message);
     }
   },
+
+  async pornhubshorts({ sock, msg, ctx, args }) {
+    const q = portal18.cleanQuery(args.join(' '));
+    if (!q) return reply(sock, msg, ctx, '🎞️ Uso: *phshort <termo>* · shorts/reels · viva 5min · *sair* fecha');
+    if (portal18.isBlocked(q)) return reply(sock, msg, ctx, '🚫 Termo bloqueado.');
+    if (!(await isAdultEnabled(ctx))) return reply(sock, msg, ctx, '🛑 Adult mode OFF. ADM: *adultmode on*');
+    await react(sock, msg, '🎞️');
+    try {
+      const src = require('./adultSources');
+      const pinAlbum = require('./pinAlbum');
+      // tenta shorts, fallback normal
+      let results = [];
+      try { results = await src.pornhubShortsSearch(q, 30); } catch {}
+      if (!results.length) results = await src.pornhubSearch(q, 30);
+      if (!results.length) throw new Error('Sem shorts');
+      await pinAlbum.mostrar(sock, msg, ctx, {
+        titulo: `🎞️ *PH SHORTS* — ${q.slice(0, 32)}`,
+        intro: `*${results.length}* shorts · 🎞️ reproduz como GIF · viva 5min · *sair* fecha`,
+        linhas: results.map(r => `*${String(r.title).slice(0, 60)}*\n   📡 Pornhub · 🎞️ SHORT`),
+        itens: results.map(r=>({ ...r, source:'pornhub', type:'shorts', url:r.url, title:r.title })),
+        tipo: 'phshorts',
+        manterVivo: true,
+        maxAlbum: 1,
+        resolver: async (item) => {
+          const dl = await src.pornhubShortsDownload(item.url);
+          return [{ buf: dl.buf, type: 'shorts', title: item.title, source: 'pornhub', url: item.url }];
+        },
+      });
+      await react(sock, msg, '✅');
+    } catch (e) {
+      await react(sock, msg, '❌');
+      return reply(sock, msg, ctx, '❌ PH Shorts: ' + e.message);
+    }
+  },
   async ph(a) { return module.exports.pornhub(a); },
+  async phshort(a) { return module.exports.pornhubshorts(a); },
+  async pornhubshort(a) { return module.exports.pornhubshorts(a); },
+  async phshorts(a) { return module.exports.pornhubshorts(a); },
+  async shortsporn(a) { return module.exports.pornhubshorts(a); },
+  async shortsph(a) { return module.exports.pornhubshorts(a); },
 
   async sexcom({ sock, msg, ctx, args }, forceType) {
     const q = portal18.cleanQuery(args.join(' '));
@@ -3124,7 +3165,7 @@ module.exports = {
       if (!results.length) throw new Error('Sem fotos reais');
       await pinAlbum.mostrar(sock, msg, ctx, {
         titulo: `🔥 *sex.com REAL* — ${q.slice(0, 36)}`,
-        intro: `*${results.length}* · sex.com API REAL (imagex1.sx.cdn.live) · 📸 foto mantém viva | 📚 álbum várias`,
+        intro: `*${results.length}* · sex.com API REAL (imagex1.sx.cdn.live) · 📸 foto viva | 📚 álbum várias | 🎞️ GIF reproduz MP4`,
         linhas: results.map(r => `*${String(r.title || r.type).slice(0, 50)}*\n   📡 ${r.source} · ${r.type || 'photo'} · ${/\.webp/i.test(r.url||'')?'GIF':'FOTO'}`),
         itens: results, tipo: 'sexcom',
         manterVivo: true,

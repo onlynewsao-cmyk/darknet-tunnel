@@ -442,6 +442,30 @@ async function sexcomResolve(item) {
   if (item.source === 'pornpics' || item.via === 'sex.com-fallback-real' || /pornpics\.com/i.test(item.url || '')) {
     return pornpicsDownload(item);
   }
+  // VIDEO / SHORTS - tenta yt-dlp primeiro
+  if (item.type === 'video' || item.type === 'shorts' || item.type === 'short' || /\/en\/videos\//i.test(item.url || '')) {
+    try {
+      const dl = await ytdlpDownload(item.url, { maxMb: 50 });
+      return { buf: dl.buf, type: item.type === 'shorts' || item.type === 'short' ? 'shorts' : 'video', title: item.title || 'sex.com video', source: 'sex.com', url: item.url };
+    } catch (e) {
+      // tenta scrape og:video
+      try {
+        const html = await _getHtml(item.url, { Referer: 'https://www.sex.com/' });
+        const ogVid = (html.match(/property="og:video"[^>]+content="([^"]+)"/i) || [])[1] ||
+                      (html.match(/property="og:video:url"[^>]+content="([^"]+)"/i) || [])[1] ||
+                      (html.match(/<source[^>]+src="([^"]+\.mp4[^"]*)"/i) || [])[1];
+        if (ogVid) {
+          const mediaUrl = _decode(ogVid);
+          const buf = await _fetchBuf(mediaUrl.startsWith('/') ? SEXCOM_IMG_BASE + mediaUrl : mediaUrl, 'https://www.sex.com/');
+          return { buf, type: 'video', title: item.title || 'sex.com', source: 'sex.com', url: mediaUrl };
+        }
+      } catch {}
+      // fallback para foto real para não quebrar
+      const pp = await pornpicsSearch(item.title || 'sexy', 3);
+      if (pp[0]) return pornpicsDownload(pp[0]);
+      throw new Error('sex.com video: ' + e.message);
+    }
+  }
   if (item.source === 'sex.com' && (item.uri || /imagex1\.sx\.cdn\.live|pinporn/i.test(item.url || ''))) {
     const directUrl = item.url || (item.uri ? SEXCOM_IMG_BASE + item.uri : null);
     if (!directUrl) throw new Error('sex.com sem URL');
@@ -453,7 +477,7 @@ async function sexcomResolve(item) {
     } catch {
       const sized = highRes + '?width=1280';
       const buf = await _fetchBuf(sized, 'https://www.sex.com/');
-      return { buf, type: 'photo', title: item.title || 'sex.com', source: 'sex.com', url: sized };
+      return { buf, type: /webp|gif/i.test(sized) ? 'gif' : 'photo', title: item.title || 'sex.com', source: 'sex.com', url: sized };
     }
   }
   if (item.direct && item.url) {
@@ -472,7 +496,7 @@ async function sexcomResolve(item) {
     mediaUrl = _decode(mediaUrl);
     if (mediaUrl.startsWith('/')) mediaUrl = SEXCOM_IMG_BASE + mediaUrl;
     const buf = await _fetchBuf(mediaUrl, 'https://www.sex.com/');
-    const type = /\.mp4/i.test(mediaUrl) ? 'video' : /\.gif/i.test(mediaUrl) ? 'gif' : 'photo';
+    const type = /\.mp4/i.test(mediaUrl) ? 'video' : /\.gif|webp/i.test(mediaUrl) ? 'gif' : 'photo';
     return { buf, type, title: item.title || 'sex.com', source: 'sex.com', url: mediaUrl };
   } catch {
     const pp = await pornpicsSearch(item.title || 'sexy', 3);
@@ -636,6 +660,65 @@ async function placa18(texto, estilo = 'hot') {
   return { buf, source: 'local' };
 }
 
+async function pornhubShortsSearch(query, limit = 20) {
+  const q = encodeURIComponent(String(query || '').trim());
+  if (!q) throw new Error('query vazia');
+  if (isAnimalContent(query)) throw new Error('termo bloqueado (animal/furry)');
+  // Pornhub não tem endpoint oficial shorts, mas filtra por duração curta via HTML ou usa /video/search?search=&o=mr
+  // Vamos tentar buscar e filtrar duração < 6min quando disponível, senão retorna normal marcado como shorts
+  try {
+    const html = await _getHtml(`https://www.pornhub.com/video/search?search=${q}&o=mr`, { Referer: 'https://www.pornhub.com/' });
+    const results = [];
+    // tenta extrair duração: <var class="duration"> ou data-mediumthumb
+    const re = /href="(\/view_video\.php\?viewkey=[a-zA-Z0-9]+)"[^>]*>[\s\S]*?(?:class="duration">([^<]+)<|data-mediabook)/gi;
+    // fallback simples: pega viewkeys como no search normal mas marca shorts
+    const reSimple = /href="(\/view_video\.php\?viewkey=[a-zA-Z0-9]+)"[^>]*title="([^"]*)"/gi;
+    let m;
+    while ((m = reSimple.exec(html)) !== null && results.length < limit * 3) {
+      let href = m[1];
+      const title = _decode(m[2] || '');
+      if (isAnimalContent(title)) continue;
+      if (!href.startsWith('http')) href = 'https://www.pornhub.com' + href;
+      results.push({ url: href, title: title || `PH Short ${m[1].slice(-6)}`, source: 'pornhub', type: 'shorts', isShort: true });
+    }
+    if (!results.length) {
+      const re2 = /viewkey=([a-zA-Z0-9]+)/g;
+      const keys = new Set();
+      while ((m = re2.exec(html)) !== null && keys.size < limit) keys.add(m[1]);
+      for (const k of keys) {
+        results.push({ url: `https://www.pornhub.com/view_video.php?viewkey=${k}`, title: `PH Short ${k}`, source: 'pornhub', type: 'shorts', isShort: true });
+      }
+    }
+    return _uniqBy(results).slice(0, limit);
+  } catch (e) {
+    // fallback para search normal
+    const normal = await pornhubSearch(query, limit);
+    return normal.map(r => ({ ...r, type: 'shorts', isShort: true }));
+  }
+}
+
+async function xvideosShortsSearch(query, limit = 20) {
+  const res = await xvideosSearch(query, limit);
+  return res.map(r => ({ ...r, type: 'shorts', isShort: true }));
+}
+
+async function sexcomShortsSearch(query, limit = 20) {
+  const q = String(query || 'sexy').trim();
+  if (isAnimalContent(q)) throw new Error('termo bloqueado');
+  // sex.com gifs são os shorts reais (loop curto) + tenta videos
+  try {
+    const gifs = await _sexcomApiSearch({ query: q, limit, type: 'gifs' });
+    if (gifs.length) return gifs.map(g => ({ ...g, type: 'shorts', isShort: true, source: 'sex.com' }));
+  } catch {}
+  // fallback videos
+  const vids = await sexcomSearch(q, { limit, type: 'videos' });
+  return vids.map(v => ({ ...v, type: 'shorts', isShort: true }));
+}
+
+async function pornhubShortsDownload(url) {
+  return pornhubDownload(url);
+}
+
 module.exports = {
   isAnimalContent,
   ANIMAL_BLOCK,
@@ -652,6 +735,10 @@ module.exports = {
   xhamsterPhotoDownload,
   sexcomSearch,
   sexcomResolve,
+  pornhubShortsSearch,
+  pornhubShortsDownload,
+  xvideosShortsSearch,
+  sexcomShortsSearch,
   cosplaySearch,
   cosplayDownload,
   cosplayDownloadMany,

@@ -393,12 +393,12 @@ async function _handleInner(sock, msg) {
   // mais novo); depois o cartão de música. "1".."10", com ou sem zero.
   // v11.2.8: pinAlbum persistente — foto mantém viva, álbum envia várias
   try {
-    // v7.91: clique em lista clicável (estilo submenu) volta como LISTANUM_<n>
-    if (/^LISTANUM_(10|[1-9])$/i.test(text)) {
+    // v11.2.9: listas + pinAlbum com anti-duplicado + GIF fix
+    if (/^LISTANUM_(10|[1-9])$/i.test(text) || /^LISTA_SENT_/i.test(text) || /^LISTANAV_/i.test(text)) {
       const lista = require('./listaEscolha');
       if (await lista.tentarToken(sock, msg, ctx, text)) return true;
     }
-    if (/^PINNUM_(10|[1-9])$/i.test(text) || /^PINNAV_/i.test(text)) {
+    if (/^PINNUM_(10|[1-9])$/i.test(text) || /^PINNAV_/i.test(text) || /^PIN_SENT_/i.test(text)) {
       const pinAlbum = require('./pinAlbum');
       if (await pinAlbum.tentarToken(sock, msg, ctx, text)) return true;
     }
@@ -410,12 +410,14 @@ async function _handleInner(sock, msg) {
       const musicaCard = require('./musicaCard');
       if (await musicaCard.tentarNumero(sock, msg, ctx, text)) return true;
     }
-    // v11.2.8: fechar pesquisa persistente por texto livre
-    if (/^(sair|fechar|fecha|cancelar|stop)$/i.test(text.trim())) {
+    // v11.2.9: fechar pesquisa persistente por texto livre + anti-duplicado global
+    if (/^(sair|fechar|fecha|cancelar|stop|exit|close)$/i.test(text.trim())) {
       const pinAlbum = require('./pinAlbum');
       if (await pinAlbum.tentarNumero(sock, msg, ctx, text)) return true;
+      const lista = require('./listaEscolha');
+      if (await lista.tentarNumero(sock, msg, ctx, text)) return true;
     }
-    if (/^(mais|avança|avanca|volta|next|prev)$/i.test(text.trim())) {
+    if (/^(mais|avança|avanca|volta|next|prev|proxima|anterior)$/i.test(text.trim())) {
       const pinAlbum = require('./pinAlbum');
       if (await pinAlbum.tentarNumero(sock, msg, ctx, text)) return true;
       const lista = require('./listaEscolha');
