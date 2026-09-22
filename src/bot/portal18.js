@@ -49,10 +49,16 @@ const ai           = require('./ai');
 // Mas levou também teen/colegial/schoolgirl/schoolboy, que são
 // proteção legal, não conveniência. Repostos.
 // Os falsos positivos que retiraste continuam fora.
-const BLOCKED_TERMS = /\b(menor|menores|criança|crianca|infantil|kid|kids|child|children|underage|loli|lolita|shota|teen|teens|colegial|schoolgirl|schoolboy|incesto|incest|rape|abuso|abuse|abus|zoofilia|bestiality|snuff|gore|scat|necro|necrophilia)\b/i;
+// v11.2.6: + animal/furry/zoo — proibido em todo o portal
+const BLOCKED_TERMS = /\b(menor|menores|criança|crianca|infantil|kid|kids|child|children|underage|loli|lolita|shota|teen|teens|colegial|schoolgirl|schoolboy|incesto|incest|rape|abuso|abuse|abus|zoofilia|bestiality|beastial|snuff|gore|scat|necro|necrophilia|furry|furries|yiff|cub\b|feral|equine|canine|zoophil|animal\s*sex|dog\s*sex|horse\s*sex|e621)\b/i;
 
 function isBlocked(q = '') {
   return BLOCKED_TERMS.test(String(q || ''));
+}
+
+/** Conteúdo animal/furry (títulos/tags de resultados). */
+function isAnimalOrFurry(s = '') {
+  return /\b(furry|furries|yiff|cub\b|feral|equine|canine|zoophil|bestial|beastial|animal|e621|okami|knotting|paw\b)\b/i.test(String(s || ''));
 }
 
 function cleanQuery(q = '') {
@@ -195,22 +201,10 @@ async function konachanImages(tags = 'nude', count = 3) {
 // ─────────────────────────────────────────────
 // FONTE 3 — e621.net (funciona sem key, ampla variedade)
 // ─────────────────────────────────────────────
-async function e621Images(tags = 'rating:e', count = 3) {
-  const safeTags = (String(tags || 'rating:e'))
-    .replace(/loli|cub|child|minor|shota|gore|scat/gi, '')
-    .trim() + ' -loli -cub -scat -gore order:random';
-  const url = `https://e621.net/posts.json?tags=${encodeURIComponent(safeTags.trim())}&limit=${count + 3}`;
-  const data = await fetchJ(url, 12000);
-  const posts = (data?.posts || []).filter(p => p.file?.url && ['jpg','png','gif','webm'].includes(p.file?.ext));
-  if (!posts.length) throw new Error('Sem resultados no e621.net');
-  return posts.slice(0, count).map(p => ({
-    url: p.file.url,
-    previewUrl: p.preview?.url || p.file.url,
-    tags: [...(p.tags?.character||[]), ...(p.tags?.general||[])].slice(0, 5).join(', '),
-    score: p.score?.total || 0,
-    source: 'e621.net',
-    isVideo: p.file.ext === 'webm',
-  })).filter(p => p.url);
+// v11.2.6: e621 é maioritariamente furry/animal — DESACTIVADO.
+// Mantém a função só para não partir imports antigos; falha sempre.
+async function e621Images() {
+  throw new Error('e621 desactivado (conteúdo animal/furry proibido)');
 }
 
 // ─────────────────────────────────────────────
@@ -293,35 +287,34 @@ async function nekosGif(tipo = 'kiss') {
 // GIF/webm por personagem ou tema, em vez de aleatório.
 // ─────────────────────────────────────────────
 async function searchAnimated(nome = '', count = 3) {
-  const limpo = String(nome || '').replace(/loli|shota|child|minor/gi, '').trim();
+  const limpo = String(nome || '').replace(/loli|shota|child|minor|furry|cub|feral/gi, '').trim();
+  if (isBlocked(limpo)) throw new Error('termo bloqueado');
   const termo = limpo.replace(/\s+/g, '_');
 
+  // v11.2.6: SEM e621 (furry). Hentai animado = yande/konachan; GIFs = purrbot nsfw.
   const tentativas = [
-    // e621: melhor cobertura de animado
     async () => {
-      const tags = `${termo ? termo + ' ' : ''}animated -loli -cub -scat -gore order:random`;
-      const d = await fetchJ(`https://e621.net/posts.json?tags=${encodeURIComponent(tags)}&limit=${count + 3}`, 12000);
-      const posts = (d?.posts || []).filter(x => x.file?.url && ['gif', 'webm', 'mp4'].includes(x.file?.ext));
-      if (!posts.length) throw new Error('sem animados no e621');
-      return posts.slice(0, count).map(x => ({
-        url: x.file.url,
-        tags: [...(x.tags?.character || []), ...(x.tags?.general || [])].slice(0, 5).join(', '),
-        score: x.score?.total || 0, source: 'e621.net',
-        animated: true, ext: x.file.ext,
-      }));
-    },
-    // yande.re com tag animated
-    async () => {
-      const tags = `${termo ? termo + ' ' : ''}animated -loli -shota`;
+      const tags = `${termo ? termo + ' ' : ''}animated -loli -shota -furry -bestiality`;
       const d = await fetchJ(`https://yande.re/post.json?limit=${count + 2}&tags=${encodeURIComponent(tags)}`, 12000);
       if (!Array.isArray(d) || !d.length) throw new Error('sem animados no yande');
       return d.slice(0, count).map(x => ({
-        url: x.file_url || x.sample_url, tags: String(x.tags || '').split(' ').slice(0, 5).join(', '),
+        url: x.file_url || x.sample_url,
+        tags: String(x.tags || '').split(' ').slice(0, 5).join(', '),
         score: x.score || 0, source: 'yande.re', animated: true,
-      }));
+      })).filter(x => x.url && !isAnimalOrFurry(x.tags));
     },
-    // último recurso: GIF aleatório do purrbot
-    async () => purrbotGif('neko', true),
+    async () => {
+      const tags = `${termo ? termo + ' ' : ''}animated -loli -shota`;
+      const d = await fetchJ(`https://konachan.com/post.json?limit=${count + 2}&tags=${encodeURIComponent(tags)}`, 12000);
+      if (!Array.isArray(d) || !d.length) throw new Error('sem animados no konachan');
+      return d.slice(0, count).map(x => ({
+        url: x.file_url || x.sample_url,
+        tags: String(x.tags || '').split(' ').slice(0, 5).join(', '),
+        score: x.score || 0, source: 'konachan.com', animated: true,
+      })).filter(x => x.url && !isAnimalOrFurry(x.tags));
+    },
+    async () => purrbotGif('blowjob', true),
+    async () => purrbotGif('solo', true),
   ];
 
   for (const fn of tentativas) {
@@ -341,30 +334,23 @@ async function searchByName(nome = '', count = 3) {
   return searchByNameWide(limpo, count);
 }
 
-/** Pesquisa ampla: todas as fontes em paralelo + animados (gif/webm). */
+/** Pesquisa ampla: hentai real (yande/kona) + fotos reais (pornpics). SEM e621/furry. */
 async function searchByNameWide(nome = '', count = 8) {
-  const limpo = String(nome || '').replace(/loli|shota|child|minor/gi, '').trim();
+  const limpo = String(nome || '').replace(/loli|shota|child|minor|furry|cub|feral/gi, '').trim();
   if (!limpo) throw new Error('Diz um nome para procurar');
+  if (isBlocked(limpo)) throw new Error('termo bloqueado');
   const termo = limpo.replace(/\s+/g, '_');
   const want = Math.max(4, Math.min(24, Number(count) || 8));
 
   const jobs = [
     () => yandeImages(termo, want),
     () => konachanImages(termo, want),
-    () => e621Images(`${termo} order:random`, want),
-    () => safebooruImages(termo, want),
-    () => searchAnimated(limpo, Math.max(3, Math.ceil(want / 2))),
+    () => searchAnimated(limpo, Math.max(2, Math.ceil(want / 3))),
     async () => {
       try {
-        const sexcom = require('./sexcom');
-        return (await sexcom.searchImages(limpo, want)) || [];
-      } catch { return []; }
-    },
-    async () => {
-      try {
-        const sexcom = require('./sexcom');
-        const r = await sexcom.searchGifs(limpo, Math.ceil(want / 2));
-        return (r || []).map(g => ({ ...g, animated: true, source: g.source || 'sex.com' }));
+        const as = require('./adultSources');
+        const r = await as.pornpicsSearch(limpo, want);
+        return (r || []).map(p => ({ url: p.url, tags: p.title, score: 0, source: 'pornpics' }));
       } catch { return []; }
     },
   ];
@@ -377,6 +363,7 @@ async function searchByNameWide(nome = '', count = 8) {
     for (const item of s.value) {
       const url = item?.url;
       if (!url || seen.has(url)) continue;
+      if (isAnimalOrFurry(item.tags || '') || isAnimalOrFurry(item.source || '')) continue;
       seen.add(url);
       const anim = !!(item.animated || item.isVideo || /\.(gif|webm|mp4)$/i.test(url));
       all.push({ ...item, animated: anim });
@@ -433,31 +420,20 @@ function shuffle(arr) {
 }
 
 async function searchImages(tags = '', count = 3) {
-  const safe = (tags || 'nude').replace(/loli|shota|child|minor/gi, '').trim();
+  // HENTAI real (anime adulto): yande + konachan. SEM e621/furry/animal.
+  // Fotos humanas reais: adultSources (pornpics/xhamster) via cosplay/sexcom.
+  if (isBlocked(tags)) throw new Error('termo bloqueado');
+  const safe = (tags || 'nude').replace(/loli|shota|child|minor|furry|cub|feral|bestiality/gi, '').trim();
 
-  // Randomiza a ordem das fontes — nunca repete a mesma sequência
   const sources = shuffle([
     { name: 'yande.re', fn: () => yandeImages(safe, count) },
     { name: 'konachan', fn: () => konachanImages(safe, count) },
-    { name: 'e621', fn: () => e621Images(safe, count) },
-    { name: 'sex.com', fn: async () => {
-      try {
-        const sexcom = require('./sexcom');
-        const r = await sexcom.searchImages(safe, count);
-        if (r?.length) return r;
-      } catch {}
-      throw new Error('sex.com falhou');
+    { name: 'pornpics-real', fn: async () => {
+      const as = require('./adultSources');
+      const r = await as.pornpicsSearch(safe, count);
+      return r.map(p => ({ url: p.url, tags: p.title || safe, score: 0, source: 'pornpics' }));
     }},
-    { name: 'sex.com-gifs', fn: async () => {
-      try {
-        const sexcom = require('./sexcom');
-        const r = await sexcom.searchGifs(safe, count);
-        if (r?.length) return r.map(g => ({ ...g, source: 'sex.com', animated: true }));
-      } catch {}
-      throw new Error('sex.com gifs falhou');
-    }},
-    { name: 'nekos.life', fn: () => nekosLifeImage('lewd') },
-    { name: 'safebooru', fn: () => safebooruImages(safe, count) },
+    { name: 'nekos.lewd', fn: () => nekosLifeImage('lewd') },
   ]);
 
   const allResults = [];
@@ -465,15 +441,14 @@ async function searchImages(tags = '', count = 3) {
     try {
       const imgs = await src.fn();
       if (imgs?.length) {
-        const fresh = filterNewUrls(imgs);
-        allResults.push(...fresh);
+        const clean = filterNewUrls(imgs).filter(i => !isAnimalOrFurry(i.tags || '') && !isAnimalOrFurry(i.source || ''));
+        allResults.push(...clean);
       }
     } catch {}
   }
 
   if (!allResults.length) throw new Error('Todas as fontes falharam. Tente de novo.');
 
-  // Randomiza e limita
   const result = shuffle(allResults).slice(0, count);
   for (const r of result) markSent(r.url);
   return result;
@@ -647,6 +622,7 @@ function portalMenuText(ownerName, enabled, apiConfigured, prefix) {
 // ─────────────────────────────────────────────
 module.exports = {
   isBlocked,
+  isAnimalOrFurry,
   cleanQuery,
   ownerPv,
   setOwnerJid,

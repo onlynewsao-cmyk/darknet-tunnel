@@ -717,7 +717,7 @@ function isPrimaryOwnerOnly(ctx) {
   return !!ctx.isPrimaryOwner;
 }
 function adultBlockedQuery(q = '') {
-  return /\b(menor|menores|criança|crianca|infantil|kid|kids|child|children|underage|loli|lolita|shota|teen|colegial|schoolgirl|schoolboy|incesto|rape|forced|forçado|forcada|abus|zoofilia|animal)\b/i.test(String(q || ''));
+  return /\b(menor|menores|criança|crianca|infantil|kid|kids|child|children|underage|loli|lolita|shota|teen|colegial|schoolgirl|schoolboy|incesto|rape|forced|forçado|forcada|abus|zoofilia|bestiality|beastial|furry|furries|yiff|cub\b|feral|equine|canine|animal\s*sex|dog\s*sex|e621)\b/i.test(String(q || ''));
 }
 function adultCleanQuery(q = '') {
   return String(q || '').replace(/\s+/g, ' ').trim().slice(0, 120);
@@ -1471,12 +1471,12 @@ module.exports = {
       '👑 ' + p + 'hentai [tags] — anime adulto',
       '👑 ' + p + 'ximg [tags] — tags multi-fonte',
       '👑 ' + p + 'adultsearch [t] — multi-fonte',
-      '👑 ' + p + 'yande [tags] — yande.re',
-      '👑 ' + p + 'kona [tags] — konachan',
-      '👑 ' + p + 'e621 [tags] — e621.net',
-      '👑 ' + p + 'nekos [tipo] — nekos.life',
-      '💎 ' + p + 'erome <nome> — erome (álbum COMPLETO)',
+      '👑 ' + p + 'yande [tags] — hentai yande.re (anime real)',
+      '👑 ' + p + 'kona [tags] — hentai konachan',
+      '👑 ' + p + 'nekos [tipo] — nekos.life lewd',
+      '💎 ' + p + 'erome <nome> — erome REAL (álbum completo)',
       '💎 ' + p + 'eromevid <nome> — só vídeos erome',
+      '> ⛔ e621/furry/animal BLOQUEADOS',
       '',
       '🪧 *PLAQUINHAS +18*',
       '💎 ' + p + 'placa18 <texto> — plaquinha hot',
@@ -2351,13 +2351,13 @@ module.exports = {
     });
   },
 
-  // !e621 [tags] — e621.net (suporta webm/gif)
-  async e621({ sock, ctx, args }) {
+  // !e621 — DESACTIVADO v11.2.6 (furry/animal proibido)
+  async e621({ sock, ctx }) {
     if (!isPrimaryOwnerOnly(ctx)) return true;
-    return module.exports._adultSend(sock, ctx, {
-      titulo: '🐾 e621', tags: args.join(' ') || 'rating:e',
-      fetcher: (q, n) => portal18.e621Images(q, n),
-    });
+    await portal18.ownerPv(sock, {
+      text: '⛔ *e621 desactivado*\n\nFonte de furry/animal — proibida.\nUsa *yande* / *kona* (hentai anime) ou *cosplay* / *gostosas* (fotos reais).',
+    }, ctx);
+    return true;
   },
 
   // !nekos [tipo] — nekos.life
@@ -2668,7 +2668,7 @@ module.exports = {
     const fontes = [
       ['yande.re',   () => portal18.yandeImages('nude', 1)],
       ['konachan',   () => portal18.konachanImages('nude', 1)],
-      ['e621',       () => portal18.e621Images('rating:e', 1)],
+      ['pornpics',   () => require('./adultSources').pornpicsSearch('blonde', 1)],
       ['nekos.life', () => portal18.nekosLifeImage('lewd')],
     ];
     const estado = await Promise.all(fontes.map(async ([nome, fn]) => {
@@ -3110,36 +3110,33 @@ module.exports = {
   async sexcom({ sock, msg, ctx, args }, forceType) {
     const q = portal18.cleanQuery(args.join(' '));
     if (!q) return reply(sock, msg, ctx, '🔥 Uso: *sexcom <termo>*\nAliases: sex · sexgif · sexvid · sexfoto');
-    if (portal18.isBlocked(q)) return reply(sock, msg, ctx, '🚫 Termo bloqueado.');
+    if (portal18.isBlocked(q) || require('./adultSources').isAnimalContent(q)) {
+      return reply(sock, msg, ctx, '🚫 Termo bloqueado (animal/furry).');
+    }
     if (!(await isAdultEnabled(ctx))) return reply(sock, msg, ctx, '🛑 Adult mode OFF. ADM: *adultmode on*');
-    const type = forceType || 'all';
+    const type = forceType || 'pics';
     await react(sock, msg, '🔥');
     try {
       const src = require('./adultSources');
       const results = await src.sexcomSearch(q, { limit: 30, type });
-      if (!results.length) throw new Error('Sem resultados no sex.com');
+      if (!results.length) throw new Error('Sem fotos reais');
       const lista = require('./listaEscolha');
       await lista.mostrar(sock, msg, ctx, {
-        titulo: `🔥 *sex.com* — ${q.slice(0, 36)}`,
-        intro: `*${results.length}* pins · fotos/GIFs/shorts · *mais* = +10`,
-        linhas: results.map(r => `*${String(r.title || r.type).slice(0, 50)}*\n   ${r.type || 'media'}`),
+        titulo: `🔥 *Fotos reais* — ${q.slice(0, 36)}`,
+        intro: `*${results.length}* · sex.com/pornpics · mídia REAL · *mais* = +10`,
+        linhas: results.map(r => `*${String(r.title || r.type).slice(0, 50)}*\n   📡 ${r.source} · ${r.type || 'photo'}`),
         itens: results, tipo: 'sexcom',
         aoEscolher: async ({ item }) => {
           const m = await src.sexcomResolve(item);
+          const cap = `🔥 *${String(m.title || q).slice(0, 60)}*\n📡 ${m.source} · real`;
           if (m.type === 'video') {
-            await sendAdultMedia(sock, ctx, { video: m.buf, mimetype: 'video/mp4', caption: `🔥 *${m.title}*\n📡 sex.com` }, msg);
-          } else if (m.type === 'gif') {
-            // GIF como video gifPlayback se mp4, senão image
-            const isGif = m.buf.slice(0, 3).toString() === 'GIF';
-            if (isGif) {
-              await sendAdultMedia(sock, ctx, { video: m.buf, gifPlayback: true, caption: `✨ GIF · sex.com` }, msg).catch(async () => {
-                await sendAdultMedia(sock, ctx, { image: m.buf, caption: `✨ *${m.title}*` }, msg);
-              });
-            } else {
-              await sendAdultMedia(sock, ctx, { image: m.buf, caption: `🔥 *${m.title}*\n📡 sex.com` }, msg);
-            }
+            await sendAdultMedia(sock, ctx, { video: m.buf, mimetype: 'video/mp4', caption: cap }, msg);
+          } else if (m.type === 'gif' && m.buf.slice(0, 3).toString() === 'GIF') {
+            await sendAdultMedia(sock, ctx, { video: m.buf, gifPlayback: true, caption: cap }, msg).catch(async () => {
+              await sendAdultMedia(sock, ctx, { image: m.buf, caption: cap }, msg);
+            });
           } else {
-            await sendAdultMedia(sock, ctx, { image: m.buf, caption: `🔥 *${m.title}*\n📡 sex.com` }, msg);
+            await sendAdultMedia(sock, ctx, { image: m.buf, caption: cap }, msg);
           }
         },
       });
@@ -3156,33 +3153,53 @@ module.exports = {
 
   async cosplay({ sock, msg, ctx, args }) {
     const q = portal18.cleanQuery(args.join(' ') || 'cosplay');
-    if (portal18.isBlocked(q)) return reply(sock, msg, ctx, '🚫 Termo bloqueado.');
+    if (portal18.isBlocked(q) || (require('./adultSources').isAnimalContent(q))) {
+      return reply(sock, msg, ctx, '🚫 Termo bloqueado (inclui animal/furry).');
+    }
     if (!(await isAdultEnabled(ctx))) return reply(sock, msg, ctx, '🛑 Adult mode OFF. ADM: *adultmode on*');
     await react(sock, msg, '💃');
     try {
       const src = require('./adultSources');
-      const results = await src.cosplaySearch(q, 20);
-      if (!results.length) throw new Error('Sem fotos');
+      const results = await src.cosplaySearch(q, 24);
+      if (!results.length) throw new Error('Sem fotos reais');
       const lista = require('./listaEscolha');
       await lista.mostrar(sock, msg, ctx, {
-        titulo: `💃 *Cosplay / Sexy* — ${q.slice(0, 32)}`,
-        intro: `*${results.length}* fotos · só imagens · *mais* = página`,
-        linhas: results.map(r => `*${String(r.title || r.source).slice(0, 50)}*\n   ${r.source}`),
+        titulo: `💃 *Fotos reais* — ${q.slice(0, 32)}`,
+        intro: `*${results.length}* resultados · Pornpics/xHamster/Erome · *mais* = página`,
+        linhas: results.map(r => `*${String(r.title || r.source).slice(0, 50)}*\n   📡 ${r.source}${r.type === 'gallery' || r.type === 'album' ? ' · álbum' : ''}`),
         itens: results, tipo: 'cosplay',
         aoEscolher: async ({ item }) => {
-          const m = await src.cosplayDownload(item);
-          await sendAdultMedia(sock, ctx, {
-            image: m.buf,
-            caption: `💃 *${String(m.title).slice(0, 60)}*\n📡 ${m.source}`,
-          }, msg);
+          const many = await src.cosplayDownloadMany(item, 8).catch(async () => {
+            const one = await src.cosplayDownload(item);
+            return Array.isArray(one) ? one : [one];
+          });
+          let sent = 0;
+          for (const m of many) {
+            if (!m?.buf) continue;
+            await sendAdultMedia(sock, ctx, {
+              image: m.buf,
+              caption: sent === 0
+                ? `💃 *${String(m.title || item.title || q).slice(0, 60)}*\n📡 ${m.source} · foto real`
+                : `📡 ${m.source}`,
+            }, msg);
+            sent++;
+            await new Promise(r => setTimeout(r, 400));
+          }
+          if (!sent) throw new Error('download falhou');
         },
       });
-      // também envia já 3 amostras rápidas
+      // 2 amostras reais imediatas (pornpics preferido)
       let n = 0;
-      for (const item of results.slice(0, 3)) {
+      for (const item of results.filter(r => r.source === 'pornpics' || r.direct).slice(0, 4)) {
+        if (n >= 2) break;
         try {
           const m = await src.cosplayDownload(item);
-          await sendAdultMedia(sock, ctx, { image: m.buf, caption: n === 0 ? `💃 Amostra · ${q}` : '' }, msg);
+          const buf = m.buf || (Array.isArray(m) && m[0]?.buf);
+          if (!buf) continue;
+          await sendAdultMedia(sock, ctx, {
+            image: buf,
+            caption: n === 0 ? `💃 Amostra real · ${q}\n📡 ${m.source || item.source}` : '',
+          }, msg);
           n++;
         } catch {}
       }

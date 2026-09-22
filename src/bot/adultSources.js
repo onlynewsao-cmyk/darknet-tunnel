@@ -1,8 +1,12 @@
 'use strict';
 /**
- * DARK BOT v11.2.5 — Fontes adultas (xvideos, pornhub, sex.com, cosplay/fotos)
- * Scrapers leves + yt-dlp quando disponível. Sem API keys.
- * Filtro legal herdado de portal18.isBlocked (chamado pelos handlers).
+ * DARK BOT v11.2.6 — Fontes adultas REAL (sem placeholder / sem furry / sem animal)
+ *
+ * VÍDEO:  XVideos · Pornhub · Eporner  (yt-dlp + scrape mp4)
+ * FOTOS:  Pornpics · xHamster Photos · Erome  (JPEG real)
+ * SEX.COM: tenta site; se SPA vazio → Pornpics (fotos reais, NÃO anime)
+ * COSPLAY/GOSTOSAS: só fotos reais (pornpics/xhamster/erome) — zero e621/nekos/furry
+ * HENTAI: fica no portal18 (yande/konachan) — anime hentai de verdade, não “neko SFW”
  */
 const axios = require('axios');
 const { execFile } = require('child_process');
@@ -14,6 +18,13 @@ const path = require('path');
 const mediaHandler = require('./mediaHandler');
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+
+/** Bloqueia animal / furry / zoo / bestiality em títulos, tags e queries. */
+const ANIMAL_BLOCK = /\b(animal|animals|zoophil|bestial|beastial|dog\s*sex|horse\s*sex|farm\s*sex|furry|furries|yiff|cub\b|feral|equine|canine|knotting|paw\b|wolf|fox\s*girl|dragon\s*dick|okami|e621)\b/i;
+
+function isAnimalContent(s = '') {
+  return ANIMAL_BLOCK.test(String(s || ''));
+}
 
 function _headers(extra = {}) {
   return {
@@ -48,12 +59,12 @@ function _uniqBy(arr, key = 'url') {
   return arr.filter((x) => {
     const k = x[key];
     if (!k || seen.has(k)) return false;
+    if (isAnimalContent(x.title || '') || isAnimalContent(x.tags || '') || isAnimalContent(k)) return false;
     seen.add(k);
     return true;
   });
 }
 
-// ─── yt-dlp helper ───────────────────────────────────────────
 function _ytdlpBin() {
   if (process.env.YTDLP_PATH) return process.env.YTDLP_PATH;
   try {
@@ -88,80 +99,81 @@ async function ytdlpDownload(url, { maxMb = 45, format = 'mp4' } = {}) {
   }
 }
 
+async function _fetchBuf(url, referer) {
+  const buf = await mediaHandler.fetchBuffer(url, 5, {
+    headers: { 'User-Agent': UA, Referer: referer || url, Accept: 'image/*,video/*,*/*' },
+    timeout: 90000,
+  });
+  if (!buf || buf.length < 800) throw new Error('download vazio');
+  return buf;
+}
+
 // ═══════════════════════════════════════════════════════════
-// XVIDEOS
+// XVIDEOS — vídeo real
 // ═══════════════════════════════════════════════════════════
 async function xvideosSearch(query, limit = 20) {
   const q = encodeURIComponent(String(query || '').trim());
   if (!q) throw new Error('query vazia');
+  if (isAnimalContent(query)) throw new Error('termo bloqueado (animal/furry)');
   const html = await _getHtml(`https://www.xvideos.com/?k=${q}`, { Referer: 'https://www.xvideos.com/' });
   const results = [];
-  // data-id + href thumbs
   const re = /<div[^>]+id="video_(\d+)"[\s\S]*?<a[^>]+href="(\/video[^"]+)"[^>]*title="([^"]*)"/gi;
   let m;
-  while ((m = re.exec(html)) !== null && results.length < limit) {
-    const id = m[1];
+  while ((m = re.exec(html)) !== null && results.length < limit * 2) {
     let href = m[2];
     const title = _decode(m[3]);
+    if (isAnimalContent(title)) continue;
     if (!href.startsWith('http')) href = 'https://www.xvideos.com' + href;
-    results.push({ id, url: href, title: title || `XVideos #${id}`, source: 'xvideos', type: 'video' });
+    results.push({ id: m[1], url: href, title: title || `XVideos #${m[1]}`, source: 'xvideos', type: 'video' });
   }
-  // fallback: plain video links
   if (!results.length) {
     const re2 = /href="(\/video\.[^"]+\/[^"]+)"[^>]*title="([^"]*)"/gi;
     while ((m = re2.exec(html)) !== null && results.length < limit) {
       let href = m[1];
+      const title = _decode(m[2]);
+      if (isAnimalContent(title)) continue;
       if (!href.startsWith('http')) href = 'https://www.xvideos.com' + href;
-      results.push({ url: href, title: _decode(m[2]) || 'XVideos', source: 'xvideos', type: 'video' });
+      results.push({ url: href, title: title || 'XVideos', source: 'xvideos', type: 'video' });
     }
   }
-  return _uniqBy(results);
+  return _uniqBy(results).slice(0, limit);
 }
 
 async function xvideosDownload(url) {
-  // tenta yt-dlp; fallback scrape low quality mp4
   try {
     const r = await ytdlpDownload(url, { maxMb: 50 });
-    return { ...r, source: 'xvideos', url };
+    return { ...r, source: 'xvideos', url, type: 'video' };
   } catch (e1) {
-    try {
-      const html = await _getHtml(url, { Referer: 'https://www.xvideos.com/' });
-      const m = html.match(/html5player\.setVideoUrlHigh\('([^']+)'\)/)
-        || html.match(/html5player\.setVideoUrlLow\('([^']+)'\)/)
-        || html.match(/setVideoUrlHigh\("([^"]+)"\)/)
-        || html.match(/"(https?:\/\/[^"]+\.mp4[^"]*)"/i);
-      if (!m) throw new Error('stream não encontrado');
-      const stream = _decode(m[1]);
-      const buf = await mediaHandler.fetchBuffer(stream, 5, {
-        headers: { Referer: 'https://www.xvideos.com/', 'User-Agent': UA },
-        timeout: 120000,
-      });
-      if (!buf || buf.length < 10000) throw new Error('download vazio');
-      return { buf, size: buf.length, source: 'xvideos', url, title: 'xvideos' };
-    } catch (e2) {
-      throw new Error(`xvideos: ${e1.message} | ${e2.message}`);
-    }
+    const html = await _getHtml(url, { Referer: 'https://www.xvideos.com/' });
+    const m = html.match(/html5player\.setVideoUrlHigh\('([^']+)'\)/)
+      || html.match(/html5player\.setVideoUrlLow\('([^']+)'\)/)
+      || html.match(/setVideoUrlHigh\("([^"]+)"\)/);
+    if (!m) throw new Error(`xvideos download: ${e1.message}`);
+    const stream = _decode(m[1]);
+    const buf = await _fetchBuf(stream, 'https://www.xvideos.com/');
+    if (buf.length < 10000) throw new Error('xvideos stream vazio');
+    return { buf, size: buf.length, source: 'xvideos', url, title: 'xvideos', type: 'video' };
   }
 }
 
 // ═══════════════════════════════════════════════════════════
-// PORNHUB
+// PORNHUB — vídeo real
 // ═══════════════════════════════════════════════════════════
 async function pornhubSearch(query, limit = 20) {
   const q = encodeURIComponent(String(query || '').trim());
   if (!q) throw new Error('query vazia');
-  const html = await _getHtml(`https://www.pornhub.com/video/search?search=${q}`, {
-    Referer: 'https://www.pornhub.com/',
-  });
+  if (isAnimalContent(query)) throw new Error('termo bloqueado (animal/furry)');
+  const html = await _getHtml(`https://www.pornhub.com/video/search?search=${q}`, { Referer: 'https://www.pornhub.com/' });
   const results = [];
   const re = /href="(\/view_video\.php\?viewkey=[a-zA-Z0-9]+)"[^>]*title="([^"]*)"/gi;
   let m;
-  while ((m = re.exec(html)) !== null && results.length < limit) {
+  while ((m = re.exec(html)) !== null && results.length < limit * 2) {
     let href = m[1];
+    const title = _decode(m[2]);
+    if (isAnimalContent(title)) continue;
     if (!href.startsWith('http')) href = 'https://www.pornhub.com' + href;
-    results.push({ url: href, title: _decode(m[2]) || 'Pornhub', source: 'pornhub', type: 'video' });
+    results.push({ url: href, title: title || 'Pornhub', source: 'pornhub', type: 'video' });
   }
-  // data-related-url fallback
   if (!results.length) {
     const re2 = /viewkey=([a-zA-Z0-9]+)/g;
     const keys = new Set();
@@ -170,25 +182,166 @@ async function pornhubSearch(query, limit = 20) {
       results.push({ url: `https://www.pornhub.com/view_video.php?viewkey=${k}`, title: `PH ${k}`, source: 'pornhub', type: 'video' });
     }
   }
-  return _uniqBy(results);
+  return _uniqBy(results).slice(0, limit);
 }
 
 async function pornhubDownload(url) {
+  const r = await ytdlpDownload(url, { maxMb: 50 });
+  return { ...r, source: 'pornhub', url, type: 'video' };
+}
+
+// ═══════════════════════════════════════════════════════════
+// EPORNER — vídeo real (extra)
+// ═══════════════════════════════════════════════════════════
+async function epornerSearch(query, limit = 20) {
+  const q = encodeURIComponent(String(query || '').trim());
+  if (!q) throw new Error('query vazia');
+  if (isAnimalContent(query)) throw new Error('termo bloqueado (animal/furry)');
+  const html = await _getHtml(`https://www.eporner.com/search/${q}/`, { Referer: 'https://www.eporner.com/' });
+  const results = [];
+  const re = /href="(\/video-[^"]+\/[^"]+\/)"[^>]*>[\s\S]*?(?:title|alt)="([^"]*)"/gi;
+  let m;
+  while ((m = re.exec(html)) !== null && results.length < limit * 2) {
+    const title = _decode(m[2] || '');
+    if (isAnimalContent(title)) continue;
+    let href = m[1];
+    if (!href.startsWith('http')) href = 'https://www.eporner.com' + href;
+    results.push({ url: href, title: title || 'Eporner', source: 'eporner', type: 'video' });
+  }
+  if (!results.length) {
+    const re2 = /href="(\/video-[a-zA-Z0-9]+\/[^"]+\/)"/gi;
+    while ((m = re2.exec(html)) !== null && results.length < limit) {
+      let href = m[1];
+      if (!href.startsWith('http')) href = 'https://www.eporner.com' + href;
+      const title = decodeURIComponent(href.split('/').filter(Boolean).pop() || 'eporner').replace(/-/g, ' ');
+      if (isAnimalContent(title)) continue;
+      results.push({ url: href, title, source: 'eporner', type: 'video' });
+    }
+  }
+  return _uniqBy(results).slice(0, limit);
+}
+
+async function epornerDownload(url) {
   try {
-    const r = await ytdlpDownload(url, { maxMb: 50 });
-    return { ...r, source: 'pornhub', url };
+    return { ...(await ytdlpDownload(url, { maxMb: 50 })), source: 'eporner', url, type: 'video' };
   } catch (e) {
-    throw new Error(`pornhub: ${e.message}. Tenta outro resultado ou instala yt-dlp.`);
+    throw new Error(`eporner: ${e.message}`);
   }
 }
 
 // ═══════════════════════════════════════════════════════════
-// SEX.COM  (pins / gifs / pics / videos curtos)
+// PORNPICS — fotos REAL (mulheres / cosplay / etc.)
+// ═══════════════════════════════════════════════════════════
+function _pornpicsUpgrade(url) {
+  // 460 thumb → 1280 full quando possível
+  return String(url || '').replace(/cdni\.pornpics\.com\/\d+\//, 'cdni.pornpics.com/1280/');
+}
+
+async function pornpicsSearch(query, limit = 24) {
+  const q = String(query || 'sexy').trim();
+  if (isAnimalContent(q)) throw new Error('termo bloqueado (animal/furry)');
+  const url = `https://www.pornpics.com/?q=${encodeURIComponent(q)}`;
+  const html = await _getHtml(url, { Referer: 'https://www.pornpics.com/' });
+  const results = [];
+  const re = /https:\/\/cdni\.pornpics\.com\/\d+\/\d+\/\d+\/\d+\/\d+_\d+_[a-f0-9]+\.jpg/gi;
+  const found = [...new Set((html.match(re) || []))];
+  // tenta apanhar alts próximos
+  for (const thumb of found) {
+    if (results.length >= limit) break;
+    const idx = html.indexOf(thumb);
+    const window = html.slice(Math.max(0, idx - 200), idx + thumb.length + 120);
+    const altM = window.match(/alt="([^"]*)"/i);
+    const title = _decode(altM?.[1] || q);
+    if (isAnimalContent(title)) continue;
+    const full = _pornpicsUpgrade(thumb);
+    results.push({
+      url: full,
+      thumb,
+      title: title.slice(0, 80) || q,
+      source: 'pornpics',
+      type: 'photo',
+      direct: true,
+    });
+  }
+  return _uniqBy(results).slice(0, limit);
+}
+
+async function pornpicsDownload(item) {
+  const url = item.url || item;
+  try {
+    const buf = await _fetchBuf(url, 'https://www.pornpics.com/');
+    return { buf, type: 'photo', title: item.title || 'pornpics', source: 'pornpics', url };
+  } catch {
+    // fallback thumb 460
+    const thumb = item.thumb || String(url).replace('/1280/', '/460/');
+    const buf = await _fetchBuf(thumb, 'https://www.pornpics.com/');
+    return { buf, type: 'photo', title: item.title || 'pornpics', source: 'pornpics', url: thumb };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// XHAMSTER PHOTOS — galerias de fotos reais
+// ═══════════════════════════════════════════════════════════
+async function xhamsterPhotosSearch(query, limit = 20) {
+  const q = encodeURIComponent(String(query || 'sexy').trim().replace(/\s+/g, ' '));
+  if (isAnimalContent(query)) throw new Error('termo bloqueado (animal/furry)');
+  const html = await _getHtml(`https://xhamster.com/photos/search/${q}`, { Referer: 'https://xhamster.com/' });
+  const results = [];
+  const re = /href="(https:\/\/xhamster\.com\/photos\/gallery\/[^"]+)"/gi;
+  let m;
+  const seen = new Set();
+  while ((m = re.exec(html)) !== null && results.length < limit * 2) {
+    const url = m[1].split('?')[0];
+    if (seen.has(url)) continue;
+    seen.add(url);
+    const slug = url.split('/gallery/')[1] || '';
+    const title = decodeURIComponent(slug).replace(/-\d+$/, '').replace(/-/g, ' ');
+    if (isAnimalContent(title)) continue;
+    results.push({ url, title: title.slice(0, 80), source: 'xhamster-photos', type: 'gallery' });
+  }
+  return results.slice(0, limit);
+}
+
+async function xhamsterGalleryPhotos(galleryUrl, limit = 12) {
+  const html = await _getHtml(galleryUrl, { Referer: 'https://xhamster.com/' });
+  const photos = [];
+  const re = /https:\/\/[^"'\\s]+xhcdn\.com[^"'\\s]+/gi;
+  const all = [...new Set(html.match(re) || [])];
+  for (const u of all) {
+    if (photos.length >= limit) break;
+    if (/css|favicon|promo|sprite|logo|svg|static-ah|message\//i.test(u)) continue;
+    if (!/(_1000|_450|_1600)\.(jpg|jpeg|png|webp)/i.test(u) && !/\/\d+_\d+\.(jpg|jpeg|png|webp)/i.test(u)) {
+      if (!/\.(jpg|jpeg|png|webp)(\?|$)/i.test(u)) continue;
+    }
+    // prefere _1000
+    photos.push(u.includes('_450') ? u.replace('_450', '_1000') : u);
+  }
+  return [...new Set(photos)].slice(0, limit);
+}
+
+async function xhamsterPhotoDownload(item) {
+  if (item.type === 'gallery' || /\/photos\/gallery\//i.test(item.url || '')) {
+    const urls = await xhamsterGalleryPhotos(item.url, 8);
+    if (!urls.length) throw new Error('galeria xhamster sem fotos');
+    const out = [];
+    for (const u of urls.slice(0, 6)) {
+      try {
+        const buf = await _fetchBuf(u, 'https://xhamster.com/');
+        if (buf.length > 2000) out.push({ buf, type: 'photo', title: item.title, source: 'xhamster-photos', url: u });
+      } catch {}
+    }
+    if (!out.length) throw new Error('xhamster download falhou');
+    return out; // array
+  }
+  const buf = await _fetchBuf(item.url || item, 'https://xhamster.com/');
+  return [{ buf, type: 'photo', title: item.title || 'xhamster', source: 'xhamster-photos', url: item.url }];
+}
+
+// ═══════════════════════════════════════════════════════════
+// SEX.COM — tenta site; senão Pornpics REAL (nunca anime/furry)
 // ═══════════════════════════════════════════════════════════
 async function sexcomSearch(query, { limit = 24, type = 'pics' } = {}) {
-  // type: pics | gifs | videos | all
-  // NOTA 2026: sex.com é SPA Next.js — HTML sem pins. Tentamos scrape;
-  // se vazio, faz fallback para boorus/nekos (fotos/gifs reais) etiquetado.
+  if (isAnimalContent(query)) throw new Error('termo bloqueado (animal/furry)');
   const q = encodeURIComponent(String(query || 'sexy').trim());
   const paths = {
     pics: `https://www.sex.com/search/pics?query=${q}`,
@@ -196,10 +349,9 @@ async function sexcomSearch(query, { limit = 24, type = 'pics' } = {}) {
     videos: `https://www.sex.com/search/videos?query=${q}`,
     all: `https://www.sex.com/search?query=${q}`,
   };
-  const url = paths[type] || paths.pics;
   const results = [];
   try {
-    const html = await _getHtml(url, { Referer: 'https://www.sex.com/' });
+    const html = await _getHtml(paths[type] || paths.pics, { Referer: 'https://www.sex.com/' });
     const re = /href="(\/pin\/\d+\/?)"[^>]*>[\s\S]*?(?:data-src|src)="(https?:\/\/[^"]+)"[^>]*(?:alt="([^"]*)")?/gi;
     let m;
     while ((m = re.exec(html)) !== null && results.length < limit) {
@@ -207,219 +359,159 @@ async function sexcomSearch(query, { limit = 24, type = 'pics' } = {}) {
       if (!href.startsWith('http')) href = 'https://www.sex.com' + href;
       const thumb = _decode(m[2]);
       const title = _decode(m[3] || '') || 'sex.com';
-      const isGif = /\.gif(\?|$)/i.test(thumb) || /gif/i.test(href);
+      if (isAnimalContent(title)) continue;
+      if (/static|icon|banner|apple-touch|flag/i.test(thumb)) continue;
+      const isGif = /\.gif(\?|$)/i.test(thumb);
       results.push({
         url: href, thumb, title, source: 'sex.com',
         type: isGif ? 'gif' : (type === 'videos' ? 'video' : 'photo'),
       });
     }
-    if (!results.length) {
-      const re2 = /(https?:\/\/(?:image|images|cdn)[^"'\s]+(?:sex\.com|sxccdn)[^"'\s]+\.(?:jpg|jpeg|png|webp|gif|mp4))/gi;
-      while ((m = re2.exec(html)) !== null && results.length < limit) {
-        const u = _decode(m[1]);
-        if (/static|icon|banner|apple-touch|flag/i.test(u)) continue;
-        results.push({
-          url: u, thumb: u, title: 'sex.com media', source: 'sex.com',
-          type: /\.gif/i.test(u) ? 'gif' : /\.mp4/i.test(u) ? 'video' : 'photo',
-          direct: true,
-        });
-      }
+    const re2 = /(https?:\/\/(?:image|images|cdn)[^"'\s]+(?:sex\.com|sxccdn)[^"'\s]+\.(?:jpg|jpeg|png|webp|gif|mp4))/gi;
+    while ((m = re2.exec(html)) !== null && results.length < limit) {
+      const u = _decode(m[1]);
+      if (/static|icon|banner|apple-touch|flag|cuties/i.test(u)) continue;
+      results.push({
+        url: u, thumb: u, title: String(query || 'sex.com'), source: 'sex.com',
+        type: /\.gif/i.test(u) ? 'gif' : /\.mp4/i.test(u) ? 'video' : 'photo',
+        direct: true,
+      });
     }
   } catch {}
 
-  if (results.length) return _uniqBy(results);
+  if (results.length) return _uniqBy(results).slice(0, limit);
 
-  // Fallback: fotos/gifs reais (cosplay/booru) — o menu promete media
-  const fb = await cosplaySearch(String(query || 'sexy'), limit);
-  return fb.map((x) => ({
+  // Fallback REAL: Pornpics (fotos humanas) — NÃO nekos/e621/anime
+  const pp = await pornpicsSearch(String(query || 'sexy'), limit);
+  return pp.map((x) => ({
     ...x,
-    source: `sex.com→${x.source}`,
+    source: 'pornpics',
+    via: 'sex.com-fallback-real',
     title: x.title || String(query || 'sexy'),
   }));
 }
 
 async function sexcomResolve(item) {
-  // se já é media directa
+  if (item.source === 'pornpics' || item.via === 'sex.com-fallback-real' || item.direct && /pornpics\.com/i.test(item.url || '')) {
+    return pornpicsDownload(item);
+  }
   if (item.direct && item.url) {
-    const buf = await mediaHandler.fetchBuffer(item.url, 5, {
-      headers: { Referer: 'https://www.sex.com/', 'User-Agent': UA },
-      timeout: 60000,
-    });
-    return { buf, type: item.type || 'photo', title: item.title, source: 'sex.com', url: item.url };
+    const buf = await _fetchBuf(item.url, 'https://www.sex.com/');
+    const type = /\.mp4/i.test(item.url) ? 'video' : /\.gif/i.test(item.url) ? 'gif' : 'photo';
+    return { buf, type, title: item.title, source: 'sex.com', url: item.url };
   }
-  const html = await _getHtml(item.url || item, { Referer: 'https://www.sex.com/' });
-  // image_src / og:image / video
-  let mediaUrl =
-    (html.match(/property="og:video"[^>]+content="([^"]+)"/i) || [])[1] ||
-    (html.match(/property="og:image"[^>]+content="([^"]+)"/i) || [])[1] ||
-    (html.match(/rel="image_src"[^>]+href="([^"]+)"/i) || [])[1] ||
-    (html.match(/data-src="(https?:\/\/[^"]+\.(?:jpg|jpeg|png|webp|gif|mp4)[^"]*)"/i) || [])[1] ||
-    (html.match(/src="(https?:\/\/(?:image|images|cdn)[^"]+\.(?:jpg|jpeg|png|webp|gif|mp4)[^"]*)"/i) || [])[1];
-  if (!mediaUrl && item.thumb) mediaUrl = item.thumb;
-  if (!mediaUrl) throw new Error('sex.com: media não encontrada no pin');
-  mediaUrl = _decode(mediaUrl);
-  const buf = await mediaHandler.fetchBuffer(mediaUrl, 5, {
-    headers: { Referer: 'https://www.sex.com/', 'User-Agent': UA },
-    timeout: 60000,
-  });
-  if (!buf || buf.length < 800) throw new Error('sex.com: download vazio');
-  const type = /\.mp4/i.test(mediaUrl) ? 'video'
-    : /\.gif/i.test(mediaUrl) ? 'gif'
-    : 'photo';
-  return { buf, type, title: item.title || 'sex.com', source: 'sex.com', url: mediaUrl };
+  try {
+    const html = await _getHtml(item.url || item, { Referer: 'https://www.sex.com/' });
+    let mediaUrl =
+      (html.match(/property="og:video"[^>]+content="([^"]+)"/i) || [])[1] ||
+      (html.match(/property="og:image"[^>]+content="([^"]+)"/i) || [])[1] ||
+      (html.match(/rel="image_src"[^>]+href="([^"]+)"/i) || [])[1] ||
+      item.thumb;
+    if (!mediaUrl) throw new Error('sem media');
+    mediaUrl = _decode(mediaUrl);
+    const buf = await _fetchBuf(mediaUrl, 'https://www.sex.com/');
+    const type = /\.mp4/i.test(mediaUrl) ? 'video' : /\.gif/i.test(mediaUrl) ? 'gif' : 'photo';
+    return { buf, type, title: item.title || 'sex.com', source: 'sex.com', url: mediaUrl };
+  } catch {
+    // último recurso real
+    const pp = await pornpicsSearch(item.title || 'sexy', 3);
+    if (!pp[0]) throw new Error('sex.com: sem mídia real');
+    return pornpicsDownload(pp[0]);
+  }
 }
 
 // ═══════════════════════════════════════════════════════════
-// FOTOS — jovens mulheres / cosplay / fantasia (APIs públicas adultas + tags)
-// Fontes: waifu.im nsfw, gelbooru (rating:explicit), rule34, danbooru
+// COSPLAY / GOSTOSAS — SÓ FOTOS REAIS (sem anime/furry/animal)
 // ═══════════════════════════════════════════════════════════
-const COSPLAY_QUERIES = {
-  cosplay: 'cosplay rating:explicit',
-  gostosa: 'solo female rating:explicit',
-  sexy: 'beautiful_female rating:explicit -loli -shota',
-  fantasia: 'fantasy cosplay rating:explicit',
-  linda: '1girl solo highres rating:explicit -loli',
-  default: '1girl solo cosplay rating:explicit -loli -shota -cub',
-};
-
-async function _gelbooru(tags, limit = 12) {
-  const t = encodeURIComponent(`${tags} -loli -shota -cub -young`);
-  const url = `https://gelbooru.com/index.php?page=dapi&s=post&q=index&json=1&limit=${Math.min(limit, 40)}&tags=${t}`;
-  const r = await axios.get(url, { headers: _headers(), timeout: 20000, validateStatus: () => true });
-  if (r.status >= 400) return [];
-  const posts = Array.isArray(r.data) ? r.data : (r.data?.post || []);
-  return (posts || []).map((p) => ({
-    url: p.file_url || p.sample_url,
-    thumb: p.preview_url || p.sample_url,
-    title: (p.tags || '').split(' ').slice(0, 6).join(' '),
-    source: 'gelbooru',
-    type: /\.gif|\.mp4|\.webm/i.test(p.file_url || '') ? 'gif' : 'photo',
-    score: p.score || 0,
-  })).filter(x => x.url && /^https?:\/\//.test(x.url));
-}
-
-async function _rule34(tags, limit = 12) {
-  const t = encodeURIComponent(`${tags} -loli -shota -cub`);
-  const url = `https://api.rule34.xxx/index.php?page=dapi&s=post&q=index&json=1&limit=${Math.min(limit, 40)}&tags=${t}`;
-  const r = await axios.get(url, { headers: _headers(), timeout: 20000, validateStatus: () => true });
-  const posts = Array.isArray(r.data) ? r.data : [];
-  return posts.map((p) => ({
-    url: p.file_url,
-    thumb: p.preview_url || p.sample_url,
-    title: (p.tags || '').split(' ').slice(0, 6).join(' '),
-    source: 'rule34',
-    type: /\.gif|\.mp4|\.webm/i.test(p.file_url || '') ? 'gif' : 'photo',
-  })).filter(x => x.url && /^https?:\/\//.test(x.url));
-}
-
-async function _waifuIm(limit = 8) {
-  try {
-    const r = await axios.get(`https://api.waifu.im/search?is_nsfw=true&limit=${Math.min(limit, 30)}`, {
-      headers: _headers({ Accept: 'application/json' }),
-      timeout: 15000, validateStatus: () => true,
-    });
-    const imgs = r.data?.images || [];
-    return imgs.map((im) => ({
-      url: im.url, thumb: im.url,
-      title: (im.tags || []).map(t => t.name).join(' ') || 'waifu.im',
-      source: 'waifu.im', type: im.extension === 'gif' ? 'gif' : 'photo',
-    })).filter(x => x.url);
-  } catch { return []; }
-}
-
-/** nekos.life lewd/neko — sempre disponível neste sandbox */
-async function _nekosLewd(limit = 6) {
-  const out = [];
-  const endpoints = [
-    'https://nekos.life/api/v2/img/lewd',
-    'https://nekos.life/api/v2/img/waifu',
-    'https://nekos.life/api/v2/img/neko',
-    'https://nekos.life/api/v2/img/trap',
-  ];
-  for (let i = 0; i < limit; i++) {
-    try {
-      const ep = endpoints[i % endpoints.length];
-      const r = await axios.get(ep, { headers: _headers({ Accept: 'application/json' }), timeout: 12000 });
-      if (r.data?.url) {
-        out.push({
-          url: r.data.url, thumb: r.data.url,
-          title: ep.split('/').pop() || 'nekos',
-          source: 'nekos.life', type: 'photo',
-        });
-      }
-    } catch {}
-  }
-  return out;
-}
-
-/** yande.re / e621 via portal18 (já testado no bot) */
-async function _portalBoorus(tags, limit = 10) {
-  try {
-    const p18 = require('./portal18');
-    const settled = await Promise.allSettled([
-      p18.yandeImages(tags, Math.ceil(limit / 2)).catch(() => []),
-      p18.e621Images(tags.includes('rating') ? tags : `rating:e ${tags}`, Math.ceil(limit / 2)).catch(() => []),
-      p18.konachanImages(tags, Math.ceil(limit / 3)).catch(() => []),
-      p18.nekosLifeImage('lewd').catch(() => []),
-    ]);
-    return settled.flatMap((s) => {
-      if (s.status !== 'fulfilled') return [];
-      const arr = Array.isArray(s.value) ? s.value : (s.value ? [s.value] : []);
-      return arr.map((img) => ({
-        url: img.url || img.file_url,
-        thumb: img.preview || img.url,
-        title: (img.tags || img.source || 'foto').toString().slice(0, 60),
-        source: img.source || 'booru',
-        type: /\.gif|\.webm|\.mp4/i.test(img.url || '') ? 'gif' : 'photo',
-      })).filter(x => x.url);
-    });
-  } catch { return []; }
-}
-
-async function cosplaySearch(query = '', limit = 16) {
-  const q = String(query || '').trim().toLowerCase();
-  let tags = COSPLAY_QUERIES.default;
-  for (const [k, v] of Object.entries(COSPLAY_QUERIES)) {
-    if (k !== 'default' && q.includes(k)) { tags = v; break; }
-  }
-  if (q && !Object.keys(COSPLAY_QUERIES).some(k => q.includes(k))) {
-    tags = `${q.replace(/[^\w\s_\-]+/g, ' ').trim()} rating:explicit -loli -shota -cub -young`;
-  }
+async function cosplaySearch(query = 'cosplay', limit = 16) {
+  const q = String(query || 'cosplay sexy').trim() || 'cosplay';
+  if (isAnimalContent(q)) throw new Error('termo bloqueado (animal/furry)');
+  // força termos de foto real
+  const boosted = /cosplay|gostos|sexy|linda|fantasia|woman|girl|model/i.test(q) ? q : `${q} cosplay`;
   const settled = await Promise.allSettled([
-    _portalBoorus(tags, limit),
-    _nekosLewd(Math.min(8, limit)),
-    _gelbooru(tags, limit),
-    _rule34(tags, Math.ceil(limit / 2)),
-    _waifuIm(Math.ceil(limit / 3)),
+    pornpicsSearch(boosted, limit),
+    pornpicsSearch(`${boosted} woman`, Math.ceil(limit / 2)),
+    xhamsterPhotosSearch(boosted, Math.ceil(limit / 2)),
   ]);
-  const all = settled.flatMap(s => s.status === 'fulfilled' ? s.value : []);
-  for (let i = all.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [all[i], all[j]] = [all[j], all[i]];
+  const all = [];
+  for (const s of settled) {
+    if (s.status !== 'fulfilled') continue;
+    for (const item of s.value || []) {
+      if (isAnimalContent(item.title || '')) continue;
+      all.push(item);
+    }
   }
-  return _uniqBy(all).slice(0, limit);
+  // erome real albums (photos)
+  try {
+    const erome = require('./erome');
+    const albums = (await erome.search(boosted)).filter(a => !isAnimalContent(a.name || '') && !erome.isFiltered?.(a.name, a.url));
+    for (const a of albums.slice(0, 8)) {
+      all.push({
+        url: a.url,
+        title: a.name || boosted,
+        source: 'erome',
+        type: 'album',
+        thumb: a.thumb || '',
+      });
+    }
+  } catch {}
+
+  return _uniqBy(all, 'url').slice(0, limit);
 }
 
 async function cosplayDownload(item) {
-  const url = item.url || item;
-  const buf = await mediaHandler.fetchBuffer(url, 5, { timeout: 45000, headers: { 'User-Agent': UA } });
-  if (!buf || buf.length < 1000) throw new Error('foto vazia');
-  return {
-    buf,
-    type: item.type || (/\.gif/i.test(url) ? 'gif' : 'photo'),
-    title: item.title || 'foto',
-    source: item.source || 'cosplay',
-    url,
-  };
+  if (!item) throw new Error('item vazio');
+  if (isAnimalContent(item.title || '')) throw new Error('conteúdo animal bloqueado');
+
+  if (item.source === 'pornpics' || /pornpics\.com/i.test(item.url || '')) {
+    return pornpicsDownload(item);
+  }
+  if (item.source === 'xhamster-photos' || /xhamster\.com\/photos/i.test(item.url || '')) {
+    const arr = await xhamsterPhotoDownload(item);
+    return arr[0] || arr;
+  }
+  if (item.source === 'erome' || /erome\.com/i.test(item.url || '')) {
+    const erome = require('./erome');
+    const r = await erome.albumToMedia(item.url, 12, { photosOnly: true });
+    if (!r.media?.length) throw new Error('erome sem fotos');
+    const m = r.media[0];
+    return { buf: m.buf, type: 'photo', title: r.name || item.title, source: 'erome', url: m.url };
+  }
+  // URL directa de imagem
+  if (/\.(jpe?g|png|webp)(\?|$)/i.test(item.url || '')) {
+    const buf = await _fetchBuf(item.url, item.source === 'xhamster-photos' ? 'https://xhamster.com/' : 'https://www.pornpics.com/');
+    return { buf, type: 'photo', title: item.title || 'foto', source: item.source || 'direct', url: item.url };
+  }
+  throw new Error('fonte de foto real desconhecida: ' + (item.source || '?'));
+}
+
+/** Baixa várias fotos do item (galeria/álbum). */
+async function cosplayDownloadMany(item, max = 6) {
+  if (item.source === 'xhamster-photos' || /xhamster\.com\/photos\/gallery/i.test(item.url || '')) {
+    return xhamsterPhotoDownload(item);
+  }
+  if (item.source === 'erome' || /erome\.com\/a\//i.test(item.url || '')) {
+    const erome = require('./erome');
+    const r = await erome.albumToMedia(item.url, max, { photosOnly: true });
+    return (r.media || []).map(m => ({
+      buf: m.buf, type: 'photo', title: r.name, source: 'erome', url: m.url,
+    }));
+  }
+  if (item.source === 'pornpics' || /pornpics\.com/i.test(item.url || '')) {
+    const one = await pornpicsDownload(item);
+    return [one];
+  }
+  const one = await cosplayDownload(item);
+  return Array.isArray(one) ? one : [one];
 }
 
 // ═══════════════════════════════════════════════════════════
-// PLAQUINHAS +18 (imagem com texto hot)
+// PLAQUINHAS +18 (geração local — não é “fake media de site”)
 // ═══════════════════════════════════════════════════════════
 async function placa18(texto, estilo = 'hot') {
   const t = String(texto || '').trim().slice(0, 80);
   if (!t) throw new Error('texto vazio');
-  // tenta systemzone se existir endpoint genérico; senão sharp local
+  if (isAnimalContent(t)) throw new Error('texto bloqueado');
   try {
     const data = await mediaHandler.fetchJson(
       `https://systemzone.store/v1/placas/neymar-placa?texto=${encodeURIComponent('🔥 ' + t)}`,
@@ -432,11 +524,9 @@ async function placa18(texto, estilo = 'hot') {
     }
   } catch {}
 
-  // sharp local — cartão dark hot
   const sharp = require('sharp');
   const W = 1080, H = 540;
   const esc = (s) => String(s).replace(/[<>&"]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]));
-  // quebra texto em linhas ~28 chars
   const words = t.split(/\s+/);
   const lines = [];
   let cur = '';
@@ -448,9 +538,7 @@ async function placa18(texto, estilo = 'hot') {
   const linesSvg = lines.slice(0, 5).map((ln, i) =>
     `<text x="540" y="${230 + i * 52}" text-anchor="middle" font-family="Arial Black, Arial" font-size="42" font-weight="900" fill="#fff">${esc(ln)}</text>`
   ).join('');
-  const accents = {
-    hot: '#f43f5e', pink: '#ec4899', gold: '#fbbf24', purple: '#a78bfa',
-  };
+  const accents = { hot: '#f43f5e', pink: '#ec4899', gold: '#fbbf24', purple: '#a78bfa' };
   const accent = accents[estilo] || accents.hot;
   const svg = Buffer.from(`<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
     <defs>
@@ -470,15 +558,24 @@ async function placa18(texto, estilo = 'hot') {
 }
 
 module.exports = {
+  isAnimalContent,
+  ANIMAL_BLOCK,
   xvideosSearch,
   xvideosDownload,
   pornhubSearch,
   pornhubDownload,
+  epornerSearch,
+  epornerDownload,
+  pornpicsSearch,
+  pornpicsDownload,
+  xhamsterPhotosSearch,
+  xhamsterGalleryPhotos,
+  xhamsterPhotoDownload,
   sexcomSearch,
   sexcomResolve,
   cosplaySearch,
   cosplayDownload,
+  cosplayDownloadMany,
   placa18,
   ytdlpDownload,
-  COSPLAY_QUERIES,
 };
