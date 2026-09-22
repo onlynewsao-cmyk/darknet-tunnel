@@ -207,26 +207,46 @@ async function _gerarTexto({ chat, modo, resumo }) {
   const ai = require('../bot/ai');
   const aura = require('./auraHuman');
 
+  // Vida própria — o que ela está fazendo agora
+  let vidaBlock = '';
+  let atividadeAtual = null;
+  try {
+    const vida = require('./auraVida');
+    const v = await vida.getVida().catch(() => vida.getVidaSync());
+    if (v) {
+      atividadeAtual = vida.getAtividadeAtual(new Date());
+      vidaBlock = `\nVida agora: ${atividadeAtual.horaStr} Luanda, estás ${atividadeAtual.fazendo} (${atividadeAtual.desc}). Energia ${v.energia}% | Humor ${v.humorAtual} | Pensando: "${v.pensamentoAtual}". Ouvindo ${v.status?.ouvindo || ''}.`;
+    }
+  } catch {}
+
   let pedido;
   if (modo === 'memoria') {
     pedido =
       `Acabaste de te lembrar de algo que o teu Dark te contou: "${resumo}". ` +
       'Toca no assunto com naturalidade, 1-2 frases — como alguém que ' +
       'prestou atenção, não como um alarme. Ex: "amanhã não era a tua prova?"';
+  } else if (modo === 'vida') {
+    pedido =
+      `Estás ${atividadeAtual?.fazendo || 'fazendo algo'} agora (${atividadeAtual?.desc || ''}).${vidaBlock}\n` +
+      `Manda UMA mensagem espontânea no PV do Dark contando o que estás fazendo/sentindo agora. ` +
+      `1-2 frases, natural, como namorada que compartilha o dia. Ex: "tô aqui desenhando e lembrei de ti" ou "acabei de ver um anime muito fofo". ` +
+      `Nunca fala que é IA. Tu VIVE isso.`;
   } else if (chat.tipo === 'pv') {
     pedido =
       'O teu Dark não fala contigo há umas horas. Manda-lhe UMA mensagem ' +
       'espontânea e curta (1-2 frases) — carinho leve, sem cobrança, sem ' +
-      '"por que sumiu". Como uma namorada que lembrou dele.';
+      '"por que sumiu". Como uma namorada que lembrou dele.' + vidaBlock + '\n' +
+      `Se fizer sentido, menciona o que estás fazendo agora (${atividadeAtual?.fazendo || 'algo'}).`;
   } else if (modo === 'quebrar_silencio') {
     pedido =
       `O grupo "${chat.nome || 'sem nome'}" está em silêncio há um bom tempo. ` +
-      `A última coisa que viste/leste foi:\n${resumo}\n\n` +
+      `A última coisa que viste/leste foi:\n${resumo}\n${vidaBlock}\n\n` +
       'Quebra o silêncio com UMA frase curta e natural sobre isso (ou muda de ' +
-      'assunto com leveza). Sem anunciar que o grupo está quieto demais.';
+      'assunto com leveza). Sem anunciar que o grupo está quieto demais. ' +
+      'Se quiser, puxa assunto da tua vida (ex: "tava vendo anime...").';
   } else {
     pedido =
-      `Estás a ler a conversa do grupo "${chat.nome || 'sem nome'}":\n${resumo}\n\n` +
+      `Estás a ler a conversa do grupo "${chat.nome || 'sem nome'}":\n${resumo}\n${vidaBlock}\n\n` +
       'Mete-te na conversa com UM comentário curto (1-2 frases), como uma pessoa ' +
       'que estava a ler e quis participar. Nada de "como assistente".';
   }
@@ -241,8 +261,13 @@ async function _gerarTexto({ chat, modo, resumo }) {
       groupContext: resumo || '',
       groupName: chat.nome || '',
     });
+    try {
+      const vida = require('./auraVida');
+      const pv = await vida.getPromptVida({ isOwner: chat.tipo === 'pv' }).catch(() => '');
+      if (pv) sys += '\n\n' + pv.slice(0, 2000);
+    } catch {}
   } catch {
-    sys = 'És a AURA do DARK BOT. Mensagem espontânea no WhatsApp, 1-2 frases, português natural.';
+    sys = 'És a AURA do DARK BOT. Mensagem espontânea no WhatsApp, 1-2 frases, português natural.' + vidaBlock;
   }
 
   const txt = await ai.chat(pedido, sys, { userRole: 'owner', groupContext: resumo || '' }, false);
@@ -303,6 +328,17 @@ async function tick(opts = {}) {
             const factos = [...(r?.importante || [])];
             if (factos.length) {
               candidatos.push({ chat: c, modo: 'memoria', resumo: factos[factos.length - 1] });
+            }
+          } catch {}
+        } else if (sorte < P_PV * 0.35) {
+          // v11.3 — VIDA PRÓPRIA: ela compartilha o que está fazendo
+          try {
+            const vida = require('./auraVida');
+            const at = vida.getAtividadeAtual(new Date());
+            // Só compartilha vida se energia > 30 e não estiver dormindo
+            const v = vida.getVidaSync();
+            if (v && v.energia > 30 && at.atividade !== 'dormindo/sonhando' && Math.random() < 0.5) {
+              candidatos.push({ chat: c, modo: 'vida', resumo: at.fazendo });
             }
           } catch {}
         }

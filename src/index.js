@@ -529,6 +529,11 @@ async function bootstrap() {
       require('./bot/cases/rental2').arrancarRental(() => bot.getSock?.() || bot.sock || null);
     } catch (e) { console.warn('[Rental]', e.message); }
 
+    // v11.3 — VIDA PRÓPRIA DA AURA: ela existe mesmo quando ninguém fala
+    try {
+      require('./aura/auraVida').arrancar(() => bot.getSock?.() || bot.sock || null);
+    } catch (e) { console.warn('[Vida]', e.message); }
+
     // v6.83 — AURA PROATIVA: ela fala quando quer (texto gerado por IA,
     // só nos chats onde está acordada, com ritmo humano e limites).
     try {
