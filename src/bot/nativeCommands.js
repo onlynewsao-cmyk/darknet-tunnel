@@ -2967,31 +2967,35 @@ module.exports = {
   // !mediaup / !mediadown / !medialist — Armazenamento de mídias
   // ══════════════════════════════════════════════════════════════════════
 
-  // ═══ EROME.COM v11.2.5 — álbum completo + lista paginada ═══
+  // ═══ EROME.COM v11.2.8 — PIN ALBUM persistente: álbum envia várias, pesquisa viva ═══
   async erome({ sock, msg, ctx, args }) {
     const query = args.filter(a => !/^\d+$/.test(a)).join(' ').trim();
     const limit = parseInt(args.find(a => /^\d+$/.test(a))) || 30;
-    if (!query) return reply(sock, msg, ctx, '🔍 Uso: *!erome <nome>* [qtd]\nEnvia *todas* as mídias do álbum (até 40).');
+    if (!query) return reply(sock, msg, ctx, '🔍 Uso: *!erome <nome>* [qtd]\n📚 Álbum = envia várias fotos | 📸 pesquisa viva 5min · *sair* fecha');
     if (/erome\.com\/a\//i.test(query)) {
       return eromeBaixarAlbum(sock, msg, ctx, query, Math.min(limit, 40), {});
     }
     await sock.sendMessage(ctx.remoteJid, { react: { text: '🔍', key: msg.key } });
     try {
       const erome = require('./erome');
+      const pinAlbum = require('./pinAlbum');
       const results = (await erome.search(query)).filter(r => !erome.isFiltered(r.name, r.url));
       if (!results.length) throw new Error('Nenhum resultado para: ' + query);
       if (results.length === 1) {
         return eromeBaixarAlbum(sock, msg, ctx, results[0].url, Math.min(limit, 40), {});
       }
-      // v11.2.5: TODOS os resultados, 10 por página (mais/avança)
-      const lista = require('./listaEscolha');
-      await lista.mostrar(sock, msg, ctx, {
-        titulo: `💎 *Erome* — ${query.slice(0, 40)}`,
-        intro: `🔍 *${results.length}* álbuns · responde o nº ou *mais*`,
-        linhas: results.map((r) => `*${String(r.name || 'Álbum').slice(0, 55)}*${r.type === 'profile' ? '\n   👤 perfil' : ''}`),
-        itens: results, tipo: 'erome',
-        aoEscolher: async ({ item }) => {
-          await eromeBaixarAlbum(sock, msg, ctx, item.url, Math.min(limit, 40), {});
+      await pinAlbum.mostrar(sock, msg, ctx, {
+        titulo: `💎 *Erome PIN* — ${query.slice(0, 40)}`,
+        intro: `🔍 *${results.length}* álbuns · 📚 álbum = várias fotos · 📸 pesquisa viva 5min · *sair* fecha · *mais* página`,
+        linhas: results.map((r) => `*${String(r.name || 'Álbum').slice(0, 55)}*${r.type === 'profile' ? '\n   👤 perfil' : '\n   📚 ÁLBUM · várias fotos'}`),
+        itens: results.map(r=>({ ...r, source:'erome', type:'album', url:r.url, title:r.name })),
+        tipo: 'erome',
+        manterVivo: true,
+        maxAlbum: Math.min(limit, 20),
+        resolver: async (item, max) => {
+          const er = require('./erome');
+          const res = await er.albumToMedia(item.url, max, {});
+          return res.media.map(m=>({ buf: m.buf, type: m.type, title: res.name||item.title, source: 'erome', url: item.url }));
         },
       });
       await sock.sendMessage(ctx.remoteJid, { react: { text: '✅', key: msg.key } });
@@ -3004,26 +3008,31 @@ module.exports = {
   async eromevid({ sock, msg, ctx, args }) {
     const query = args.filter(a => !/^\d+$/.test(a)).join(' ').trim();
     const limit = parseInt(args.find(a => /^\d+$/.test(a))) || 15;
-    if (!query) return reply(sock, msg, ctx, '🎬 Uso: *!eromevid <nome>* [qtd]');
+    if (!query) return reply(sock, msg, ctx, '🎬 Uso: *!eromevid <nome>* [qtd] · 📚 álbum várias · viva');
     if (/erome\.com\/a\//i.test(query)) {
       return eromeBaixarAlbum(sock, msg, ctx, query, Math.min(limit, 20), { videosOnly: true });
     }
     await sock.sendMessage(ctx.remoteJid, { react: { text: '🎬', key: msg.key } });
     try {
       const erome = require('./erome');
+      const pinAlbum = require('./pinAlbum');
       const results = (await erome.search(query)).filter(r => !erome.isFiltered(r.name, r.url));
       if (!results.length) throw new Error('Nenhum resultado para: ' + query);
       if (results.length === 1) {
         return eromeBaixarAlbum(sock, msg, ctx, results[0].url, Math.min(limit, 20), { videosOnly: true });
       }
-      const lista = require('./listaEscolha');
-      await lista.mostrar(sock, msg, ctx, {
-        titulo: `🎬 *Erome VID* — ${query.slice(0, 40)}`,
-        intro: `*${results.length}* resultados · *mais* = próxima página`,
-        linhas: results.map((r) => `*${String(r.name || 'Álbum').slice(0, 55)}*`),
-        itens: results, tipo: 'eromevid',
-        aoEscolher: async ({ item }) => {
-          await eromeBaixarAlbum(sock, msg, ctx, item.url, Math.min(limit, 20), { videosOnly: true });
+      await pinAlbum.mostrar(sock, msg, ctx, {
+        titulo: `🎬 *Erome VID PIN* — ${query.slice(0, 40)}`,
+        intro: `*${results.length}* resultados · 📚 álbum várias · viva 5min · *sair* fecha · *mais* = próxima`,
+        linhas: results.map((r) => `*${String(r.name || 'Álbum').slice(0, 55)}*\n   📚 ÁLBUM VÍDEO`),
+        itens: results.map(r=>({ ...r, source:'erome', type:'album', url:r.url, title:r.name })),
+        tipo: 'eromevid',
+        manterVivo: true,
+        maxAlbum: Math.min(limit, 20),
+        resolver: async (item, max) => {
+          const er = require('./erome');
+          const res = await er.albumToMedia(item.url, max, { videosOnly: true });
+          return res.media.map(m=>({ buf: m.buf, type: m.type, title: res.name||item.title, source: 'erome', url: item.url }));
         },
       });
       await sock.sendMessage(ctx.remoteJid, { react: { text: '✅', key: msg.key } });
@@ -3036,30 +3045,26 @@ module.exports = {
   // ═══ v11.2.5 XVIDEOS / PORNHUB / SEX.COM / COSPLAY / PLAQUINHAS ═══
   async xvid({ sock, msg, ctx, args }) {
     const q = portal18.cleanQuery(args.join(' '));
-    if (!q) return reply(sock, msg, ctx, '🎬 Uso: *xvid <termo>*\nEx: xvid blonde');
+    if (!q) return reply(sock, msg, ctx, '🎬 Uso: *xvid <termo>* · pesquisa viva 5min · *sair* fecha\nEx: xvid blonde');
     if (portal18.isBlocked(q)) return reply(sock, msg, ctx, '🚫 Termo bloqueado.');
     if (!(await isAdultEnabled(ctx))) return reply(sock, msg, ctx, '🛑 Adult mode OFF. ADM: *adultmode on*');
     await react(sock, msg, '🔍');
     try {
       const src = require('./adultSources');
+      const pinAlbum = require('./pinAlbum');
       const results = await src.xvideosSearch(q, 30);
       if (!results.length) throw new Error('Sem resultados');
-      const lista = require('./listaEscolha');
-      await lista.mostrar(sock, msg, ctx, {
-        titulo: `🎬 *XVideos* — ${q.slice(0, 36)}`,
-        intro: `*${results.length}* vídeos · escolhe nº · *mais* = +10`,
-        linhas: results.map(r => `*${String(r.title).slice(0, 60)}*`),
-        itens: results, tipo: 'xvid',
-        aoEscolher: async ({ item }) => {
-          await sock.sendMessage(ctx.remoteJid, { text: `⬇️ A baixar: *${String(item.title).slice(0, 50)}*...` }, { quoted: msg }).catch(() => {});
+      await pinAlbum.mostrar(sock, msg, ctx, {
+        titulo: `🎬 *XVideos PIN* — ${q.slice(0, 36)}`,
+        intro: `*${results.length}* vídeos · 📸 pesquisa viva 5min · escolhe nº · *mais* página · *sair* fecha`,
+        linhas: results.map(r => `*${String(r.title).slice(0, 60)}*\n   📡 XVideos · 🎬 VÍDEO`),
+        itens: results.map(r=>({ ...r, source:'xvideos', type:'video', url:r.url, title:r.title })),
+        tipo: 'xvid',
+        manterVivo: true,
+        maxAlbum: 1,
+        resolver: async (item) => {
           const dl = await src.xvideosDownload(item.url);
-          if (dl.buf.length > 64 * 1024 * 1024) {
-            return reply(sock, msg, ctx, `⚠️ Vídeo grande (${(dl.buf.length / 1048576).toFixed(1)}MB).\n🔗 ${item.url}`);
-          }
-          await sendAdultMedia(sock, ctx, {
-            video: dl.buf, mimetype: 'video/mp4',
-            caption: `🎬 *${String(item.title).slice(0, 80)}*\n📡 XVideos`,
-          }, msg);
+          return [{ buf: dl.buf, type: 'video', title: item.title, source: 'xvideos', url: item.url }];
         },
       });
       await react(sock, msg, '✅');
@@ -3073,30 +3078,26 @@ module.exports = {
 
   async pornhub({ sock, msg, ctx, args }) {
     const q = portal18.cleanQuery(args.join(' '));
-    if (!q) return reply(sock, msg, ctx, '🎬 Uso: *pornhub <termo>*');
+    if (!q) return reply(sock, msg, ctx, '🎬 Uso: *pornhub <termo>* · viva 5min · *sair* fecha');
     if (portal18.isBlocked(q)) return reply(sock, msg, ctx, '🚫 Termo bloqueado.');
     if (!(await isAdultEnabled(ctx))) return reply(sock, msg, ctx, '🛑 Adult mode OFF. ADM: *adultmode on*');
     await react(sock, msg, '🔍');
     try {
       const src = require('./adultSources');
+      const pinAlbum = require('./pinAlbum');
       const results = await src.pornhubSearch(q, 30);
       if (!results.length) throw new Error('Sem resultados (site pode bloquear o IP)');
-      const lista = require('./listaEscolha');
-      await lista.mostrar(sock, msg, ctx, {
-        titulo: `🟠 *Pornhub* — ${q.slice(0, 36)}`,
-        intro: `*${results.length}* vídeos · nº ou *mais*`,
-        linhas: results.map(r => `*${String(r.title).slice(0, 60)}*`),
-        itens: results, tipo: 'pornhub',
-        aoEscolher: async ({ item }) => {
-          await sock.sendMessage(ctx.remoteJid, { text: `⬇️ A baixar Pornhub...` }, { quoted: msg }).catch(() => {});
+      await pinAlbum.mostrar(sock, msg, ctx, {
+        titulo: `🟠 *Pornhub PIN* — ${q.slice(0, 36)}`,
+        intro: `*${results.length}* vídeos · viva 5min · nº ou *mais* · *sair* fecha`,
+        linhas: results.map(r => `*${String(r.title).slice(0, 60)}*\n   📡 Pornhub · 🎬 VÍDEO`),
+        itens: results.map(r=>({ ...r, source:'pornhub', type:'video', url:r.url, title:r.title })),
+        tipo: 'pornhub',
+        manterVivo: true,
+        maxAlbum: 1,
+        resolver: async (item) => {
           const dl = await src.pornhubDownload(item.url);
-          if (dl.buf.length > 64 * 1024 * 1024) {
-            return reply(sock, msg, ctx, `⚠️ Demasiado grande (${(dl.buf.length / 1048576).toFixed(1)}MB)\n🔗 ${item.url}`);
-          }
-          await sendAdultMedia(sock, ctx, {
-            video: dl.buf, mimetype: 'video/mp4',
-            caption: `🟠 *${String(item.title).slice(0, 80)}*\n📡 Pornhub`,
-          }, msg);
+          return [{ buf: dl.buf, type: 'video', title: item.title, source: 'pornhub', url: item.url }];
         },
       });
       await react(sock, msg, '✅');
@@ -3109,7 +3110,7 @@ module.exports = {
 
   async sexcom({ sock, msg, ctx, args }, forceType) {
     const q = portal18.cleanQuery(args.join(' '));
-    if (!q) return reply(sock, msg, ctx, '🔥 Uso: *sexcom <termo>*\nAliases: sex · sexgif · sexvid · sexfoto');
+    if (!q) return reply(sock, msg, ctx, '🔥 Uso: *sexcom <termo>*\nAliases: sex · sexgif · sexvid · sexfoto\n> Foto = pesquisa viva, Álbum = várias');
     if (portal18.isBlocked(q) || require('./adultSources').isAnimalContent(q)) {
       return reply(sock, msg, ctx, '🚫 Termo bloqueado (animal/furry).');
     }
@@ -3118,26 +3119,19 @@ module.exports = {
     await react(sock, msg, '🔥');
     try {
       const src = require('./adultSources');
+      const pinAlbum = require('./pinAlbum');
       const results = await src.sexcomSearch(q, { limit: 30, type });
       if (!results.length) throw new Error('Sem fotos reais');
-      const lista = require('./listaEscolha');
-      await lista.mostrar(sock, msg, ctx, {
-        titulo: `🔥 *Fotos reais* — ${q.slice(0, 36)}`,
-        intro: `*${results.length}* · sex.com API REAL (imagex1.sx.cdn.live) · *mais* = +10`,
-        linhas: results.map(r => `*${String(r.title || r.type).slice(0, 50)}*\n   📡 ${r.source} · ${r.type || 'photo'}`),
+      await pinAlbum.mostrar(sock, msg, ctx, {
+        titulo: `🔥 *sex.com REAL* — ${q.slice(0, 36)}`,
+        intro: `*${results.length}* · sex.com API REAL (imagex1.sx.cdn.live) · 📸 foto mantém viva | 📚 álbum várias`,
+        linhas: results.map(r => `*${String(r.title || r.type).slice(0, 50)}*\n   📡 ${r.source} · ${r.type || 'photo'} · ${/\.webp/i.test(r.url||'')?'GIF':'FOTO'}`),
         itens: results, tipo: 'sexcom',
-        aoEscolher: async ({ item }) => {
+        manterVivo: true,
+        maxAlbum: 8,
+        resolver: async (item, max) => {
           const m = await src.sexcomResolve(item);
-          const cap = `🔥 *${String(m.title || q).slice(0, 60)}*\n📡 ${m.source} · real`;
-          if (m.type === 'video') {
-            await sendAdultMedia(sock, ctx, { video: m.buf, mimetype: 'video/mp4', caption: cap }, msg);
-          } else if (m.type === 'gif' && m.buf.slice(0, 3).toString() === 'GIF') {
-            await sendAdultMedia(sock, ctx, { video: m.buf, gifPlayback: true, caption: cap }, msg).catch(async () => {
-              await sendAdultMedia(sock, ctx, { image: m.buf, caption: cap }, msg);
-            });
-          } else {
-            await sendAdultMedia(sock, ctx, { image: m.buf, caption: cap }, msg);
-          }
+          return [{ buf: m.buf, type: m.type, title: m.title || q, source: m.source, url: m.url }];
         },
       });
       await react(sock, msg, '✅');
@@ -3160,49 +3154,27 @@ module.exports = {
     await react(sock, msg, '💃');
     try {
       const src = require('./adultSources');
+      const pinAlbum = require('./pinAlbum');
       const results = await src.cosplaySearch(q, 24);
       if (!results.length) throw new Error('Sem fotos reais');
-      const lista = require('./listaEscolha');
-      await lista.mostrar(sock, msg, ctx, {
-        titulo: `💃 *Fotos reais* — ${q.slice(0, 32)}`,
-        intro: `*${results.length}* resultados · Pornpics/xHamster/Erome · *mais* = página`,
-        linhas: results.map(r => `*${String(r.title || r.source).slice(0, 50)}*\n   📡 ${r.source}${r.type === 'gallery' || r.type === 'album' ? ' · álbum' : ''}`),
+      await pinAlbum.mostrar(sock, msg, ctx, {
+        titulo: `💃 *PIN ALBUM* — ${q.slice(0, 32)}`,
+        intro: `*${results.length}* resultados · 📸 foto = viva | 📚 álbum = várias fotos · Pornpics/xHamster/sex.com/Erome`,
+        linhas: results.map(r => {
+          const isAlb = r.type === 'gallery' || r.type === 'album' || /xhamster|erome/i.test(r.source||'');
+          return `*${String(r.title || r.source).slice(0, 50)}*\n   ${isAlb?'📚 ÁLBUM':'📸 FOTO'} · 📡 ${r.source}${isAlb?' · várias':''}`;
+        }),
         itens: results, tipo: 'cosplay',
-        aoEscolher: async ({ item }) => {
-          const many = await src.cosplayDownloadMany(item, 8).catch(async () => {
+        manterVivo: true,
+        maxAlbum: 8,
+        resolver: async (item, max) => {
+          const many = await src.cosplayDownloadMany(item, max).catch(async () => {
             const one = await src.cosplayDownload(item);
             return Array.isArray(one) ? one : [one];
           });
-          let sent = 0;
-          for (const m of many) {
-            if (!m?.buf) continue;
-            await sendAdultMedia(sock, ctx, {
-              image: m.buf,
-              caption: sent === 0
-                ? `💃 *${String(m.title || item.title || q).slice(0, 60)}*\n📡 ${m.source} · foto real`
-                : `📡 ${m.source}`,
-            }, msg);
-            sent++;
-            await new Promise(r => setTimeout(r, 400));
-          }
-          if (!sent) throw new Error('download falhou');
+          return many.filter(m=>m?.buf).map(m=>({ buf: m.buf, type: m.type||'photo', title: m.title||item.title||q, source: m.source||item.source, url: m.url||item.url }));
         },
       });
-      // 2 amostras reais imediatas (pornpics preferido)
-      let n = 0;
-      for (const item of results.filter(r => r.source === 'pornpics' || r.direct).slice(0, 4)) {
-        if (n >= 2) break;
-        try {
-          const m = await src.cosplayDownload(item);
-          const buf = m.buf || (Array.isArray(m) && m[0]?.buf);
-          if (!buf) continue;
-          await sendAdultMedia(sock, ctx, {
-            image: buf,
-            caption: n === 0 ? `💃 Amostra real · ${q}\n📡 ${m.source || item.source}` : '',
-          }, msg);
-          n++;
-        } catch {}
-      }
       await react(sock, msg, '✅');
     } catch (e) {
       await react(sock, msg, '❌');

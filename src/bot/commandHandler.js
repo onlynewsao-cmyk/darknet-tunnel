@@ -391,17 +391,35 @@ async function _handleInner(sock, msg) {
   // ── v7.77: listas com escolha por número (play/sly/spotify/...) ──
   // Tenta primeiro a lista pendente (ela cede ao !som se o cartão for
   // mais novo); depois o cartão de música. "1".."10", com ou sem zero.
+  // v11.2.8: pinAlbum persistente — foto mantém viva, álbum envia várias
   try {
     // v7.91: clique em lista clicável (estilo submenu) volta como LISTANUM_<n>
     if (/^LISTANUM_(10|[1-9])$/i.test(text)) {
       const lista = require('./listaEscolha');
       if (await lista.tentarToken(sock, msg, ctx, text)) return true;
     }
+    if (/^PINNUM_(10|[1-9])$/i.test(text) || /^PINNAV_/i.test(text)) {
+      const pinAlbum = require('./pinAlbum');
+      if (await pinAlbum.tentarToken(sock, msg, ctx, text)) return true;
+    }
     if (/^0?(10|[1-9])(?:\s|$)/.test(text)) {
       const lista = require('./listaEscolha');
       if (await lista.tentarNumero(sock, msg, ctx, text)) return true;
+      const pinAlbum = require('./pinAlbum');
+      if (await pinAlbum.tentarNumero(sock, msg, ctx, text)) return true;
       const musicaCard = require('./musicaCard');
       if (await musicaCard.tentarNumero(sock, msg, ctx, text)) return true;
+    }
+    // v11.2.8: fechar pesquisa persistente por texto livre
+    if (/^(sair|fechar|fecha|cancelar|stop)$/i.test(text.trim())) {
+      const pinAlbum = require('./pinAlbum');
+      if (await pinAlbum.tentarNumero(sock, msg, ctx, text)) return true;
+    }
+    if (/^(mais|avança|avanca|volta|next|prev)$/i.test(text.trim())) {
+      const pinAlbum = require('./pinAlbum');
+      if (await pinAlbum.tentarNumero(sock, msg, ctx, text)) return true;
+      const lista = require('./listaEscolha');
+      if (await lista.tentarNumero(sock, msg, ctx, text)) return true;
     }
   } catch {}
 
