@@ -90,16 +90,42 @@ function getFfmpegBin() {
   try { return require('ffmpeg-static') || 'ffmpeg'; } catch { return 'ffmpeg'; }
 }
 
+function detectKind(buf) {
+  if (!buf || buf.length < 12) return 'unknown';
+  const head = buf.slice(0,12);
+  if (head.slice(0,3).toString() === 'GIF') return 'gif';
+  if (head.slice(0,4).toString() === 'RIFF' && head.slice(8,12).toString() === 'WEBP') return 'webp';
+  if (buf.slice(4,8).toString() === 'ftyp') return 'mp4';
+  return 'unknown';
+}
+
 async function convertToMp4ForGif(buffer, kind = 'gif') {
   if (!buffer || buffer.length < 100) throw new Error('buffer vazio');
-  // já é mp4?
   if (buffer.length > 12 && buffer.slice(4,8).toString() === 'ftyp') return buffer;
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dark-gif-'));
-  const ext = kind === 'webp' ? 'webp' : kind === 'gif' ? 'gif' : 'bin';
-  const inputPath = path.join(tmpDir, `input.${ext}`);
-  const outputPath = path.join(tmpDir, 'output.mp4');
   try {
-    fs.writeFileSync(inputPath, buffer);
+    // 1) Se for WEBP animado (sex.com GIFs são webp), converte para GIF via sharp primeiro
+    let inputBuf = buffer;
+    let inputExt = kind === 'webp' ? 'webp' : kind === 'gif' ? 'gif' : 'bin';
+    const detected = detectKind(buffer);
+    if (detected === 'webp' || kind === 'webp') {
+      try {
+        const sharp = require('sharp');
+        // sharp animated webp -> gif
+        const gifBuf = await sharp(buffer, { animated: true }).gif().toBuffer();
+        if (gifBuf && gifBuf.length > 500) {
+          inputBuf = gifBuf;
+          inputExt = 'gif';
+        }
+      } catch (e) {
+        // sharp falhou, tenta ffmpeg direto com webp
+        console.warn('[GIF] sharp webp->gif falhou:', e.message?.slice(0,80));
+      }
+    }
+
+    const inputPath = path.join(tmpDir, `input.${inputExt}`);
+    const outputPath = path.join(tmpDir, 'output.mp4');
+    fs.writeFileSync(inputPath, inputBuf);
     await execFileAsync(getFfmpegBin(), [
       '-y',
       '-i', inputPath,
@@ -115,18 +141,28 @@ async function convertToMp4ForGif(buffer, kind = 'gif') {
     const out = fs.readFileSync(outputPath);
     if (!out || out.length < 1000) throw new Error('ffmpeg não gerou mp4');
     return out;
+  } catch (e) {
+    // último fallback: se já é gif/webp, tenta retornar como está para tentar enviar como gifPlayback direto
+    if (kind === 'gif' || kind === 'webp' || detectKind(buffer) !== 'unknown') {
+      // tenta converter gif direto sem sharp se falhou antes
+      try {
+        const inputPath = path.join(tmpDir, 'input2.gif');
+        const outputPath = path.join(tmpDir, 'output2.mp4');
+        fs.writeFileSync(inputPath, buffer);
+        await execFileAsync(getFfmpegBin(), [
+          '-y','-i', inputPath,
+          '-vf', "scale='min(480,iw)':-2:flags=lanczos,format=yuv420p",
+          '-c:v','libx264','-preset','veryfast','-crf','28','-an','-movflags','+faststart',
+          outputPath,
+        ], { stdio: 'ignore', timeout: 60000 });
+        const out2 = fs.readFileSync(outputPath);
+        if (out2?.length > 1000) return out2;
+      } catch {}
+    }
+    throw e;
   } finally {
     try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
   }
-}
-
-function detectKind(buf) {
-  if (!buf || buf.length < 12) return 'unknown';
-  const head = buf.slice(0,12);
-  if (head.slice(0,3).toString() === 'GIF') return 'gif';
-  if (head.slice(0,4).toString() === 'RIFF' && head.slice(8,12).toString() === 'WEBP') return 'webp';
-  if (buf.slice(4,8).toString() === 'ftyp') return 'mp4';
-  return 'unknown';
 }
 
 async function defaultResolver(item, maxAlbum = 8) {

@@ -3151,7 +3151,7 @@ module.exports = {
 
   async sexcom({ sock, msg, ctx, args }, forceType) {
     const q = portal18.cleanQuery(args.join(' '));
-    if (!q) return reply(sock, msg, ctx, '🔥 Uso: *sexcom <termo>*\nAliases: sex · sexgif · sexvid · sexfoto\n> Foto = pesquisa viva, Álbum = várias');
+    if (!q) return reply(sock, msg, ctx, '🔥 Uso: *sexcom <termo>*\nAliases: sex · sexgif (GIF reproduz) · sexvid (shorts/vídeos) · sexfoto\n> Foto = viva | Álbum = várias | GIF/Shorts = MP4 reproduz · *sair* fecha');
     if (portal18.isBlocked(q) || require('./adultSources').isAnimalContent(q)) {
       return reply(sock, msg, ctx, '🚫 Termo bloqueado (animal/furry).');
     }
@@ -3161,18 +3161,36 @@ module.exports = {
     try {
       const src = require('./adultSources');
       const pinAlbum = require('./pinAlbum');
-      const results = await src.sexcomSearch(q, { limit: 30, type });
-      if (!results.length) throw new Error('Sem fotos reais');
+      let results = [];
+      if (type === 'videos') {
+        // SHORTS: gifs API REAL (webp) são os shorts do sex.com + tenta vídeos reais
+        try { results = await src.sexcomShortsSearch(q, 30); } catch {}
+        if (!results.length) {
+          try { results = await src.sexcomSearch(q, { limit: 30, type: 'videos' }); } catch {}
+        }
+      } else {
+        results = await src.sexcomSearch(q, { limit: 30, type });
+      }
+      if (!results.length) throw new Error('Sem mídia real');
+      const isGifSearch = type === 'gifs' || results[0]?.type === 'gif' || results[0]?.type === 'shorts';
       await pinAlbum.mostrar(sock, msg, ctx, {
-        titulo: `🔥 *sex.com REAL* — ${q.slice(0, 36)}`,
-        intro: `*${results.length}* · sex.com API REAL (imagex1.sx.cdn.live) · 📸 foto viva | 📚 álbum várias | 🎞️ GIF reproduz MP4`,
-        linhas: results.map(r => `*${String(r.title || r.type).slice(0, 50)}*\n   📡 ${r.source} · ${r.type || 'photo'} · ${/\.webp/i.test(r.url||'')?'GIF':'FOTO'}`),
+        titulo: `🔥 *sex.com REAL* — ${q.slice(0, 36)}${isGifSearch ? ' · GIF/SHORTS' : ''}`,
+        intro: `*${results.length}* · sex.com API REAL (imagex1.sx.cdn.live) · ${isGifSearch ? '🎞️ GIF/SHORTS → MP4 reproduz' : '📸 foto viva | 📚 álbum várias'} · *sair* fecha · *mais* pág`,
+        linhas: results.map(r => {
+          const isGif = r.type === 'gif' || r.type === 'shorts' || /\.webp/i.test(r.url||'');
+          const isVid = r.type === 'video' || r.type === 'shorts';
+          return `*${String(r.title || r.type).slice(0, 50)}*\n   📡 ${r.source} · ${isGif ? '🎞️ GIF/SHORT · reproduz' : isVid ? '🎬 VÍDEO/SHORT' : '📸 FOTO'}${r.type === 'shorts' ? ' · SHORT' : ''}`;
+        }),
         itens: results, tipo: 'sexcom',
         manterVivo: true,
         maxAlbum: 8,
         resolver: async (item, max) => {
           const m = await src.sexcomResolve(item);
-          return [{ buf: m.buf, type: m.type, title: m.title || q, source: m.source, url: m.url }];
+          // garante tipo correto para pinAlbum converter
+          let t = m.type;
+          if (type === 'gifs' || item.type === 'gif' || /\.webp/i.test(item.url||'')) t = 'gif';
+          if (type === 'videos' || item.type === 'shorts') t = item.type === 'shorts' ? 'shorts' : 'video';
+          return [{ buf: m.buf, type: t, title: m.title || q, source: m.source, url: m.url }];
         },
       });
       await react(sock, msg, '✅');
