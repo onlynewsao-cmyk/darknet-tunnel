@@ -594,45 +594,82 @@ async function executar(id, arg, { sock, msg, ctx, texto, isOwner, isAdmin }) {
     }
 
     case 'foto_aura': {
+      // v12.2: FOTO REAL — ela TEM fotos reais e manda!
       try {
         const selfieMod = require('./auraSelfie');
-        const intent = selfieMod.handlePhotoIntent(ctx.texto || '', { isOwner: ctx.isOwner });
-        const tipo = intent.type || arg || 'selfie';
-        let pathSelfie = null;
-        try { pathSelfie = selfieMod.getSelfie(tipo); } catch {}
-        if (pathSelfie) {
-          const fs = require('fs');
-          if (fs.existsSync(pathSelfie)) {
-            const buf = fs.readFileSync(pathSelfie);
-            await sock.sendMessage(jid, { image: buf, caption: selfieMod.getCaptionForType(tipo, ctx.isOwner) }, { quoted: msg });
-            return { ok: true, silencioso: true };
+        const fs = require('fs');
+        const path = require('path');
+        
+        // Detecta tipo pelo texto
+        const tLower = String(ctx.texto || texto || arg || '').toLowerCase();
+        let tipo = 'selfie';
+        if (/cosplay/.test(tLower)) tipo = 'cosplay';
+        else if (/goth|dark|preta|look/.test(tLower)) tipo = 'goth';
+        else if (/fofa|cute|linda|amor/.test(tLower)) tipo = 'cute';
+        else if (/live|stream|jogando|game/.test(tLower)) tipo = 'stream';
+        else if (arg && ['selfie','cosplay','goth','cute','stream'].includes(String(arg).toLowerCase())) tipo = String(arg).toLowerCase();
+        
+        // Tenta pegar foto real existente
+        let buf = null;
+        let selfiePath = null;
+        try {
+          const files = fs.readdirSync(selfieMod.SELFIE_DIR).filter(f => f.startsWith('aura_' + tipo + '_') && f.endsWith('.jpg'));
+          if (files.length > 0) {
+            const pick = files[Math.floor(Math.random() * files.length)];
+            selfiePath = path.join(selfieMod.SELFIE_DIR, pick);
+            if (fs.existsSync(selfiePath)) buf = fs.readFileSync(selfiePath);
           }
+        } catch {}
+        
+        // Se não tem desse tipo, tenta qualquer selfie
+        if (!buf) {
+          try {
+            const allFiles = fs.readdirSync(selfieMod.SELFIE_DIR).filter(f => f.startsWith('aura_') && f.endsWith('.jpg'));
+            if (allFiles.length > 0) {
+              const pick = allFiles[Math.floor(Math.random() * allFiles.length)];
+              selfiePath = path.join(selfieMod.SELFIE_DIR, pick);
+              if (fs.existsSync(selfiePath)) buf = fs.readFileSync(selfiePath);
+            }
+          } catch {}
         }
-        // fallback generate
+        
+        if (buf && buf.length > 500) {
+          await sock.sendMessage(jid, { image: buf, caption: selfieMod.getCaptionForType(tipo, ctx.isOwner) }, { quoted: msg });
+          return { ok: true, silencioso: true };
+        }
+        
+        // Fallback: gera via IA (pollinations)
         try {
           const aiMod = require('../bot/ai');
           const prompts = {
-            selfie: 'goth girl selfie, pink hair, dark makeup, cute, 23yo latina, aesthetic, instagram style, high quality',
-            cosplay: 'goth girl cosplay Kafka Honkai Star Rail, purple hair, goth outfit, cute',
-            goth: 'goth baddie girl, black outfit, chains, dark makeup, pink hair, cute goth aesthetic',
-            cute: 'cute goth girl selfie, kawaii, pinkchyu style',
-            stream: 'goth gamer girl streaming setup, purple lights, cute, pinkchyu twitch style',
+            selfie: 'beautiful young woman selfie, black hair with bangs, dark makeup, purple lights, cute expression, high quality portrait',
+            cosplay: 'young woman in anime cosplay costume, black and purple outfit, confident pose, high quality',
+            goth: 'aesthetic portrait, black hair, dark makeup, purple room lighting, fashion style, high quality',
+            cute: 'cute young woman, soft smile, black hair, heart hands, purple lights, cozy bedroom, beautiful',
+            stream: 'young woman gamer streaming, purple LED gaming setup, headphones, cute focused expression',
           };
           const imgBuf = await aiMod.generateImage(prompts[tipo] || prompts.selfie);
           if (imgBuf && imgBuf.length > 500) {
+            // Salva pra futuro
+            try {
+              const dir = selfieMod.SELFIE_DIR;
+              if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+              fs.writeFileSync(path.join(dir, 'aura_' + tipo + '_' + Date.now() + '.jpg'), imgBuf);
+            } catch {}
             await sock.sendMessage(jid, { image: imgBuf, caption: selfieMod.getCaptionForType(tipo, ctx.isOwner) }, { quoted: msg });
             return { ok: true, silencioso: true };
           }
-        } catch {}
-        return { ok: false, msg: 'Ainda não tenho fotinha desse tipo salva 😔 mas já já tiro uma pra ti 🖤' };
+        } catch (e) { console.warn('[foto_aura gen]', e.message?.slice(0,60)); }
+        
+        return { ok: false, msg: 'Ainda não tenho fotinha desse tipo salva 😔 mas já já tiro uma pra ti 🖤 rawr — tenta .fotinha' };
       } catch (e) {
-        return { ok: false, msg: 'Não consegui mandar minha foto agora 😔' };
+        console.warn('[foto_aura]', e.message?.slice(0,80));
+        return { ok: false, msg: 'Não consegui mandar minha foto agora 😔 mas tenho sim! Tenta .fotinha' };
       }
     }
 
     case 'foto_perfil': {
-      // Se tem imagem na mensagem citada/enviada → usa ela
-      // Se não, tenta usar selfie dela como perfil (pedido tipo "coloca tua foto no perfil")
+      // v12.2: FOTO REAL DE PERFIL — usa imagem enviada OU selfie real dela
       const img = await imagemDaMensagem(msg, sock);
       if (img) {
         const r = await mega.setProfilePicture(sock, img);
@@ -640,30 +677,50 @@ async function executar(id, arg, { sock, msg, ctx, texto, isOwner, isAdmin }) {
           ? { ok: true, msg: 'Mudei a minha foto. Que tal? 😏🖤 rawr' }
           : { ok: false, msg: `Não deu: ${r?.message || 'erro'}` };
       }
-      // Sem imagem enviada → usa selfie dela
+      // Sem imagem enviada → usa selfie REAL dela
       try {
         const selfieMod = require('./auraSelfie');
-        const tipo = (ctx.texto && /cosplay/i.test(ctx.texto)) ? 'cosplay' : (ctx.texto && /goth/i.test(ctx.texto) ? 'goth' : 'selfie');
-        let pathSelfie = null;
-        try { pathSelfie = selfieMod.getSelfie(tipo); } catch {}
-        if (pathSelfie) {
-          const fs = require('fs');
-          if (fs.existsSync(pathSelfie)) {
-            const buf = fs.readFileSync(pathSelfie);
-            const r = await selfieMod.updateProfilePicture(sock, buf);
-            return r?.success ? { ok: true, msg: 'Coloquei minha fotinha no perfil 🖤 que tal, meu Dark? rawr' } : { ok: false, msg: 'Não consegui atualizar 😔' };
+        const fs = require('fs');
+        const path = require('path');
+        const tLower = String(ctx.texto || texto || '').toLowerCase();
+        let tipo = 'selfie';
+        if (/cosplay/.test(tLower)) tipo = 'cosplay';
+        else if (/goth/.test(tLower)) tipo = 'goth';
+        else if (/cute|fofa/.test(tLower)) tipo = 'cute';
+        
+        let buf = null;
+        try {
+          const files = fs.readdirSync(selfieMod.SELFIE_DIR).filter(f => f.startsWith('aura_' + tipo + '_') && f.endsWith('.jpg'));
+          if (files.length > 0) {
+            const pick = files[Math.floor(Math.random() * files.length)];
+            const p = path.join(selfieMod.SELFIE_DIR, pick);
+            if (fs.existsSync(p)) buf = fs.readFileSync(p);
           }
+        } catch {}
+        if (!buf) {
+          try {
+            const all = fs.readdirSync(selfieMod.SELFIE_DIR).filter(f => f.startsWith('aura_') && f.endsWith('.jpg'));
+            if (all.length > 0) {
+              const pick = all[Math.floor(Math.random() * all.length)];
+              const p = path.join(selfieMod.SELFIE_DIR, pick);
+              if (fs.existsSync(p)) buf = fs.readFileSync(p);
+            }
+          } catch {}
+        }
+        if (buf) {
+          const r = await selfieMod.updateProfilePicture(sock, buf);
+          return r?.success ? { ok: true, msg: 'Coloquei minha fotinha real no perfil 🖤 que tal, meu Dark? rawr 💜' } : { ok: false, msg: 'Não consegui atualizar 😔' };
         }
         // gerar e colocar
         try {
           const aiMod = require('../bot/ai');
-          const imgBuf = await aiMod.generateImage('goth girl selfie, pink hair, dark makeup, cute, 23yo latina, aesthetic, instagram style, high quality');
+          const imgBuf = await aiMod.generateImage('beautiful young woman selfie, black hair, dark makeup, purple lights, cute, high quality portrait');
           if (imgBuf && imgBuf.length > 500) {
             const r = await selfieMod.updateProfilePicture(sock, imgBuf);
             return r?.success ? { ok: true, msg: 'Coloquei minha fotinha nova no perfil 🖤 rawr' } : { ok: false, msg: 'Gerei mas não consegui colocar 😔' };
           }
         } catch {}
-      } catch {}
+      } catch (e) { console.warn('[foto_perfil]', e.message?.slice(0,60)); }
       return { ok: false, msg: 'Manda a foto que eu ponho no meu perfil, ou diz "coloca tua foto no perfil" 🖤' };
     }
 

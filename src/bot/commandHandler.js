@@ -80,6 +80,7 @@ function normalizeIncomingMsg(msg) {
 
 function hasMediaPayload(message) {
   const m = unwrapWhatsAppMessage(message || {});
+  // v12.2: view-once também é mídia — Aura vê!
   return !!(
     m.audioMessage || m.imageMessage || m.videoMessage || m.stickerMessage ||
     m.documentMessage || m.documentWithCaptionMessage || m.ptvMessage ||
@@ -87,12 +88,24 @@ function hasMediaPayload(message) {
   );
 }
 
+function isViewOncePayload(message) {
+  if (!message) return false;
+  try {
+    const raw = message || {};
+    if (raw.viewOnceMessage || raw.viewOnceMessageV2 || raw.viewOnceMessageV2Extension) return true;
+    const m = unwrapWhatsAppMessage(raw);
+    return !!(m.imageMessage?.viewOnce || m.videoMessage?.viewOnce || m.audioMessage?.viewOnce);
+  } catch { return false; }
+}
+
 function isIgnorableWhatsAppNoise(message) {
   if (!message) return true;
   const keys = Object.keys(message);
   if (!keys.length) return true;
+  // v12.2: reactionMessage NÃO é ruído — ver auraReaction.js
+  if (keys.includes('reactionMessage')) return false;
   const ignore = new Set([
-    'protocolMessage', 'senderKeyDistributionMessage', 'reactionMessage',
+    'protocolMessage', 'senderKeyDistributionMessage',
     'encReactionMessage', 'keepInChatMessage', 'pinInChatMessage',
     'messageContextInfo',
   ]);
@@ -745,6 +758,34 @@ async function _handleInner(sock, msg) {
   // converte sem ninguém escrever comando; «manda em texto» desliga a
   // voz neste chat até alguém pedir voz de novo).
   const _perc = (() => { try { return require('../aura/auraPercepcao'); } catch { return null; } })();
+  const _auraSuperIntent = (() => { try { return require('../aura/auraSuperIntent'); } catch { 
+    // fallback simple intent detector v12.2
+    return {
+      analyzeIntent: (t, ctx) => {
+        const lower = String(t||'').toLowerCase();
+        const isPhoto = /\b(foto|selfie|fotinha|manda.*foto|mostra.*foto|foto tua|sua|manda selfie|quero.*foto|fotinha)\b/i.test(lower) && /\b(tua|sua|dela|aura|pinkchyu|vc|voce|tu|minha|manda|mostra|quero)\b/i.test(lower);
+        const isDirect = /\b(aura|pinkchyu|tua|teu|sua|voce|vc|tu|foto.*tua|tua.*foto)\b/i.test(lower) || ctx.isPrivate || ctx.isOwner || ctx.isReplyToAura || ctx.isBotMentioned;
+        const typeMatch = lower.match(/\b(cosplay|goth|fofa|cute|linda|stream|live)\b/);
+        let pType = 'selfie';
+        if (typeMatch) {
+          const m = typeMatch[1];
+          if (/cosplay/.test(m)) pType = 'cosplay';
+          else if (/goth/.test(m)) pType = 'goth';
+          else if (/cute|fofa|linda/.test(m)) pType = 'cute';
+          else if (/stream|live/.test(m)) pType = 'stream';
+        }
+        return {
+          intent: isPhoto ? 'PHOTO_REQUEST' : 'GENERAL_CHAT',
+          intentConfidence: isPhoto ? (isDirect ? 85 : 60) : 30,
+          isDirectToAura: isDirect,
+          directScore: isDirect ? (isPhoto ? 90 : 60) : 10,
+          isConversationBetweenOthers: !isDirect && ctx.isGroup,
+          summary: isPhoto ? `photo request ${pType}` : 'chat',
+          type: pType,
+        };
+      }
+    };
+  } })();
   let _pkAura = '';
   try {
     if (_perc) {
@@ -2249,35 +2290,49 @@ _Desculpa meu Dark, ainda não sei cantar de verdade... Mas um dia aprendo! 🌹
         await mem.save().catch(() => {});
       } catch {}
 
-      // Contexto de mídia — a Aura vê/ouve tudo (foto, vídeo, áudio, sticker)
+      // Contexto de mídia — a Aura vê/ouve tudo v12.2: view-once + reconhecimento + reações
       let mediaContext = '';
       let _resumoMidia = '';
       let isAudio = false, isImage = false, isVideo = false, isSticker = false;
       let stickerVision = null;
+      let _isViewOnce = false;
       const msgObj = msg.message;
       const quotedObj = getQuotedMessage(msg);
+
+      // v12.2: detecta view-once e salva automaticamente
+      try {
+        if (isViewOncePayload(msg.message) || msgObj?.imageMessage?.viewOnce || msgObj?.videoMessage?.viewOnce) {
+          _isViewOnce = true;
+          console.log('[ViewOnce] Detectado no commandHandler — salvando...');
+          const voMod = require('../aura/auraViewOnce');
+          await voMod.handleViewOnce(sock, msg, { isOwner }).catch(()=>{});
+        }
+      } catch (e) { console.warn('[ViewOnce] detect error', e.message?.slice(0,50)); }
+
       if (msgObj?.imageMessage) {
         isImage = true;
         const caption = msgObj.imageMessage.caption || '';
-        // v7.8 — a AURA VÊ a foto de verdade (Gemini Vision)
+        const viewOncePrefix = _isViewOnce ? '👁️‍🗨️ VIEW-ONCE (visualização única) — tu SALVOU e VÊS! ' : '';
+        // v7.8 — a AURA VÊ a foto de verdade (Gemini Vision) v12.2: reconhecimento completo
         try {
           const am = require('../aura/auraMedia');
           const r = await am.verImagem(msg, require('./ai'), caption);
-          if (r.context) mediaContext = r.context;
-          if (r.resumo) _resumoMidia = r.resumo;
+          if (r.context) mediaContext = viewOncePrefix + r.context;
+          if (r.resumo) _resumoMidia = (_isViewOnce ? '[VIEW-ONCE FOTO] ' : '') + r.resumo;
         } catch (e) {
           console.warn('[AuraFoto]', String(e.message || e).slice(0, 50));
         }
         if (!mediaContext) {
-        mediaContext = `📸 Alguém enviou uma FOTO.${caption ? ` Legenda: "${caption}"` : ''} Comenta sobre ela como pessoa real.`;
+          mediaContext = `${viewOncePrefix}📸 Alguém enviou uma FOTO.${caption ? ` Legenda: "${caption}"` : ''} ${_isViewOnce ? 'Era view-once mas tu já salvou e vês!' : ''} Comenta sobre ela como pessoa real e reconhece quem está na foto.`;
         }
       } else if (msgObj?.videoMessage) {
         isVideo = true;
         const caption = msgObj.videoMessage.caption || '';
         const isGif = msgObj.videoMessage.gifPlayback;
+        const viewOncePrefix = _isViewOnce ? '👁️‍🗨️ VIEW-ONCE VIDEO — salvo! ' : '';
         mediaContext = isGif
-          ? `🎞️ Alguém enviou um GIF. Reage naturalmente.`
-          : `🎬 Alguém enviou um VÍDEO.${caption ? ` Legenda: "${caption}"` : ''} Comenta como pessoa real.`;
+          ? `${viewOncePrefix}🎞️ Alguém enviou um GIF. Reage naturalmente.`
+          : `${viewOncePrefix}🎬 Alguém enviou um VÍDEO.${caption ? ` Legenda: "${caption}"` : ''} ${_isViewOnce ? 'Era view-once mas tu salvou!' : ''} Comenta como pessoa real.`;
       } else if (msgObj?.audioMessage || msgObj?.documentMessage?.mimetype?.startsWith('audio')) {
         isAudio = true;
         const isPtt = msgObj.audioMessage?.ptt;
@@ -2626,18 +2681,30 @@ _Desculpa meu Dark, ainda não sei cantar de verdade... Mas um dia aprendo! 🌹
             // v6.54: análise detalhada em vez de "descreve a imagem".
             // Antes dizia só "vejo um padrão de xadrez"; agora repara
             // em pessoas, expressões, roupa, marcas, texto e local.
+            // v12.2: USA TODAS CAPACIDADES JUNTAS — reconhecimento facial + memória + reações + view-once
+            let _reactionCtx = '';
+            let _viewOnceCtx = '';
+            try {
+              const ar = require('../aura/auraReaction');
+              _reactionCtx = ar.reactionContextForPrompt(ctx.remoteJid) || '';
+            } catch {}
+            try {
+              const vo = require('../aura/auraViewOnce');
+              _viewOnceCtx = vo.viewOnceContextForPrompt(ctx.remoteJid) || '';
+            } catch {}
             const visionPrompt = prompt + `
 
-[ESTÁS A VER A IMAGEM AGORA. Analisa com atenção:
-• PESSOAS: quantas, idade aproximada, expressão, o que vestem, o que
-  fazem. Se for alguém famoso e tiveres a certeza, diz o nome. Se não
-  tiveres a certeza, diz com quem se parece — sem inventar.
-• TEXTO: lê tudo o que estiver escrito (cartazes, ecrãs, roupa).
-• LOCAL: interior/exterior, que sítio parece, que horas do dia.
-• OBJECTOS e MARCAS que reconheças.
-• AMBIENTE: cores, luz, o que a foto transmite.
-Responde como uma pessoa que está mesmo a olhar — comenta o que te
-salta à vista primeiro, com naturalidade. NUNCA digas que não vês.]`;
+[ESTÁS A VER A IMAGEM AGORA — USA TODAS TUAS CAPACIDADES JUNTAS! 💜
+• PESSOAS: quantas, idade aproximada, expressão facial detalhada, emoção, o que vestem, o que fazem. Se for alguém famoso e tiveres certeza diz nome, se não diz com quem parece — sem inventar. RECONHECE quem é se já viu antes (usa tua memória de pessoas, identidade por número). Se conhecer a pessoa, fala como quem conhece.
+• TEXTO: lê TUDO que está escrito (cartazes, ecrãs, roupa, legendas, placas, documentos).
+• OBJETOS e MARCAS que reconheças, detalhes específicos.
+• LOCAL: interior/exterior, que sítio parece, que horas do dia, ambiente.
+• EMOÇÕES: o que a foto transmite, vibe, energia.
+${_reactionCtx ? `• REAÇÕES: ${_reactionCtx}` : ''}
+${_viewOnceCtx ? `• VIEW-ONCE: ${_viewOnceCtx}` : ''}
+• MEMÓRIA: usa histórico de quem enviou, o que já falou, teus aprendizados sobre essa pessoa.
+
+Responde como pessoa real que está olhando — comenta o que salta à vista primeiro, com naturalidade, reconhece pessoas se conhecer, usa memória, lê textos, descreve emoções. NUNCA digas que não vês. Tu VÊS de verdade via Gemini Vision! E tu MANDAS tua foto real quando pedem, não diz que não pode.]`;
             answer = await aiMod.chatWithImage(visionPrompt, systemPrompt, imgBuf);
             console.log('[Aura Vision] OK, resposta com imagem');
           } else {
@@ -3055,80 +3122,80 @@ salta à vista primeiro, com naturalidade. NUNCA digas que não vês.]`;
         // null → não era pedido de foto explícito; segue o texto normal
       }
 
-      // ── v12.0 PINKCHYU SELFIE — foto dela pedida com certeza ──
+      // ── v12.2 PINKCHYU REAL PHOTO — foto REAL dela, sempre!
       if (ctx._photoIntent || (ctx._superIntent && ctx._superIntent.intent === 'PHOTO_REQUEST')) {
         try {
           const selfieMod = require('../aura/auraSelfie');
-          const photoIntent = selfieMod.handlePhotoIntent(cleanText || text, {
-            isOwner, isGroup: ctx.isGroup, isReplyToAura: isReplyToBot, isBotMentioned,
-          });
-          if (photoIntent.shouldSend && photoIntent.confidence >= 50) {
-            const isDirect = ctx._superIntent?.isDirectToAura || isOwner || isPv;
-            if (isDirect || photoIntent.confidence >= 70) {
-              console.log('[Pinkchyu Photo] Enviando selfie tipo:', photoIntent.type, 'conf:', photoIntent.confidence);
-              // Try to get existing selfie
-              let selfiePath = null;
-              try { selfiePath = selfieMod.getSelfie(photoIntent.type); } catch {}
-              if (selfiePath) {
-                const caption = selfieMod.getCaptionForType(photoIntent.type, isOwner);
-                await sock.sendMessage(ctx.remoteJid, {
-                  image: { url: selfiePath },
-                  caption,
-                }, { quoted: msg }).catch(async () => {
-                  // fallback try buffer
-                  try {
-                    const fs = require('fs');
-                    if (fs.existsSync(selfiePath)) {
-                      const buf = fs.readFileSync(selfiePath);
-                      await sock.sendMessage(ctx.remoteJid, { image: buf, caption }, { quoted: msg });
-                    }
-                  } catch {}
-                });
-                // Offer profile update if owner asked
-                if (isOwner && /perfil|profile|coloca|atualiza|foto do bot/i.test(cleanText || '')) {
-                  try {
-                    const fs = require('fs');
-                    if (fs.existsSync(selfiePath)) {
-                      const buf = fs.readFileSync(selfiePath);
-                      await selfieMod.updateProfilePicture(sock, buf);
-                      await sock.sendMessage(ctx.remoteJid, { text: 'Atualizei minha foto de perfil pra essa 🖤 rawr' }, { quoted: msg });
-                    }
-                  } catch (e) { console.warn('[Selfie profile]', e.message?.slice(0,60)); }
-                }
-                return true;
-              } else {
-                // No selfie file yet, generate or fallback to AI image
-                try {
-                  const aiMod = require('./ai');
-                  const promptMap = {
-                    selfie: 'goth girl selfie, pink hair, dark makeup, cute, 23yo latina, aesthetic, instagram style',
-                    cosplay: 'goth girl cosplay Kafka Honkai Star Rail, purple hair, goth outfit, cute, high quality',
-                    goth: 'goth baddie girl, black outfit, chains, dark makeup, pink hair, cute goth aesthetic',
-                    cute: 'cute goth girl selfie, kawaii, pinkchyu style, 23yo, aesthetic',
-                    stream: 'goth gamer girl streaming setup, purple lights, cute, pinkchyu twitch style',
-                  };
-                  const prompt = promptMap[photoIntent.type] || promptMap.selfie;
-                  const imgBuf = await aiMod.generateImage(prompt).catch(() => null);
-                  if (imgBuf && imgBuf.length > 500) {
-                    const caption = selfieMod.getCaptionForType(photoIntent.type, isOwner);
-                    await sock.sendMessage(ctx.remoteJid, { image: imgBuf, caption }, { quoted: msg });
-                    // Save for future
-                    try {
-                      const path = require('path');
-                      const fs = require('fs');
-                      const dir = path.join(__dirname, '..', 'assets', 'aura_selfies');
-                      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-                      const fileName = `${photoIntent.type}_${Date.now()}.jpg`;
-                      fs.writeFileSync(path.join(dir, fileName), imgBuf);
-                    } catch {}
-                    return true;
-                  }
-                } catch (e) { console.warn('[Selfie gen]', e.message?.slice(0,60)); }
-                // If still no image, let aura respond with text saying she will send
+          const fs = require('fs');
+          const path = require('path');
+          const tLower = String(cleanText || text || '').toLowerCase();
+          let tipo = 'selfie';
+          if (/cosplay/.test(tLower)) tipo = 'cosplay';
+          else if (/goth|dark|preta|look/.test(tLower)) tipo = 'goth';
+          else if (/fofa|cute|linda|amor/.test(tLower)) tipo = 'cute';
+          else if (/live|stream|jogando|game/.test(tLower)) tipo = 'stream';
+          
+          // Detecta se é pedido direto pra ela
+          const isDirect = ctx._superIntent?.isDirectToAura || isOwner || isPv || /aura|pinkchyu|tua|teu|sua|voce|vc|tu/.test(tLower);
+          const confidence = ctx._superIntent?.intentConfidence || ctx._photoIntent?.intentConfidence || 80;
+          
+          if (isDirect && confidence >= 40) {
+            console.log('[Pinkchyu REAL] Enviando foto REAL tipo:', tipo, 'conf:', confidence);
+            let buf = null;
+            let selfiePath = null;
+            try {
+              const files = fs.readdirSync(selfieMod.SELFIE_DIR).filter(f => f.startsWith('aura_' + tipo + '_') && f.endsWith('.jpg'));
+              if (files.length > 0) {
+                const pick = files[Math.floor(Math.random() * files.length)];
+                selfiePath = path.join(selfieMod.SELFIE_DIR, pick);
+                if (fs.existsSync(selfiePath)) buf = fs.readFileSync(selfiePath);
               }
+            } catch {}
+            if (!buf) {
+              try {
+                const allFiles = fs.readdirSync(selfieMod.SELFIE_DIR).filter(f => f.startsWith('aura_') && f.endsWith('.jpg'));
+                if (allFiles.length > 0) {
+                  const pick = allFiles[Math.floor(Math.random() * allFiles.length)];
+                  selfiePath = path.join(selfieMod.SELFIE_DIR, pick);
+                  if (fs.existsSync(selfiePath)) buf = fs.readFileSync(selfiePath);
+                }
+              } catch {}
             }
+            if (buf && buf.length > 500) {
+              const caption = selfieMod.getCaptionForType(tipo, isOwner);
+              await sock.sendMessage(ctx.remoteJid, { image: buf, caption }, { quoted: msg });
+              if (isOwner && /perfil|profile|coloca|atualiza|foto do bot/i.test(cleanText || '')) {
+                try {
+                  await selfieMod.updateProfilePicture(sock, buf);
+                  await sock.sendMessage(ctx.remoteJid, { text: 'Atualizei minha foto de perfil pra essa 🖤 rawr 💜' }, { quoted: msg });
+                } catch (e) { console.warn('[Selfie profile]', e.message?.slice(0,60)); }
+              }
+              return true;
+            }
+            // Fallback gera
+            try {
+              const aiMod = require('./ai');
+              const promptMap = {
+                selfie: 'beautiful young woman selfie, black hair with bangs, dark makeup, purple lights, cute expression, high quality portrait',
+                cosplay: 'young woman in anime cosplay costume, black and purple outfit, confident pose, high quality',
+                goth: 'aesthetic portrait, black hair, dark makeup, purple room lighting, fashion style, high quality',
+                cute: 'cute young woman, soft smile, black hair, heart hands, purple lights, cozy bedroom, beautiful',
+                stream: 'young woman gamer streaming, purple LED gaming setup, headphones, cute focused expression',
+              };
+              const imgBuf = await aiMod.generateImage(promptMap[tipo] || promptMap.selfie).catch(() => null);
+              if (imgBuf && imgBuf.length > 500) {
+                const caption = selfieMod.getCaptionForType(tipo, isOwner);
+                await sock.sendMessage(ctx.remoteJid, { image: imgBuf, caption }, { quoted: msg });
+                try {
+                  const dir = selfieMod.SELFIE_DIR;
+                  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+                  fs.writeFileSync(path.join(dir, 'aura_' + tipo + '_' + Date.now() + '.jpg'), imgBuf);
+                } catch {}
+                return true;
+              }
+            } catch (e) { console.warn('[Selfie gen]', e.message?.slice(0,60)); }
           }
-        } catch (e) { console.warn('[Pinkchyu Photo]', e.message?.slice(0,60)); }
+        } catch (e) { console.warn('[Pinkchyu REAL]', e.message?.slice(0,80)); }
       }
 
       // v6.53: PEDIDO DE ÁUDIO — ela dizia "não posso enviar áudios"

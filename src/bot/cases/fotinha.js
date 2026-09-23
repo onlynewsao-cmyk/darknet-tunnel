@@ -1,5 +1,5 @@
 /**
- * FOTINHA — Pinkchyu Selfie System v12.0 💜
+ * FOTINHA — Pinkchyu Selfie System v12.2 💜 REAL PHOTOS ONLY!
  * .fotinha [tipo] — manda foto da Aura/Pinkchyu
  * .fotinha perfil — coloca foto dela como foto do bot
  * Tipos: selfie, cosplay, goth, cute, stream
@@ -11,10 +11,29 @@ function getSelfieMod() {
   try { return require('../../aura/auraSelfie'); } catch { return null; }
 }
 
+function getRealSelfie(tipo) {
+  try {
+    const mod = getSelfieMod();
+    if (!mod) return null;
+    const dir = mod.SELFIE_DIR;
+    if (!fs.existsSync(dir)) return null;
+    let files = [];
+    try { files = fs.readdirSync(dir).filter(f => f.startsWith('aura_' + tipo + '_') && f.endsWith('.jpg')); } catch {}
+    if (files.length === 0) {
+      try { files = fs.readdirSync(dir).filter(f => f.startsWith('aura_') && f.endsWith('.jpg')); } catch {}
+    }
+    if (files.length === 0) return null;
+    const pick = files[Math.floor(Math.random() * files.length)];
+    const full = path.join(dir, pick);
+    if (fs.existsSync(full)) return full;
+    return null;
+  } catch { return null; }
+}
+
 module.exports = {
   name: 'fotinha',
   aliases: ['fotoaura', 'fotodela', 'selfie', 'fotinhadela', 'pinkchyu', 'fotinhaura'],
-  desc: 'Foto da Aura/Pinkchyu — selfie goth baddie 🖤',
+  desc: 'Foto da Aura/Pinkchyu — selfie goth baddie REAL 🖤',
   category: 'aura',
   async run({ sock, msg, ctx, args, text, isOwner }) {
     const selfieMod = getSelfieMod();
@@ -33,8 +52,7 @@ module.exports = {
         return;
       }
       const tipo = ['cosplay','goth','cute','stream','selfie'].find(t => fullText.includes(t)) || 'selfie';
-      let imgPath = null;
-      try { imgPath = selfieMod.getSelfie(tipo); } catch {}
+      let imgPath = getRealSelfie(tipo);
       let buf = null;
       if (imgPath && fs.existsSync(imgPath)) {
         buf = fs.readFileSync(imgPath);
@@ -43,37 +61,44 @@ module.exports = {
         try {
           const ai = require('../ai');
           const prompts = {
-            selfie: 'goth girl selfie, pink hair, dark makeup, cute, 23yo latina, aesthetic, instagram style, high quality',
-            cosplay: 'goth girl cosplay Kafka Honkai Star Rail, purple hair, goth outfit, cute, high quality',
-            goth: 'goth baddie girl, black outfit, chains, dark makeup, pink hair, cute goth aesthetic',
-            cute: 'cute goth girl selfie, kawaii, pinkchyu style, 23yo, aesthetic',
-            stream: 'goth gamer girl streaming setup, purple lights, cute, pinkchyu twitch style',
+            selfie: 'beautiful young woman selfie, black hair with bangs, dark makeup, purple lights, cute, high quality portrait',
+            cosplay: 'young woman in anime cosplay costume, black and purple outfit, cute, high quality',
+            goth: 'aesthetic portrait, black hair, dark makeup, purple room lighting, fashion style',
+            cute: 'cute young woman, soft smile, black hair, heart hands, purple lights, cozy bedroom, beautiful',
+            stream: 'young woman gamer streaming, purple LED lights, cute, gaming setup',
           };
           buf = await ai.generateImage(prompts[tipo] || prompts.selfie);
+          if (buf && buf.length > 500) {
+            try {
+              const dir = selfieMod.SELFIE_DIR;
+              if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+              fs.writeFileSync(path.join(dir, 'aura_' + tipo + '_' + Date.now() + '.jpg'), buf);
+            } catch {}
+          }
         } catch (e) {
           console.warn('[fotinha perfil gen]', e.message?.slice(0,60));
         }
       }
       if (!buf) {
-        await sock.sendMessage(ctx.remoteJid, { text: 'Não consegui pegar minha fotinha agora 😔' }, { quoted: msg });
+        await sock.sendMessage(ctx.remoteJid, { text: 'Não consegui pegar minha fotinha agora 😔 mas tenho sim! Tenta de novo rawr' }, { quoted: msg });
         return;
       }
       const r = await selfieMod.updateProfilePicture(sock, buf);
       if (r.success) {
-        await sock.sendMessage(ctx.remoteJid, { text: `Prontinho meu Dark! Coloquei minha fotinha ${tipo} no perfil 🖤 rawr\n\n${r.message || ''}` }, { quoted: msg });
+        await sock.sendMessage(ctx.remoteJid, { text: `Prontinho meu Dark! Coloquei minha fotinha REAL ${tipo} no perfil 🖤 rawr 💜\n\n${r.message || ''}` }, { quoted: msg });
       } else {
         await sock.sendMessage(ctx.remoteJid, { text: `Não consegui atualizar: ${r.message}` }, { quoted: msg });
       }
       return;
     }
 
-    // .fotinha [tipo] — envia foto
+    // .fotinha [tipo] — envia foto REAL
     const tipo = ['cosplay','goth','cute','stream','selfie'].find(t => fullText.includes(t) || sub === t) || 'selfie';
-    let imgPath = null;
-    try { imgPath = selfieMod.getSelfie(tipo); } catch {}
+    let imgPath = getRealSelfie(tipo);
 
     if (imgPath && fs.existsSync(imgPath)) {
       const caption = selfieMod.getCaptionForType(tipo, isOwner);
+      console.log('[fotinha] Enviando foto REAL:', imgPath);
       await sock.sendMessage(ctx.remoteJid, {
         image: fs.readFileSync(imgPath),
         caption,
@@ -86,19 +111,19 @@ module.exports = {
     try {
       const ai = require('../ai');
       const prompts = {
-        selfie: 'goth girl selfie, pink hair, dark makeup, cute, 23yo latina, aesthetic, instagram style, high quality, pinkchyu',
-        cosplay: 'goth girl cosplay Kafka Honkai Star Rail or Lucy Edgerunners or Makima Chainsaw Man, purple hair, goth outfit, cute, high quality, cosplay',
-        goth: 'goth baddie girl, black outfit, chains, dark makeup, pink hair, cute goth aesthetic, instagram',
-        cute: 'cute goth girl selfie, kawaii, pinkchyu style, 23yo, aesthetic, soft lighting',
-        stream: 'goth gamer girl streaming setup, purple LED lights, cute, pinkchyu twitch partner style, gaming',
+        selfie: 'beautiful young woman selfie, black hair with bangs, dark makeup, purple lights, cute expression, high quality portrait',
+        cosplay: 'young woman in anime cosplay costume, black and purple outfit, confident pose, high quality',
+        goth: 'aesthetic portrait, black hair, dark makeup, purple room lighting, fashion style, high quality',
+        cute: 'cute young woman, soft smile, black hair, heart hands, purple lights, cozy bedroom, beautiful',
+        stream: 'young woman gamer streaming setup, purple LED lights, cute, pinkchyu twitch style',
       };
       const buf = await ai.generateImage(prompts[tipo] || prompts.selfie);
       if (buf && buf.length > 500) {
         // save
         try {
-          const dir = path.join(__dirname, '..', '..', '..', 'assets', 'aura_selfies');
+          const dir = selfieMod.SELFIE_DIR;
           if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-          fs.writeFileSync(path.join(dir, `${tipo}_${Date.now()}.jpg`), buf);
+          fs.writeFileSync(path.join(dir, 'aura_' + tipo + '_' + Date.now() + '.jpg'), buf);
         } catch {}
         const caption = selfieMod.getCaptionForType(tipo, isOwner);
         await sock.sendMessage(ctx.remoteJid, { image: buf, caption }, { quoted: msg });

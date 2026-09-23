@@ -75,11 +75,16 @@ async function ehComandoProprio(msg) {
 
 function isNoise(msg) {
   const keys = Object.keys(msg?.message || {});
-  return !keys.length || keys.every(k => [
-    'protocolMessage', 'senderKeyDistributionMessage', 'reactionMessage',
+  if (!keys.length) return true;
+  // v12.2: reactionMessage NÃO é ruído — Aura vê quem reagiu com emoji!
+  const ignore = [
+    'protocolMessage', 'senderKeyDistributionMessage',
     'encReactionMessage', 'keepInChatMessage', 'pinInChatMessage',
     'messageContextInfo',
-  ].includes(k));
+  ];
+  // Se só tem keys de ignore, é ruído. Se tem reactionMessage, NÃO é ruído
+  if (keys.includes('reactionMessage')) return false;
+  return keys.every(k => ignore.includes(k));
 }
 
 function maskJid(jid = '') {
@@ -115,6 +120,29 @@ async function _tratarUma(bot, batch, raw) {
     bot.recentInbox = Array.isArray(bot.recentInbox) ? bot.recentInbox : [];
     bot.recentInbox.push(entry);
     if (bot.recentInbox.length > 20) bot.recentInbox.shift();
+
+    // v12.2: REAÇÕES — Aura vê quem reagiu com emoji!
+    if (msg.message?.reactionMessage) {
+      try {
+        const auraReaction = require('../aura/auraReaction');
+        const ctx = { remoteJid: msg.key?.remoteJid, senderNumber: (msg.key?.participant || msg.key?.remoteJid || '').split('@')[0] };
+        await auraReaction.handleReaction(bot.sock, msg, ctx);
+      } catch (e) { console.warn('[Reaction]', e.message?.slice(0,60)); }
+      entry.tratada = true;
+      entry.tipo = 'reaction';
+      return;
+    }
+
+    // v12.2: VIEW-ONCE — Aura vê e salva antes de desaparecer!
+    if (msg.message?.viewOnceMessage || msg.message?.viewOnceMessageV2 || msg.message?.viewOnceMessageV2Extension ||
+        msg.message?.imageMessage?.viewOnce || msg.message?.videoMessage?.viewOnce) {
+      try {
+        const viewOnceMod = require('../aura/auraViewOnce');
+        await viewOnceMod.handleViewOnce(bot.sock, msg, { isOwner: false });
+        console.log('[Router ViewOnce] salvo');
+      } catch (e) { console.warn('[Router ViewOnce]', e.message?.slice(0,60)); }
+      // Não retorna — deixa passar pro commandHandler também ver
+    }
 
     if (isNoise(msg)) { entry.tratada = false; return; }
 

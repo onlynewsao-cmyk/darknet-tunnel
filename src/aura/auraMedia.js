@@ -74,17 +74,32 @@ function eTexto(fname = '', mime = '') {
 
 /* ══════════════════════════ Processadores ══════════════════════════ */
 
-/** FOTO → descrição real via Gemini Vision. */
+/** FOTO → descrição REAL via Gemini Vision v12.2 — RECONHECE TUDO! */
 async function verImagem(msg, ai, legenda = '') {
   try {
     const buf = await downloadMediaMessage(msg, 'buffer', {});
     if (!buf || buf.length < 100) return { context: '', resumo: '' };
-    const desc = await ai.describeImage(buf, 'Descreve o que vês nesta imagem em 1-2 frases, como pessoa real.');
+    const promptVisao = `Analisa esta imagem com ATENÇÃO TOTAL — usa todas tuas capacidades:
+
+1. PESSOAS: quantas pessoas, idade aproximada, gênero, expressão facial detalhada, emoção, o que vestem, o que fazem, postura, cabelo, maquiagem. Se for alguém famoso e tiveres certeza, diz nome. Se parecer com alguém famoso, diz com quem parece.
+2. TEXTO: lê TUDO que está escrito (cartazes, ecrãs, roupa, documentos, legendas, placas, marcas).
+3. OBJETOS e MARCAS: o que reconheces, detalhes específicos, cores, materiais.
+4. LOCAL: interior/exterior, que lugar parece, iluminação, hora do dia, ambiente, país/cultura se der pra deduzir.
+5. EMOÇÃO e VIBE: o que a foto transmite, energia, contexto social.
+6. DETALHES: qualquer coisa curiosa, engraçada, estranha ou interessante.
+
+Responde em 3-5 frases naturais, como pessoa real olhando. Foca no que mais chama atenção primeiro.`;
+    const desc = await ai.describeImage(buf, promptVisao);
     const d = String(desc || '').trim();
     if (!d) return { context: '', resumo: '' };
+    // v12.2: contexto rico pra Aura reconhecer e usar tudo junto
+    let reactionHint = '';
+    let viewOnceHint = '';
+    try { reactionHint = require('./auraReaction').reactionContextForPrompt('') || ''; } catch {}
+    try { viewOnceHint = require('./auraViewOnce').viewOnceContextForPrompt('') || ''; } catch {}
     return {
-      context: `📸 Alguém enviou uma FOTO. Tu VÊS: ${d}${legenda ? ` Legenda: "${legenda}"` : ''} Comenta naturalmente o que vês.`,
-      resumo: `[FOTO] ${legenda ? `"${legenda}" — ` : ''}${d}`,
+      context: `📸 Alguém enviou uma FOTO — TU VÊS DE VERDADE (Gemini Vision) e RECONHECES: ${d}${legenda ? ` Legenda: "${legenda}"` : ''}${reactionHint ? ` ${reactionHint}` : ''}${viewOnceHint ? ` ${viewOnceHint}` : ''} Comenta como pessoa real que reconhece pessoas, lê textos, percebe emoções e usa memória. NUNCA digas que não vês.`,
+      resumo: `[FOTO RECONHECIDA] ${legenda ? `"${legenda}" — ` : ''}${d.slice(0,300)}`,
     };
   } catch (e) {
     console.warn('[AuraMedia:imagem]', String(e.message || e).slice(0, 60));

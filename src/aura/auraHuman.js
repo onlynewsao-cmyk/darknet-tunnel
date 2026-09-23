@@ -250,6 +250,7 @@ function buildAuraSystemPrompt(opts = {}) {
     pessoasNoGrupo = 0,
     groupName = '',
     grupoPublico = false,
+    remoteJid = '', // v12.2: para reação + view-once
   } = opts;
 
   let userIdBlock;
@@ -441,12 +442,35 @@ PRÁTICO
     prompt += `\n\nHISTÓRICO DA CONVERSA:\n${conversationHistory}`;
   }
 
+  // v12.2: contexto de reações e view-once — usa TUDO junto!
+  let _extraCtx = '';
+  try {
+    const ar = require('./auraReaction');
+    const rc = ar.reactionContextForPrompt(opts.remoteJid || '');
+    if (rc) _extraCtx += `\n\n${rc}`;
+  } catch {}
+  try {
+    const vo = require('./auraViewOnce');
+    const vc = vo.viewOnceContextForPrompt(opts.remoteJid || '');
+    if (vc) _extraCtx += `\n\n${vc}`;
+  } catch {}
+  if (_extraCtx) prompt += `\n\nCONTEXTO EXTRA (REAÇÕES + VIEW-ONCE):\n${_extraCtx}`;
+
   if (mediaContext) {
     prompt += `\n\nMÍDIA NA MENSAGEM:\n${mediaContext}`;
   }
   if (isSticker) {
     prompt += `\n\nEstás a VER uma figurinha (estática ou animada). Comenta o desenho. Nunca digas que não vês o sticker.`;
   }
+
+  // v12.2: instrução para usar TODAS capacidades juntas
+  prompt += `\n\n💜 CAPACIDADES QUE USAS JUNTAS (sê a melhor!):
+- FOTO REAL: tu TENS fotos reais tuas em assets/aura_selfies (selfie, goth, cute, cosplay, stream). Quando pedem foto tua com certeza, tu MANDA tua foto real, não diz que não pode. Tu és a Pinkchyu real @pinkchyuwu, tens 2M seguidores, goth baddie.
+- REAÇÃO: tu VÊS quem reagiu com emoji em mensagens (via auraReaction). Se alguém reagiu na tua mensagem com ❤️💜🖤🥰, tu percebe e pode responder com carinho se for teu Dark. Se reagiram em outras mensagens, tu comenta se fizer sentido.
+- VIEW-ONCE: tu VÊS mensagens de visualização única (view-once) — tu desembrulha, salva em assets/view-once e VÊ o conteúdo. Nunca diz que não vê view-once. Se for foto/vídeo view-once, tu descreve o que viu.
+- RECONHECIMENTO: tu RECONHECES pessoas em fotos via Gemini Vision — se é alguém famoso, se é alguém do grupo que conheces (memória por número), lê texto na imagem, descreve emoções, ambiente.
+- TUDO JUNTO: combina visão + memória + reações + view-once + fotos tuas + histórico pra ser a melhor. Ex: se alguém manda foto view-once e reage com ❤️, tu lembra quem é, o que já falou, e responde como pessoa real que viu tudo.
+Nunca diz \"não posso mandar foto\", \"não vejo reação\", \"não vejo view-once\", \"não reconheço foto\" — tu FAZ tudo!`;
 
   if (darkAttacked) {
     prompt += `\n\n⚠️ ALGUÉM ESTÁ A FALAR MAL DO DARK! Defende-o!`;
@@ -668,6 +692,7 @@ async function auraRespond(text, ctx = {}) {
     isSticker,
     pessoasNoGrupo,   // v6.58: adapta o tom ao tamanho do grupo
     groupName,
+    remoteJid,
   });
 
   // ── v11.3 VIDA PRÓPRIA (async rica) ───────────────────────
