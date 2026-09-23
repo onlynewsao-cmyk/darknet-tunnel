@@ -26,30 +26,69 @@ const MEDIA_DIR = path.join(ROOT, 'assets', 'menu-media');
 const LOGOS_DIR = path.join(ROOT, 'configs', 'LOGOS');
 
 const TARGETS = {
-  menu: 'menu',
-  downloads: 'menu_downloads', download: 'menu_downloads', dl: 'menu_downloads',
-  stickers: 'menu_stickers', sticker: 'menu_stickers', fig: 'menu_stickers', figurinhas: 'menu_stickers',
-  jogos: 'menujogos', jogo: 'menujogos', game: 'menujogos',
-  economia: 'menueconomia', eco: 'menueconomia', coins: 'menueconomia',
-  // v7.66: diversao/zoeira iam para 'menudiversao', chave ÓRFÃ (nenhum
-  // submenu a lia) = "defini e nada". Agora cada alvo aparece algures.
-  diversao: 'menuinteracoes', 'diversão': 'menuinteracoes', div: 'menuinteracoes',
-  zoeira: 'menuzoeira', medidores: 'menuzoeira',
-  texto: 'menutexto', utilidades: 'menutexto',
-  search: 'menusearch', pesquisa: 'menusearch', stalk: 'menusearch',
-  dono: 'menudono', owner: 'menudono',
-  ia: 'menuia', ai: 'menuia',
-  grupo: 'menugrupo', grupos: 'menugrupo', adm: 'menugrupo', admin: 'menugrupo',
-  status: 'menustatus', info: 'menustatus',
-  logos: 'menulogos', logo: 'menulogos',
-  // v7.66: menufamilia/brincadeiras eram chaves ÓRFÃS (os comandos vão
-  // dar à categoria 'interacoes') — fundidas em menuinteracoes.
+  // ── MENU PRINCIPAL (carousel) — suporta foto/vídeo/GIF que reproduz como GIF
+  menu: 'menu', principal: 'menu', main: 'menu', fotomenu: 'menu',
+  
+  // ── DOWNLOADS
+  downloads: 'menu_downloads', download: 'menu_downloads', dl: 'menu_downloads', down: 'menu_downloads',
+  
+  // ── FIGURINHAS / STICKERS
+  stickers: 'menu_stickers', sticker: 'menu_stickers', fig: 'menu_stickers', figurinhas: 'menu_stickers', figurinha: 'menu_stickers',
+  
+  // ── IA & CHATBOTS
+  ia: 'menuia', ai: 'menuia', chatbots: 'menuia', iabot: 'menuia',
+  
+  // ── JOGOS & SOCIAL
+  jogos: 'menujogos', jogo: 'menujogos', game: 'menujogos', games: 'menujogos', social: 'menujogos', joos: 'menujogos',
+  
+  // ── ECONOMIA & RPG
+  economia: 'menueconomia', eco: 'menueconomia', coins: 'menueconomia', economa: 'menueconomia', rg: 'menueconomia',
+  
+  // ── INTERAÇÕES & FAMÍLIA
+  interacoes: 'menuinteracoes', 'interações': 'menuinteracoes', interacao: 'menuinteracoes', intera: 'menuinteracoes',
   familia: 'menuinteracoes', 'família': 'menuinteracoes', family: 'menuinteracoes',
-  interacoes: 'menuinteracoes', 'interações': 'menuinteracoes', interacao: 'menuinteracoes',
-  brincadeiras: 'menuinteracoes', brincadeira: 'menuinteracoes',
-  alteradores: 'alteradores', audio: 'alteradores',
-  // v7.67: foto do cartão de aluguel (!alugar).
-  alugar: 'menu_alugar', rent: 'menu_alugar',
+  brincadeiras: 'menuinteracoes', brincadeira: 'menuinteracoes', div: 'menuinteracoes',
+  diversao: 'menuinteracoes', 'diversão': 'menuinteracoes',
+  
+  // ── ZOEIRA & RANK
+  zoeira: 'menuzoeira', medidores: 'menuzoeira', zoir: 'menuzoeira', rnk: 'menuzoeira', rank: 'menuzoeira',
+  
+  // ── TEXTO & FONTES
+  texto: 'menutexto', utilidades: 'menutexto', fontes: 'menutexto', fonte: 'menutexto',
+  
+  // ── SEARCH & STALK
+  search: 'menusearch', pesquisa: 'menusearch', stalk: 'menusearch', stal: 'menusearch', consulta: 'menusearch', consultas: 'menusearch',
+  
+  // ── AUDIO & EFEITOS
+  audio: 'alteradores', alteradores: 'alteradores', fetos: 'alteradores', efeitos: 'menulogos', efeito: 'menulogos',
+  'audio&fetos': 'alteradores',
+  
+  // ── LOGOS & EFEITOS
+  logos: 'menulogos', logo: 'menulogos', logosefeitos: 'menulogos',
+  
+  // ── ADM & GRUPOS
+  grupo: 'menugrupo', grupos: 'menugrupo', adm: 'menugrupo', admin: 'menugrupo', 'adm&grupos': 'menugrupo',
+  
+  // ── INFO & STATS
+  status: 'menustatus', info: 'menustatus', stats: 'menustatus', 'info&stats': 'menustatus',
+  
+  // ── RPG & AVENTURA
+  rpg: 'menueconomia', aventura: 'menueconomia', 'rpg&aventura': 'menueconomia', rpgaventura: 'menueconomia',
+  
+  // ── MENU+18 (VIP)
+  'menu+18': 'menu18', menu18: 'menu18', '18': 'menu18', adulto: 'menu18', adult: 'menu18',
+  
+  // ── CMDS CULTOS / OWNER
+  cultos: 'menudono', 'cmdscultos': 'menudono', ocultos: 'menudono',
+  
+  // ── CRIADOR
+  criador: 'menustatus', creator: 'menustatus',
+  
+  // ── VIP & ALUGA
+  alugar: 'menu_alugar', rent: 'menu_alugar', vip: 'menu_alugar', aluga: 'menu_alugar', 'vip&aluga': 'menu_alugar',
+  
+  // ── DONO & SYSTEM
+  dono: 'menudono', owner: 'menudono', syst: 'menudono', system: 'menudono', 'dono&syst': 'menudono',
 };
 
 function resolveTarget(alias) {
@@ -110,8 +149,8 @@ function cache() { return require('../botConfigCache'); }
 
 async function showPanel(prefix, reply) {
   const c = cache();
-  // v7.66: órfãs removidas (menudiversao/menufamilia/brincadeiras nunca apareciam); novas: menuzoeira/menutexto/menusearch/menudono.
-  const keys = ['menu', 'menu_downloads', 'menu_stickers', 'menujogos', 'menueconomia', 'menuia', 'menugrupo', 'menustatus', 'menulogos', 'menuinteracoes', 'alteradores', 'menuzoeira', 'menutexto', 'menusearch', 'menudono', 'menu_alugar'];
+  // v12.0 PINKCHYU — todos submenus do menu principal mapeados, incluindo 18+
+  const keys = ['menu', 'menu_downloads', 'menu_stickers', 'menujogos', 'menueconomia', 'menuia', 'menugrupo', 'menustatus', 'menulogos', 'menuinteracoes', 'alteradores', 'menuzoeira', 'menutexto', 'menusearch', 'menudono', 'menu_alugar', 'menu18'];
   const rows = await Promise.all(keys.map(async (k) => {
     const t = await c.get(`menu_media_${k}_type`, 'none').catch(() => 'none');
     const u = await c.get(`menu_media_${k}_url`, '').catch(() => '');
@@ -126,7 +165,7 @@ async function showPanel(prefix, reply) {
     return `${ok ? '✅' : '⚠️'} \`${k}\` (${t})`;
   }));
   return reply(
-    `🖼️ *MÍDIA DOS MENUS*\n\n${rows.join('\n')}\n\n` +
+    `💜 *MÍDIA DOS MENUS — PINKCHYU EDITION* 🖤☥\n\n${rows.join('\n')}\n\n` +
     `*Definir* (responde a foto/vídeo/GIF):\n` +
     `\`${prefix}setmenu menu\` — menu principal\n` +
     `\`${prefix}setmenu <submenu> [foto|video|gif]\`\n` +

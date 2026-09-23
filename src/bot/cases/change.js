@@ -111,6 +111,7 @@ module.exports = function registerChangeCases(registerCase) {
       }] }] });
         } catch {
           // Fallback texto se interactiveMessage falhar
+          const all = changeThemes.listThemes();
           let txt = `${t.icon} *TEMAS DISPONÍVEIS — ${botName}*\n\n`;
           for (const th of all) {
             const active = th.name === currentThemeName ? ' ◄ *ACTIVO*' : '';

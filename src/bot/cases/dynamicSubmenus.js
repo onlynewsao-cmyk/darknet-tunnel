@@ -7,15 +7,18 @@
 
 const sd = require('../submenuData');
 
-// v7.66: categoria dynSub → chave do !setmenu (menu_media_<key>_*).
+// v12.0 PINKCHYU — categoria dynSub → chave do !setmenu (menu_media_<key>_*).
 // Todas as chaves do setmenu têm de aparecer em ALGUM submenu —
-// chaves órfãs = "defini e nada".
+// chaves órfãs = "defini e nada". Inclui menu18 para +18.
+// Suporta foto/vídeo/GIF que reproduz como GIF (gifPlayback:true)
 const CATEGORY_TARGET = {
   downloads: 'menu_downloads', stickers: 'menu_stickers', ia: 'menuia',
   admin: 'menugrupo', jogos: 'menujogos', economia: 'menueconomia',
   interacoes: 'menuinteracoes', audio: 'alteradores', info: 'menustatus',
   texto: 'menutexto', search: 'menusearch', logos: 'menulogos',
   zoeira: 'menuzoeira', owner: 'menudono',
+  // v12.0 novos — todos submenus do menu principal
+  rpg: 'menueconomia', '18': 'menu18', menu18: 'menu18', vip: 'menu_alugar', alugar: 'menu_alugar',
 };
 
 async function dynSub(sock, msg, ctx, config, category) {
