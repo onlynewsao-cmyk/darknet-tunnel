@@ -5,22 +5,46 @@
     <header class="page-header">
       <div>
         <h1>💾 Backup & Restore</h1>
-        <p class="muted">Exporte e importe dados do bot</p>
+        <p class="muted">Exporte e importe dados do bot — usuários incluídos</p>
       </div>
     </header>
 
     <div class="card">
+      <h2>📊 O que há no banco agora</h2>
+      <div id="statsBox" class="muted">a carregar…</div>
+    </div>
+
+    <div class="card">
       <h2>📤 Exportar</h2>
-      <p class="muted">Faça download de todos os comandos, usuários, mídias e configurações em JSON.</p>
+      <p class="muted">Download de tudo em JSON: usuários (sem senhas), comandos, mídias, configs e agenda.</p>
       <div class="button-row">
         <a href="/api/backup/export" class="btn btn-primary" download>📥 Baixar Backup JSON</a>
-        <span class="muted">Inclui: comandos, usuários, configs, agenda (sem credenciais sensíveis)</span>
       </div>
     </div>
 
     <div class="card">
-      <h2>📥 Importar</h2>
-      <div class="alert alert-warning"><span>⚠️</span><span><strong>Cuidado:</strong> isto pode duplicar/sobrescrever dados.</span></div>
+      <h2>👥 Importar só usuários <span class="muted" style="font-size:0.85rem">(rápido — 1000+ numa passada)</span></h2>
+      <div class="alert alert-info"><span>ℹ️</span><span>
+        Do backup JSON, importa <strong>todos os usuários</strong> de uma vez.
+        Sem senha no arquivo? Fica a padrão <code>dark123</code>.
+        O dono <strong>local</strong> nunca é sobrescrito.
+      </span></div>
+      <form id="usersForm" enctype="multipart/form-data">
+        <div class="form-group">
+          <label>Arquivo JSON com usuários</label>
+          <input type="file" name="file" accept=".json" required />
+        </div>
+        <div class="form-group form-check">
+          <label><input type="checkbox" name="overwrite" /> Sobrescrever existentes (mesmo username/número)</label>
+        </div>
+        <button type="submit" class="btn btn-primary">👥 Importar usuários</button>
+        <span id="usersStatus" class="muted"></span>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>📦 Importar backup completo</h2>
+      <div class="alert alert-warning"><span>⚠️</span><span><strong>Cuidado:</strong> com "sobrescrever" ativo, dados existentes são substituídos.</span></div>
       <form id="importForm" enctype="multipart/form-data">
         <div class="form-group">
           <label>Arquivo JSON</label>
@@ -29,7 +53,8 @@
         <div class="form-group form-check">
           <label><input type="checkbox" name="overwrite" /> Sobrescrever dados existentes</label>
         </div>
-        <button type="submit" class="btn btn-primary">📤 Importar</button>
+        <button type="submit" class="btn btn-primary">📤 Importar tudo</button>
+        <span id="importStatus" class="muted"></span>
       </form>
     </div>
 
@@ -41,11 +66,44 @@
   </main>
 </div>
 <script>
+  // ── stats do banco ──
+  (async () => {
+    try {
+      const r = await fetch('/api/backup/stats');
+      const d = await r.json();
+      if (!r.ok || !d.ok) { document.getElementById('statsBox').textContent = 'sem stats'; return; }
+      document.getElementById('statsBox').innerHTML =
+        `👤 <strong>${d.users}</strong> usuários (${d.premium} premium/owner) · ` +
+        `⚡ <strong>${d.commands}</strong> comandos · 🖼️ <strong>${d.media}</strong> mídias · ` +
+        `⚙️ <strong>${d.settings}</strong> configs · ⏰ <strong>${d.schedules}</strong> agendas`;
+    } catch { document.getElementById('statsBox').textContent = 'sem stats'; }
+  })();
+
+  // ── import só de usuários ──
+  document.getElementById('usersForm').onsubmit = async (e) => {
+    e.preventDefault();
+    const st = document.getElementById('usersStatus');
+    st.textContent = ' ⏳ a importar usuários…';
+    const fd = new FormData(e.target);
+    const r = await fetch('/api/backup/import-users', { method: 'POST', body: fd });
+    const d = await r.json().catch(() => ({}));
+    if (r.ok) {
+      const det = d.detail || {};
+      st.textContent = ` ✅ ${det.users} usuários importados!` +
+        (det.ownersSkipped ? ` (dono local preservado)` : '') +
+        (det.users && !fd.get('overwrite') ? ' — novos apenas; sem senha = dark123' : '');
+      setTimeout(carregarStats, 1500);
+    } else st.textContent = ' ❌ ' + (d.error || 'erro');
+  };
+
+  // ── import completo ──
   document.getElementById('importForm').onsubmit = async (e) => {
     e.preventDefault();
+    const st = document.getElementById('importStatus');
+    st.textContent = ' ⏳ a importar… (usuários em massa podem demorar um pouco)';
     const fd = new FormData(e.target);
-    const r = await fetch('/api/backup/import', { method:'POST', body: fd });
-    const d = await r.json();
+    const r = await fetch('/api/backup/import', { method: 'POST', body: fd });
+    const d = await r.json().catch(() => ({}));
     if (r.ok) {
       const det = d.detail || {};
       const parts = [];
@@ -54,14 +112,18 @@
       if (det.settings) parts.push(det.settings + ' configs');
       if (det.media) parts.push(det.media + ' mídias');
       if (det.schedules) parts.push(det.schedules + ' agendas');
-      toast(`Importado! ${parts.length ? parts.join(', ') : d.imported + ' itens'}${det.ownersSkipped ? ' (owner local preservado)' : ''}`, 'success');
-    }
-    else toast('Erro: '+d.error, 'error');
+      st.textContent = ` ✅ Importado: ${parts.length ? parts.join(', ') : d.imported + ' itens'}` +
+        (det.ownersSkipped ? ' (dono local preservado)' : '');
+      setTimeout(carregarStats, 1500);
+    } else st.textContent = ' ❌ ' + (d.error || 'erro');
   };
+
+  async function carregarStats() { location.reload(); }
+
   async function resetDb() {
     if (!confirm('TEM CERTEZA? Isso apaga TODOS os dados (exceto o dono).')) return;
     if (!confirm('ÚLTIMO AVISO! Confirma reset total?')) return;
-    const r = await fetch('/api/backup/reset', { method:'POST' });
+    const r = await fetch('/api/backup/reset', { method: 'POST' });
     if (r.ok) { toast('Reset feito', 'warn'); setTimeout(()=>location.reload(),1500); }
   }
 </script>

@@ -741,33 +741,12 @@ module.exports = function (io) {
         for (const s of data.settings) { await BotConfig.set(s.key, s.value); count++; }
         detail.settings = data.settings.length;
       }
-      // ── v12.4: IMPORT DE USUÁRIOS (faltava! export trazia mas import ignorava) ──
-      if (data.users && Array.isArray(data.users)) {
-        const bcrypt = require('bcryptjs');
-        let importedUsers = 0, skippedOwners = 0;
-        for (const u of data.users) {
-          try {
-            const { _id, __v, ...rest } = u;
-            // Nunca sobrescreve o owner local (o login actual do dono)
-            if (rest.role === 'owner') { skippedOwners++; continue; }
-            // username obrigatório e único — gera a partir do número se faltar
-            rest.username = String(rest.username || '').trim().toLowerCase() ||
-                            'user' + String(rest.whatsappNumber || '').replace(/\D/g, '');
-            if (!rest.username) rest.username = 'user' + Date.now();
-            // password: export vem sem hash — usa hash guardado se for bcrypt válido,
-            // senão password padrão 'dark123' (dono avisa os usuários)
-            if (!rest.password || !/^\$2[aby]\$/.test(rest.password)) {
-              rest.password = bcrypt.hashSync('dark123', 10);
-            }
-            const q = overwrite
-              ? { $or: [{ username: rest.username }, ...(rest.whatsappNumber ? [{ whatsappNumber: rest.whatsappNumber }] : [])] }
-              : { username: rest.username };
-            await User.findOneAndUpdate(q, rest, { upsert: true, setDefaultsOnInsert: true });
-            importedUsers++; count++;
-          } catch (eU) { console.warn('[backup/import user]', eU.message?.slice(0, 80)); }
-        }
-        detail.users = importedUsers;
-        if (skippedOwners) detail.ownersSkipped = skippedOwners;
+      // ── v12.6: IMPORT DE USUÁRIOS em massa (bulkWrite — 1428+ numa passada) ──
+      const rUsers = await _importarUsuarios(data.users, overwrite);
+      if (rUsers) {
+        detail.users = rUsers.importados;
+        count += rUsers.importados;
+        if (rUsers.ownersSkipped) detail.ownersSkipped = rUsers.ownersSkipped;
       }
       // ── v12.4: IMPORT DE MÍDIAS E AGENDA (também faltava) ──
       if (data.media && Array.isArray(data.media)) {
@@ -805,6 +784,90 @@ module.exports = function (io) {
       await Log.deleteMany({});
       await User.deleteMany({ role: { $ne: 'owner' } });
       res.json({ ok: true });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+  });
+
+  // ── v12.6: helper de import de usuários (bulk, rápido) ──
+  async function _importarUsuarios(users, overwrite) {
+    if (!Array.isArray(users) || !users.length) return null;
+    const bcrypt = require('bcryptjs');
+    const limpos = [];
+    let skippedOwners = 0;
+    let pwPadrao = null;
+    for (const u of users) {
+      try {
+        const { _id, __v, ...rest } = u;
+        // O owner LOCAL (login actual do dono) nunca é sobrescrito
+        if (rest.role === 'owner') { skippedOwners++; continue; }
+        if (!['owner', 'premium', 'free'].includes(rest.role)) rest.role = 'free';
+        if (!['male', 'female', 'other', 'unknown'].includes(rest.gender)) rest.gender = 'unknown';
+        // username obrigatório e único — gera a partir do número se faltar
+        rest.username = String(rest.username || '').trim().toLowerCase() ||
+                        'wa_' + String(rest.whatsappNumber || '').replace(/\D/g, '');
+        // password: export vem SEM senha — aplica hash padrão 'dark123'
+        if (!rest.password || !/^\$2[aby]\$/.test(rest.password)) {
+          if (!pwPadrao) pwPadrao = bcrypt.hashSync('dark123', 10);
+          rest.password = pwPadrao;
+        }
+        rest.active = rest.active !== false;
+        limpos.push(rest);
+      } catch {}
+    }
+    if (!limpos.length) return { importados: 0, ownersSkipped: skippedOwners };
+
+    if (overwrite) {
+      // sobrescreve por username (e preserva quem já existe com mesmo número?)
+      // v12.6.1: um usuário pode ter mudado o username — casa TAMBÉM por número
+      const ops = [];
+      for (const u of limpos) {
+        const filtro = u.whatsappNumber
+          ? { $or: [{ username: u.username }, { whatsappNumber: u.whatsappNumber }] }
+          : { username: u.username };
+        ops.push({ replaceOne: { filter: filtro, replacement: u, upsert: true } });
+      }
+      // em lotes de 500 (limite saudável do bulkWrite)
+      for (let i = 0; i < ops.length; i += 500) {
+        await User.bulkWrite(ops.slice(i, i + 500), { ordered: false }).catch((e) => console.warn('[import users bulk]', e.message?.slice(0, 80)));
+      }
+    } else {
+      // sem overwrite: só os que AINDA NÃO existem (por username ou número)
+      const nums = limpos.map((u) => u.whatsappNumber).filter(Boolean);
+      const existentes = new Set([
+        ...(await User.find({ username: { $in: limpos.map((u) => u.username) } }).select('username').lean()).map((x) => x.username),
+        ...(await User.find({ whatsappNumber: { $in: nums } }).select('whatsappNumber').lean()).map((x) => x.whatsappNumber),
+      ]);
+      const novos = limpos.filter((u) => !existentes.has(u.username) && !existentes.has(u.whatsappNumber));
+      for (let i = 0; i < novos.length; i += 500) {
+        await User.insertMany(novos.slice(i, i + 500), { ordered: false }).catch((e) => console.warn('[import users insert]', e.message?.slice(0, 80)));
+      }
+    }
+    return { importados: limpos.length, ownersSkipped: skippedOwners };
+  }
+
+  // ── v12.6: IMPORT SÓ DE USUÁRIOS (o botão dedicado do backup) ──
+  router.post('/backup/import-users', requireApiOwner, upload.single('file'), async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ error: 'Arquivo obrigatório' });
+      const data = JSON.parse(req.file.buffer.toString('utf-8'));
+      const overwrite = req.body.overwrite === 'true' || req.body.overwrite === 'on';
+      const r = await _importarUsuarios(data.users, overwrite);
+      if (!r) return res.json({ ok: true, imported: 0, detail: { users: 0 }, aviso: 'O JSON não tem usuários.' });
+      res.json({ ok: true, imported: r.importados, detail: { users: r.importados, ownersSkipped: r.ownersSkipped } });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+  });
+
+  // ── v12.6: STATS pro painel de backup mostrar o que há no banco ──
+  router.get('/backup/stats', requireApiOwner, async (req, res) => {
+    try {
+      const [users, premium, commands, media, settings, schedules] = await Promise.all([
+        User.countDocuments({}).catch(() => 0),
+        User.countDocuments({ $or: [{ role: 'premium' }, { role: 'owner' }] }).catch(() => 0),
+        Command.countDocuments({}).catch(() => 0),
+        Media.countDocuments({}).catch(() => 0),
+        BotConfig.countDocuments({}).catch(() => 0),
+        Schedule.countDocuments({}).catch(() => 0),
+      ]);
+      res.json({ ok: true, users, premium, commands, media, settings, schedules });
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
 

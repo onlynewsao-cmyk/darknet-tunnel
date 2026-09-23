@@ -307,7 +307,30 @@ async function remover(slotN) {
 }
 
 // ── vigia em fundo: «fazer o contacto» para manter vivas ───
+// v12.6: se o bot principal estiver CAÍDO (disconnected/restricted)
+// há mais de 10 min, tenta a rotação SOZINHO — a slot guardada viva
+// assume e o evento 'promover' reinicia o socket principal.
+let _botCaidoDesde = null;
+async function _vigiarBotCaido() {
+  try {
+    const { getBot } = require('./whatsapp');
+    const st = typeof getBot === 'function' ? getBot()?.getStatus?.() : null;
+    if (st && (st.status === 'disconnected' || st.status === 'restricted')) {
+      if (!_botCaidoDesde) _botCaidoDesde = Date.now();
+      if (Date.now() - _botCaidoDesde > 10 * 60 * 1000) {
+        _botCaidoDesde = Date.now();          // não martelar a cada ronda
+        const r = await tentarFailover();
+        if (r?.ok) console.log(`[Sessões] AUTO-FAILOVER: bot caído >10min → slot ${r.promovida} (${r.numero || '?'}) assumiu.`);
+        else console.log('[Sessões] Bot caído >10min, mas nenhuma slot guardada está viva.');
+      }
+    } else {
+      _botCaidoDesde = null;
+    }
+  } catch {}
+}
+
 async function _ronda() {
+  _vigiarBotCaido().catch(() => {});
   for (let n = 2; n <= SLOTS; n++) {
     const d = await _slotDoc(n).catch(() => null);
     if (!d || d.estado !== 'guardada') continue;

@@ -11,7 +11,11 @@
 
     <div class="alert alert-info">
       <span>🛡️</span>
-      <span><strong>Failover automático:</strong> se o slot 1 for banido, expirar (logout) ou ficar restrito (403), a primeira slot guardada que responder assume de imediato — sem QR, sem pausa. O <em>conectar bot</em> de sempre continua igual, aqui ao lado.</span>
+      <span><strong>Failover automático (v12.6):</strong> a troca de slot acontece SOZINHA quando —
+      ① slot 1 banida/expirada (logout), ② conta restrita (403),
+      ③ <strong>5 reconexões seguidas falhadas</strong>, ou ④ bot caído há mais de 10 min (vigia).
+      A primeira slot guardada que responder assume de imediato — sem QR, sem tocar no painel.
+      Esta página actualiza-se sozinha a cada 15s.</span>
     </div>
 
     <div class="card">
@@ -101,5 +105,42 @@
       : '❌ ' + (r.motivo === 'sem-suplente-viva' ? 'nenhuma slot guardada está viva' : r.motivo);
     if (r.ok) setTimeout(recarregar, 7000);
   }
+
+  // ── v12.6: AUTO-REFRESH — a grelha actualiza-se sozinha a cada 15s ──
+  const BADGE = { ativa: '🟢 ATIVA', guardada: '🟦 GUARDADA', ligacao: '⏳ A LIGAR', morta: '⛔ MORTA (2d retry…)', vazia: '⬜ VAZIA' };
+  const COR = { ativa: '#00ff9d', guardada: '#00f0ff', ligacao: '#ffd166', morta: '#ff4d6d', vazia: '#444' };
+  const fmtData = (iso) => iso ? new Date(iso).toLocaleString('pt-PT') : null;
+
+  function cartaoSlot(s) {
+    const podeRemover = s.slot !== 1 && s.estado !== 'vazia';
+    return '<div class="card" style="border:1px solid ' + (COR[s.estado] || '#444') + '">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center">' +
+        '<h3 style="margin:0">SLOT ' + s.slot + '</h3>' +
+        '<span class="badge">' + (BADGE[s.estado] || s.estado) + '</span>' +
+      '</div>' +
+      '<p style="margin:0.6rem 0 0.2rem"><strong>' + (s.numero || '(sem número)') + '</strong></p>' +
+      '<p class="muted" style="font-size:0.82rem;margin:0">' +
+        (s.ultimaViva ? 'viva ' + fmtData(s.ultimaViva) + '<br>' : '') +
+        (s.ultimaProva ? 'último contacto: ' + fmtData(s.ultimaProva) + '<br>' : '') +
+        (s.motivo ? '⚠️ ' + s.motivo + '<br>' : '') +
+        (s.emRetry ? '🔁 retry termina ' + new Date(s.retryAte).toLocaleDateString('pt-PT') + ' (' + s.tentativas + 'x)' : '') +
+      '</p>' +
+      (podeRemover ? '<div class="button-row" style="margin-top:0.8rem"><button class="btn btn-sm btn-danger" onclick="remover(' + s.slot + ')">🗑️ Remover</button></div>' : '') +
+    '</div>';
+  }
+
+  async function _actualizar() {
+    try {
+      const r = await fetch('/dashboard/sessoes/estado.json');
+      const d = await r.json();
+      if (!d.ok) return;
+      const grid = document.getElementById('slotsGrid');
+      if (grid && Array.isArray(d.slots) && d.slots.length) grid.innerHTML = d.slots.map(cartaoSlot).join('');
+      const st = document.querySelector('.card p.muted strong');
+      const botSt = d.bot?.status || '—';
+      if (st && st.textContent !== botSt) { recarregar(); return; } // mudou estado do bot: reload completo
+    } catch {}
+  }
+  setInterval(_actualizar, 15000);
 </script>
 <%- include('../partials/footer') %>

@@ -363,6 +363,7 @@ class WhatsAppBot {
           if (this._qrTimer) { clearTimeout(this._qrTimer); this._qrTimer = null; }
           resetDelay();
           this._conflitos = 0;
+          this._falhasSeguidas = 0;   // v12.6: zera auto-failover
           this.user = this.sock.user;
           this.startedAt = new Date();
           this.qrCode = null; this.pairingCode = null;
@@ -462,8 +463,28 @@ class WhatsAppBot {
             }
           } else {
             this._conflitos = 0;
+            // ── v12.6: AUTO-TROCA DE SLOT ────────────────────────
+            // 5 fechos seguidos sem conseguir abrir NENHUMA vez = a
+            // sessão parece morta (não é só internet). Em vez de
+            // reconectar pra sempre, roda SOZINHO pra próxima slot
+            // guardada que estiver viva — sem QR, sem mexer no painel.
+            this._falhasSeguidas = (this._falhasSeguidas || 0) + 1;
+            if (this._falhasSeguidas >= 5) {
+              try {
+                const rFail = await require('./sessionCenter').falhou(
+                  `${this._falhasSeguidas} reconexões seguidas falharam: ${String(reason).slice(0, 60)}`
+                );
+                if (rFail?.ok && rFail.promovida) {
+                  this._falhasSeguidas = 0;
+                  this.log('success', `🔁 FAILOVER AUTO: ${5}+ tentativas sem ligar → slot ${rFail.promovida} (${rFail.numero || '?'}) assume agora.`);
+                  this.setStatus('connecting', { message: `failover automático → slot ${rFail.promovida}` });
+                  setTimeout(() => { this.starting = false; this.start({ mode: 'qr' }).catch(() => {}); }, 3000);
+                  return;
+                }
+              } catch (eFail) { this.log('warn', 'auto-failover: ' + String(eFail?.message || eFail).slice(0, 60)); }
+            }
             const d = nextDelay();
-            this.log('info', `Reconectando em ${d / 1000}s...`);
+            this.log('info', `Reconectando em ${d / 1000}s... (falhas seguidas: ${this._falhasSeguidas || 0})`);
             this._reconnectTimer = setTimeout(() => {
               this.starting = false;
               this.start({ mode: 'qr' }).catch(() => {});
