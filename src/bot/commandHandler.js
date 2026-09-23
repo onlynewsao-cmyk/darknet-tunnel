@@ -759,12 +759,15 @@ async function _handleInner(sock, msg) {
   // voz neste chat até alguém pedir voz de novo).
   const _perc = (() => { try { return require('../aura/auraPercepcao'); } catch { return null; } })();
   const _auraSuperIntent = (() => { try { return require('../aura/auraSuperIntent'); } catch { 
-    // fallback simple intent detector v12.2
+    // fallback simple intent detector v12.3 — empowerment + pinkchyu + conversa
     return {
       analyzeIntent: (t, ctx) => {
         const lower = String(t||'').toLowerCase();
-        const isPhoto = /\b(foto|selfie|fotinha|manda.*foto|mostra.*foto|foto tua|sua|manda selfie|quero.*foto|fotinha)\b/i.test(lower) && /\b(tua|sua|dela|aura|pinkchyu|vc|voce|tu|minha|manda|mostra|quero)\b/i.test(lower);
-        const isDirect = /\b(aura|pinkchyu|tua|teu|sua|voce|vc|tu|foto.*tua|tua.*foto)\b/i.test(lower) || ctx.isPrivate || ctx.isOwner || ctx.isReplyToAura || ctx.isBotMentioned;
+        const hasPinkchyu = /\bpinkchyu\b/i.test(lower);
+        const hasFotoWord = /\b(foto|selfie|fotinha|imagem)\b/i.test(lower);
+        const hasFotoContext = /\b(tua|sua|dela|aura|pinkchyu|vc|voce|tu|minha|manda|mostra|quero|foto|selfie)\b/i.test(lower);
+        const isPhoto = hasPinkchyu || (hasFotoWord && hasFotoContext);
+        const isDirect = hasPinkchyu || /\b(aura|pinkchyu|tua|teu|sua|voce|vc|tu|foto.*tua|tua.*foto)\b/i.test(lower) || ctx.isPrivate || ctx.isOwner || ctx.isReplyToAura || ctx.isBotMentioned;
         const typeMatch = lower.match(/\b(cosplay|goth|fofa|cute|linda|stream|live)\b/);
         let pType = 'selfie';
         if (typeMatch) {
@@ -774,14 +777,30 @@ async function _handleInner(sock, msg) {
           else if (/cute|fofa|linda/.test(m)) pType = 'cute';
           else if (/stream|live/.test(m)) pType = 'stream';
         }
+        // v12.3: ver conversa / mensagens antigas
+        const isConversa = /\b(ver|mostra|mostrar|puxa|recupera|ve)\b.{0,16}\b(conversa|chat|historico|mensagens)\b|\b(o que|oq)\b.{0,12}\b(conversei|conversamos)\b|\b(mensagens?\s+antigas?)\b/i.test(lower);
+        let intent = 'GENERAL_CHAT';
+        let conf = 30;
+        let summary = 'chat';
+        if (isPhoto) {
+          intent = 'PHOTO_REQUEST';
+          conf = hasPinkchyu ? 95 : (isDirect ? 85 : 60);
+          summary = `photo request ${pType} ${hasPinkchyu ? 'pinkchyu empowerment' : ''}`;
+        } else if (isConversa) {
+          intent = 'VER_CONVERSA';
+          conf = isDirect ? 90 : 70;
+          summary = 'ver conversa historico real';
+        }
         return {
-          intent: isPhoto ? 'PHOTO_REQUEST' : 'GENERAL_CHAT',
-          intentConfidence: isPhoto ? (isDirect ? 85 : 60) : 30,
+          intent,
+          intentConfidence: conf,
           isDirectToAura: isDirect,
-          directScore: isDirect ? (isPhoto ? 90 : 60) : 10,
+          directScore: isDirect ? (isPhoto || isConversa ? 90 : 60) : 10,
           isConversationBetweenOthers: !isDirect && ctx.isGroup,
-          summary: isPhoto ? `photo request ${pType}` : 'chat',
+          summary,
           type: pType,
+          hasPinkchyu,
+          isConversa,
         };
       }
     };

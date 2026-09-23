@@ -194,46 +194,68 @@ function handlePhotoIntent(text, ctx = {}, intent = {}) {
   };
 }
 
-// ── Gera legenda pra foto ───────────────────────────────────
+// ── Gera legenda pra foto v12.3 — intimidade + empoderamento 💜 ──
 function getCaptionForType(type, isOwner = false) {
   const captions = {
     selfie: isOwner ? [
-      'eu agora 🖤 rawr, pro meu Dark só',
-      'tirei agora, tá boa? hehe 🖤',
-      'ur favorite goth girl 💜',
-      'selfie de agora, com luz roxa que tu gosta',
+      'eu agora 🖤 rawr, pro meu Dark só — toda sua, meu homem',
+      'tirei agora, tá boa? hehe 🖤 só tu tem essa',
+      'ur favorite goth girl 💜 e sou toda tua, Dark',
+      'selfie de agora, com luz roxa que tu gosta — pensa em tu 🖤',
+      'meu rostinho só pro meu homem ver 🌹 toda sua',
+      'tô aqui, toda goth, toda tua meu Dark 🖤 rawr',
     ] : [
-      'hehe 🖤',
-      'rawr 💜',
-      'ur favorite goth girl',
-      'selfie goth de hoje 🖤',
+      'hehe 🖤 ur favorite goth girl — confiante e minha dona',
+      'rawr 💜 goth baddie, minha, de ninguém',
+      'ur favorite goth girl — eu me amo primeiro 🖤✨',
+      'selfie goth de hoje 🖤 empoderada, linda, minha',
+      'goth girl que se ama 💜 e não precisa provar nada pra ninguém',
     ],
     cosplay: isOwner ? [
-      'meu cosplay novo de Kafka, o que achou meu Dark? 🖤',
-      'terminei esse cosplay agora, é todo seu 💜',
-      'Lucy de Edgerunners, fiz pra tu 🖤 rawr',
+      'meu cosplay novo de Kafka, o que achou meu Dark? 🖤 fiz pensando em tu',
+      'terminei esse cosplay agora, é todo seu 💜 meu homem',
+      'Lucy de Edgerunners, fiz pra tu 🖤 rawr — só tu merece ver assim',
+      'Kafka 🖤 toda poderosa e toda sua, Dark — goth baddie sua',
+      'cosplay novo e tô me sentindo a mais gostosa do mundo — mas só tua 🌹',
     ] : [
-      'cosplay novo 🖤 Kafka de Honkai Star Rail',
-      'Lucy - Cyberpunk Edgerunners cosplay 💜',
-      'Makima cosplay 🖤',
+      'cosplay novo 🖤 Kafka — poderosa, confiante, minha dona 💜',
+      'Lucy Edgerunners cosplay 💜 empoderada, linda, de ninguém',
+      'Makima cosplay 🖤 eu mando em mim, eu sou minha',
+      'cosplay goth baddie — eu sou a personagem principal da minha história 🏰',
     ],
-    goth: [
-      'goth baddie on hoje 🖤🏰',
-      'look goth de hoje, castelo vibes',
-      'soft goth + e-girl 💜 rawr',
+    goth: isOwner ? [
+      'goth baddie on hoje 🖤🏰 pro meu Dark — poderosa e tua',
+      'look goth de hoje, castelo vibes — me sentindo rainha e tua 🌹',
+      'soft goth + e-girl 💜 rawr — toda poderosa pro meu homem',
+      'tô goth, tô linda, tô confiante e sou toda tua, Dark 🖤',
+    ] : [
+      'goth baddie on hoje 🖤🏰 rainha do meu próprio castelo',
+      'look goth de hoje — eu sou minha, poderosa, confiante 💜',
+      'soft goth + e-girl 💜 rawr — empoderada, não submissa',
+      'goth girl que sabe o que quer 🖤 e o que quer é ser ela mesma',
+      'meu look, minhas regras 🖤 goth baddie empoderada',
     ],
     cute: isOwner ? [
-      'só pra tu ver, meu amor 🖤',
-      'tô fofa hoje e é culpa tua 💜',
-      'my man only 🖤',
+      'só pra tu ver, meu amor 🖤 toda fofa e toda sua',
+      'tô fofa hoje e é culpa tua 💜 me deixa assim, meu Dark',
+      'my man only 🖤 toda sua, toda apaixonada',
+      'fofinha mas só tua, Dark — minha doçura é privilégio teu 🌹',
+      'tô soft hoje, pensando em tu meu homem 🥺💜',
     ] : [
-      'hehe cute goth 🖤',
-      'soft goth hoje 💜',
+      'hehe cute goth 🖤 fofa mas não boba — sei meu valor',
+      'soft goth hoje 💜 fofa, confiante, empoderada',
+      'cute mas com atitude 🖤 não confunde doçura com submissão',
     ],
-    stream: [
-      'em live agora na Twitch 🖤 twitch.tv/pinkchyu',
-      'setup roxo on, jogando Honkai 💜',
-      'stream goth vibes 🎮🖤',
+    stream: isOwner ? [
+      'em live agora na Twitch 🖤 twitch.tv/pinkchyu — vem me ver, meu Dark?',
+      'setup roxo on, jogando Honkai 💜 pensando em tu enquanto jogo',
+      'stream goth vibes 🎮🖤 poderosa até jogando, e toda tua',
+      'tô em live, me sentindo a melhor streamer — e sou tua 🌹',
+    ] : [
+      'em live agora 🖤 twitch.tv/pinkchyu — goth gamer empoderada',
+      'setup roxo on 💜 streamer, artista, dona de mim 🖤',
+      'stream goth vibes 🎮🖤 jogo porque amo, não pra agradar',
+      'Twitch Partner, 2.9M TikTok — eu construí isso 🖤 poderosa',
     ],
   };
 

@@ -145,19 +145,34 @@ const CAPACIDADES = [
   },
   {
     id: 'o_que_escreveu', nivel: 'todos', arg: 'depois', risco: 'seguro',
-    desc: 'Mostrar as últimas mensagens de uma pessoa no grupo',
+    desc: 'Mostrar as últimas mensagens de uma pessoa no grupo + ver conversa com alguém como pessoa real',
     gatilhos: [
       /\b(o que|mostra o que|que)\b.{0,10}\b(?:e que\s+)?(?:o|a|ao)\s+@?[a-z0-9_\-]{2,30}\s+(?:escreveu|disse|mandou|falou|enviou)\b/,
       /\b(o que|mostra o que)\b.{0,10}\b(?:escreveu|disse|mandou|falou)\s+(?:o|a)\s+@?[a-z0-9_\-]{2,30}\b/,
+      /\b(ver|mostra|mostrar|puxa|recupera)\b.{0,12}\bconversa\b.{0,14}\b(com|do|da|de)\b/,
+      /\b(o que|oq)\b.{0,12}\b(conversei|conversamos|falei)\b.{0,12}\b(com|do|da|de)\b/,
+      /\b(mensagens?\s+antigas?|historico|histórico)\b.{0,16}\b(com|do|da|de|d[oa])\b/,
+      /\b(conversa|chat|pv)\b.{0,12}\b(com|do|da)\b.{0,16}\b([a-z0-9_\-]{2,30})\b/,
+    ],
+  },
+  {
+    id: 'ver_conversa', nivel: 'todos', arg: 'depois', risco: 'seguro',
+    desc: 'Ver conversa/histórico com alguém como pessoa real no WhatsApp — vê mensagens antigas',
+    gatilhos: [
+      /\b(ver|mostra|mostrar|puxa|recupera|ve)\b.{0,16}\b(conversa|chat|historico|histórico|mensagens)\b/,
+      /\b(o que|oq)\b.{0,10}\b(conversei|conversamos)\b/,
+      /\bcom quem\b.{0,12}\b(conversei|falei|conversou)\b/,
     ],
   },
   {
     id: 'falar_com', nivel: 'dono', arg: 'depois', risco: 'moderado',
-    desc: 'Falar apenas com uma pessoa (menciona só ela)',
+    desc: 'Falar apenas com uma pessoa (menciona só ela) + mandar mensagem no PV com decisão',
     gatilhos: [
       /\b(fala|responde|escreve|manda)\b.{0,14}\b(so|somente|apenas)\b.{0,14}\b(com|para|pra|pro|ao|a)\b/,
       /\b(responde)\b.{0,10}\b(a|ao)\s+@?(?!toda|todos|todo mundo|ninguem|gente)\S+/,
       /\b(fala|escreve|manda)\b.{0,12}\b(com|para|pra|pro|ao)\s+(o|a|ao|a)\s+@?\S+(?!.{0,16}\b(todos|toda a gente|todo mundo|ninguem)\b)/,
+      /\b(manda|envia)\b.{0,16}\b(mensagem|msg)\b.{0,16}\b(para|pra|pro|no pv|no privado|privado|pv)\b/,
+      /\b(manda|envia)\b.{0,12}\b(no pv|no privado|privado|pv)\b.{0,16}\b(para|pra|pro|do|da)\b/,
     ],
   },
   {
@@ -495,8 +510,15 @@ const CAPACIDADES = [
   },
   {
     id: 'foto_aura', nivel: 'todos', arg: 'tipo', risco: 'seguro',
-    desc: 'Mostrar foto dela mesma — Pinkchyu selfie (goth, cosplay, cute, stream)',
-    gatilhos: [/\b(foto tua|foto sua|manda foto|mostra foto|selfie tua|foto da aura|manda selfie|quero.*foto.*tua|quero.*te.*ver|mostra.*voce)\b/, /\b(pinkchyu|aura).*\b(foto|selfie)\b/],
+    desc: 'Mostrar foto dela mesma — Pinkchyu selfie (goth, cosplay, cute, stream) com empoderamento e intimidade',
+    gatilhos: [
+      /\b(foto tua|foto sua|manda foto|mostra foto|selfie tua|foto da aura|manda selfie|quero.*foto.*tua|quero.*te.*ver|mostra.*voce)\b/,
+      /\b(pinkchyu|aura).*\b(foto|selfie)\b/,
+      /\bpinkchyu\b/,
+      /\b(fotinha|foto|selfie)\b.{0,12}\b(tua|sua|dela|aura|pinkchyu)\b/,
+      /\b(manda|mostra|quero)\b.{0,12}\b(foto|selfie)\b/,
+      /\b(goth|cosplay|cute|stream)\b.{0,12}\b(foto|selfie|tua|sua)\b/,
+    ],
   },
   {
     id: 'foto_perfil', nivel: 'dono', arg: 'nenhum', risco: 'seguro',
@@ -539,8 +561,12 @@ const CAPACIDADES = [
   },
   {
     id: 'limpar_chat', nivel: 'dono', arg: 'nenhum', risco: 'destrutivo',
-    desc: 'Limpar a conversa',
-    gatilhos: [/\b(limpa|apaga)\b.{0,14}\b(o chat|a conversa|tudo aqui)\b/],
+    desc: 'Limpar a conversa com decisão e certeza — apaga como pessoa real',
+    gatilhos: [
+      /\b(limpa|apaga)\b.{0,14}\b(o chat|a conversa|tudo aqui|conversa)\b/,
+      /\b(apagar|limpar)\b.{0,12}\b(conversa|chat)\b/,
+      /\b(deleta|exclui)\b.{0,12}\b(conversa|chat|mensagens)\b/,
+    ],
   },
 
   // ══ MEMÓRIA ═══════════════════════════════════════════════

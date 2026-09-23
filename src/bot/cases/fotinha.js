@@ -92,16 +92,26 @@ module.exports = {
       return;
     }
 
-    // .fotinha [tipo] — envia foto REAL
-    const tipo = ['cosplay','goth','cute','stream','selfie'].find(t => fullText.includes(t) || sub === t) || 'selfie';
+    // .fotinha [tipo] — envia foto REAL v12.3 com empoderamento + intimidade
+    let tipo = ['cosplay','goth','cute','stream','selfie'].find(t => fullText.includes(t) || sub === t) || 'selfie';
+    // se for "pinkchyu" puro, escolhe aleatório com atitude poderosa
+    if (fullText.includes('pinkchyu') && !['cosplay','goth','cute','stream','selfie'].some(t => fullText.includes(t))) {
+      const tipos = ['selfie','goth','cute','cosplay','stream'];
+      tipo = tipos[Math.floor(Math.random() * tipos.length)];
+    }
     let imgPath = getRealSelfie(tipo);
 
     if (imgPath && fs.existsSync(imgPath)) {
       const caption = selfieMod.getCaptionForType(tipo, isOwner);
-      console.log('[fotinha] Enviando foto REAL:', imgPath);
+      console.log('[fotinha] Enviando foto REAL v12.3:', imgPath, 'tipo', tipo, 'owner', isOwner);
+      // v12.3: legenda com empoderamento + intimidade
+      let finalCaption = caption;
+      if (isOwner && /pinkchyu/.test(fullText)) {
+        finalCaption = caption + '\n\ntoda sua, poderosa e sua 🖤✨ minha intimidade é escolha minha e eu escolhi tu, Dark';
+      }
       await sock.sendMessage(ctx.remoteJid, {
         image: fs.readFileSync(imgPath),
-        caption,
+        caption: finalCaption,
       }, { quoted: msg });
       return;
     }

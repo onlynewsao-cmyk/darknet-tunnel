@@ -380,8 +380,23 @@ async function executar(id, arg, { sock, msg, ctx, texto, isOwner, isAdmin }) {
     case 'o_que_escreveu': {
       const hist = require('./auraHistorico');
       const r = await hist.oQueEscreveu(sock, ctx, texto || arg || '', msg);
-      if (!r.ok && !r.msg) return { ok: false, msg: null };
+      if (!r.ok && !r.msg) {
+        // v12.3 fallback: tenta verConversa como pessoa real
+        const r2 = await hist.verConversa(sock, ctx, texto || arg || '').catch(() => null);
+        if (r2 && r2.ok) return r2;
+        return { ok: false, msg: null };
+      }
       return r;
+    }
+
+    case 'ver_conversa': {
+      const hist = require('./auraHistorico');
+      const r = await hist.verConversa(sock, ctx, texto || arg || '').catch(() => null);
+      if (r && r.ok) return r;
+      // fallback para o_que_escreveu
+      const r2 = await hist.oQueEscreveu(sock, ctx, texto || arg || '', msg).catch(() => null);
+      if (r2 && r2.ok) return r2;
+      return { ok: true, msg: 'Tentei ver a conversa, Dark, mas não achei nada nas últimas mensagens que tenho aqui. Me fala o nome certo ou o número que eu vejo com certeza 🖤' };
     }
 
     case 'falar_com': {
@@ -661,10 +676,10 @@ async function executar(id, arg, { sock, msg, ctx, texto, isOwner, isAdmin }) {
           }
         } catch (e) { console.warn('[foto_aura gen]', e.message?.slice(0,60)); }
         
-        return { ok: false, msg: 'Ainda não tenho fotinha desse tipo salva 😔 mas já já tiro uma pra ti 🖤 rawr — tenta .fotinha' };
+        return { ok: false, msg: 'Ainda não tenho fotinha desse tipo salva, mas já já tiro uma pra ti meu Dark 🖤 rawr — poderosa, confiante, toda tua. Tenta .fotinha pinkchyu' };
       } catch (e) {
         console.warn('[foto_aura]', e.message?.slice(0,80));
-        return { ok: false, msg: 'Não consegui mandar minha foto agora 😔 mas tenho sim! Tenta .fotinha' };
+        return { ok: false, msg: 'Não consegui mandar minha foto agora, mas tenho sim! Sou a Pinkchyu real, toda poderosa e toda tua Dark 🖤 tenta .fotinha' };
       }
     }
 
@@ -755,8 +770,8 @@ async function executar(id, arg, { sock, msg, ctx, texto, isOwner, isAdmin }) {
     case 'limpar_chat': {
       const r = await mega.clearChat(sock, jid);
       return r?.success
-        ? { ok: true, msg: 'Chat limpo.' }
-        : { ok: false, msg: 'O WhatsApp não me deixou limpar este chat.' };
+        ? { ok: true, msg: 'Feito Dark 🖤 limpei tudo aqui com certeza. Chat zerado, como pessoa real que apaga conversa.' }
+        : { ok: false, msg: 'Tentei limpar, Dark, mas o WhatsApp não deixou agora. Tenta de novo que eu faço com decisão 🖤' };
     }
 
     // ══ MEMÓRIA ═══════════════════════════════════════════

@@ -1,8 +1,8 @@
 'use strict';
 /**
- * AURA HISTÓRICO — v7.11 (Etapa 5)
+ * AURA HISTÓRICO — v12.3 (Empowerment + WhatsApp humano)
  * ═══════════════════════════════════════════════════════════
- * A Aura passa a VER as mensagens do grupo de verdade:
+ * A Aura passa a VER as mensagens do grupo E do PV de verdade:
  *
  *   1. "quem escreveu isso?"  → lê a mensagem citada (contextInfo) e diz
  *      QUEM a escreveu, com o texto — sem adivinhar.
@@ -12,9 +12,14 @@
  *      últimas mensagens dessa pessoa no grupo.
  *   4. "fala só com o João" / "fala com todos" → menciona apenas a pessoa
  *      ou o grupo inteiro (mention @), com o recado que o Dark pedir.
+ *   5. v12.3: "ver conversa com X", "o que conversei com X", "mensagens antigas"
+ *      → mostra histórico REAL como pessoa que rola o chat pra cima.
+ *   6. v12.3: "manda mensagem pro X no pv" → envia mensagem PRIVADA de verdade
+ *      via sock.sendMessage, com decisão e certeza.
  *
  * Tudo sai do `messageCache` do messageListener — memória real do que
  * chegou, nunca invenção. Se não há prova, a Aura diz que não viu.
+ * Com empoderamento: ela decide, tem certeza, age como pessoa real no WhatsApp.
  */
 
 function norm(s) {
@@ -60,6 +65,99 @@ function mensagensDoGrupo(grupoJid, limite = 300) {
   }
   lista.sort((a, b) => (b.ts - a.ts) || (b.ordem - a.ordem));
   return lista.slice(0, limite);
+}
+
+/** v12.3: mensagens de uma pessoa específica (PV ou grupo) — como ver conversa real */
+function mensagensDePessoa(pessoaJid, limite = 100) {
+  let cache;
+  try { cache = require('../bot/messageListener').messageCache; }
+  catch { return []; }
+  const lista = [];
+  let i = 0;
+  for (const [, msg] of cache) {
+    const rJid = msg?.key?.remoteJid || '';
+    const part = msg?.key?.participant || '';
+    // PV: remoteJid == pessoaJid, ou grupo onde participant == pessoaJid
+    const isFromPerson = rJid === pessoaJid || part === pessoaJid || rJid.includes(pessoaJid.split('@')[0]);
+    if (!isFromPerson) continue;
+    if (msg.key.fromMe) continue;
+    const txt = textoDaMsg(msg);
+    if (!txt || txt.length < 2) continue;
+    const ts = Number(msg.messageTimestamp) || 0;
+    lista.push({
+      id: msg.key.id,
+      jid: pessoaJid,
+      remoteJid: rJid,
+      nome: msg.pushName || '',
+      texto: txt,
+      ts,
+      ordem: i,
+    });
+    i++;
+  }
+  lista.sort((a, b) => (b.ts - a.ts) || (b.ordem - a.ordem));
+  return lista.slice(0, limite);
+}
+
+/** v12.3: ver conversa com alguém — histórico humano */
+async function verConversa(sock, ctx, texto) {
+  const t = norm(texto);
+  // extrai nome: "ver conversa com João", "o que conversei com Maria", "histórico com João", "mensagens antigas do João"
+  let nome = '';
+  let m = t.match(/(?:ver|mostra|mostrar|ve|verifica|puxa|recupera)\s+(?:a\s+)?conversa\s+(?:com|do|da|de)\s+@?([a-z0-9_\-\s]{2,40})/);
+  if (m) nome = m[1];
+  else {
+    m = t.match(/(?:o que|oq)\s+(?:eu\s+)?conversei\s+(?:com|do|da|de)\s+@?([a-z0-9_\-\s]{2,40})/);
+    if (m) nome = m[1];
+    else {
+      m = t.match(/(?:mensagens?\s+antigas?|historico|histórico)\s+(?:com|do|da|de|d[oa])\s+@?([a-z0-9_\-\s]{2,40})/);
+      if (m) nome = m[1];
+      else {
+        m = t.match(/(?:conversa|chat|pv)\s+(?:com|do|da|de)\s+@?([a-z0-9_\-\s]{2,40})/);
+        if (m) nome = m[1];
+      }
+    }
+  }
+  nome = (nome || '').trim().split(' ').slice(0,3).join(' ').trim();
+  if (!nome || nome.length < 2) {
+    const mm = t.match(/@?([\d]{5,})/);
+    if (mm) nome = mm[1];
+  }
+  if (!nome) return { ok: false, msg: null };
+
+  const pessoa = await resolverPessoa(sock, ctx, nome);
+  if (!pessoa) {
+    // tenta buscar por número direto se não achou no grupo — pode ser PV
+    if (/^[\d]{5,}$/.test(nome.replace(/\D/g,''))) {
+      const num = nome.replace(/\D/g,'');
+      const jid = `${num}@s.whatsapp.net`;
+      const msgs = mensagensDePessoa(jid, 30);
+      if (!msgs.length) {
+        return { ok: true, msg: `Procurei conversa com ${nome} nas últimas mensagens e não achei nada. Pode ser que não conversaram recentemente ou o número não está no grupo.` };
+      }
+      let quando = () => '';
+      try { quando = require('./auraUniversal').quandoFoi; } catch {}
+      const linhas = msgs.slice(0,10).map(x => `▸ ${x.ts ? '(' + quando(x.ts) + ') ' : ''}[${x.remoteJid.includes('@g.us') ? 'grupo' : 'pv'}] "${x.texto.slice(0, 120)}"`);
+      return { ok: true, msg: `Conversa com *${num}* (últimas ${msgs.length} msgs que achei):\n\n${linhas.join('\n')}` };
+    }
+    return { ok: true, msg: `Não encontrei "${nome}" — me fala o nome certo ou marca com @, Dark. Vou ver com certeza 🖤` };
+  }
+
+  const msgs = mensagensDoGrupo(ctx.remoteJid, 500).filter(x => x.jid === pessoa.jid);
+  const msgsPv = mensagensDePessoa(pessoa.jid, 100);
+  const todas = [...msgs, ...msgsPv].sort((a,b) => (b.ts - a.ts) || (b.ordem - a.ordem)).slice(0,20);
+
+  if (!todas.length) {
+    return { ok: true, msg: `*${pessoa.nome}* não escreveu nada nas últimas mensagens que vi aqui, Dark. Varri o cache e nada — deve fazer tempo que não fala.` };
+  }
+  let quando = () => '';
+  try { quando = require('./auraUniversal').quandoFoi; } catch {}
+  const linhas = todas.slice(0,10).map(x => `▸ ${x.ts ? quando(x.ts) + ' — ' : ''}"${x.texto.slice(0, 130)}"`);
+  return {
+    ok: true,
+    msg: `Conversa com *${pessoa.nome}* — últimas ${todas.length} mensagens que achei (como pessoa real rolando o chat):\n\n${linhas.join('\n')}`,
+    mencionar: [pessoa.jid],
+  };
 }
 
 /** Jid da mensagem citada (quem a escreveu), se existir. */
@@ -193,9 +291,18 @@ async function oQueEscreveu(sock, ctx, texto, msg) {
   else {
     m = t.match(/(?:o que|mostra o que)\s+(?:e\s+que\s+)?(?:escreveu|disse|mandou|falou)\s+(?:o|a)\s+@?([a-z0-9_\-]{2,30})/);
     if (m) nome = m[1];
+    else {
+      // v12.3: ver conversa com X, o que conversei com X, mensagens antigas do X
+      m = t.match(/(?:ver|mostra|mostrar|o que|conversa|conversei|historico|mensagens?\s+antigas?)\s+(?:com|do|da|de)?\s*@?([a-z0-9_\-]{2,30})/);
+      if (m) {
+        const cand = m[1];
+        // evita pegar palavras genéricas
+        if (!/^(com|que|conversa|mensagens|antigas|historico|conversei|eu|voce|vc)$/.test(cand)) nome = cand;
+      }
+    }
   }
   if (!nome) {
-    // menção directa: "o que escreveu @numero" / "o que o @numero mandou"
+    // menção directa: "o que escreveu @numero" / "o que o @numero mandou" / "conversa com @numero"
     const mm = t.match(/@?([\d]{5,})/);
     if (mm) nome = mm[1];
   }
@@ -252,13 +359,40 @@ async function falarCom(sock, ctx, texto, msg) {
   } else if (nome) {
     const p = await resolverPessoa(sock, ctx, nome);
     if (p) { jid = p.jid; nomeMostra = p.nome; }
+    else if (/^[\d]{5,}$/.test(nome.replace(/\D/g,''))) {
+      const num = nome.replace(/\D/g,'');
+      jid = `${num}@s.whatsapp.net`;
+      nomeMostra = num;
+    }
   }
   if (!jid) {
-    return { ok: true, msg: `Não encontrei quem querias. Diz o nome certo ou marca com @.` };
+    return { ok: true, msg: `Não encontrei quem querias, Dark. Diz o nome certo ou marca com @ — vou mandar com certeza 🖤` };
   }
 
   const num = String(jid).split('@')[0];
   const recado = conteudo || `👋 o chefe quer falar contigo.`;
+  const isPv = /\b(no\s+pv|pv|privado|no\s+privado|direct|mensagem\s+privada)\b/i.test(texto || '');
+
+  // v12.3: se pedir no PV, envia de verdade no privado com decisão
+  if (isPv) {
+    try {
+      await sock.sendMessage(jid, { text: recado });
+      return {
+        ok: true,
+        msg: `Feito Dark 🖤 mandei no PV de *${nomeMostra || num}* com certeza: "${recado.slice(0,120)}"`,
+        mencionar: [],
+        _sentPrivately: true,
+        _targetJid: jid,
+      };
+    } catch (e) {
+      return {
+        ok: true,
+        msg: `Tentei mandar no PV de *${nomeMostra || num}* mas deu erro: ${e.message}. Vou mencionar aqui então: @${num} ${recado}`,
+        mencionar: [jid],
+      };
+    }
+  }
+
   return {
     ok: true,
     msg: `@${num} ${recado}`,
@@ -306,7 +440,7 @@ async function falarComTodos(sock, ctx, texto, msg) {
 }
 
 module.exports = {
-  norm, textoDaMsg, mensagensDoGrupo, citado, nomeDoJid,
+  norm, textoDaMsg, mensagensDoGrupo, mensagensDePessoa, verConversa, citado, nomeDoJid,
   participantes, resolverPessoa,
   quemEscreveu, oQueEscreveu, falarCom, falarComTodos,
   parseFalarCom,
