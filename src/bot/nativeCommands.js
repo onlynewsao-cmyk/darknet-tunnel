@@ -434,13 +434,23 @@ async function botIsAdmin(sock, ctx) {
 async function isAdmin(sock, ctx) {
   if (!ctx.isGroup) return false;
   try {
-    if (ctx.isOwner) {
-      const god = await BotConfig.get('godmode_admin_enabled', false).catch(() => false);
-      if (god === true || god === 'true' || god === 'on' || god === 1 || god === '1') return true;
-    }
+    // v12.4 FIX: o DONO sempre passa. Antes só passava se godmode_admin_enabled
+    // estivesse ligado no banco — como não estava, o .clean dizia "Só admins"
+    // para o próprio dono. Dono é dono: tem poder de ADM em qualquer grupo.
+    if (ctx.isOwner) return true;
+    // v12.4: mods do bot também passam (configurados com !addmod)
+    try {
+      const gs = await GroupSettings.findOne({ groupJid: ctx.remoteJid }).select('mods').lean();
+      if (gs?.mods?.length && ctx.senderNumber && gs.mods.includes(String(ctx.senderNumber))) return true;
+    } catch {}
     const meta = ctx.groupMeta || (await sock.groupMetadata(ctx.remoteJid));
     const senderBase = jidBase(ctx.senderJid);
-    return meta.participants?.some(p => jidBase(p.id) === senderBase && isParticipantAdmin(p));
+    const senderAltBase = jidBase(ctx.senderLid || ctx.senderJidAlt || '');
+    return meta.participants?.some(p => {
+      const pBase = jidBase(p.id);
+      const match = pBase === senderBase || (senderAltBase && pBase === senderAltBase);
+      return match && isParticipantAdmin(p);
+    });
   } catch (e) { return false; }
 }
 function getMentions(msg) {

@@ -727,6 +727,7 @@ module.exports = function (io) {
       const data = JSON.parse(req.file.buffer.toString('utf-8'));
       const overwrite = req.body.overwrite === 'true' || req.body.overwrite === 'on';
       let count = 0;
+      const detail = {};
       if (data.commands) {
         for (const c of data.commands) {
           const { _id, __v, ...rest } = c;
@@ -734,11 +735,64 @@ module.exports = function (io) {
           else await Command.create(rest).catch(()=>{});
           count++;
         }
+        detail.commands = data.commands.length;
       }
       if (data.settings) {
         for (const s of data.settings) { await BotConfig.set(s.key, s.value); count++; }
+        detail.settings = data.settings.length;
       }
-      res.json({ ok: true, imported: count });
+      // ── v12.4: IMPORT DE USUÁRIOS (faltava! export trazia mas import ignorava) ──
+      if (data.users && Array.isArray(data.users)) {
+        const bcrypt = require('bcryptjs');
+        let importedUsers = 0, skippedOwners = 0;
+        for (const u of data.users) {
+          try {
+            const { _id, __v, ...rest } = u;
+            // Nunca sobrescreve o owner local (o login actual do dono)
+            if (rest.role === 'owner') { skippedOwners++; continue; }
+            // username obrigatório e único — gera a partir do número se faltar
+            rest.username = String(rest.username || '').trim().toLowerCase() ||
+                            'user' + String(rest.whatsappNumber || '').replace(/\D/g, '');
+            if (!rest.username) rest.username = 'user' + Date.now();
+            // password: export vem sem hash — usa hash guardado se for bcrypt válido,
+            // senão password padrão 'dark123' (dono avisa os usuários)
+            if (!rest.password || !/^\$2[aby]\$/.test(rest.password)) {
+              rest.password = bcrypt.hashSync('dark123', 10);
+            }
+            const q = overwrite
+              ? { $or: [{ username: rest.username }, ...(rest.whatsappNumber ? [{ whatsappNumber: rest.whatsappNumber }] : [])] }
+              : { username: rest.username };
+            await User.findOneAndUpdate(q, rest, { upsert: true, setDefaultsOnInsert: true });
+            importedUsers++; count++;
+          } catch (eU) { console.warn('[backup/import user]', eU.message?.slice(0, 80)); }
+        }
+        detail.users = importedUsers;
+        if (skippedOwners) detail.ownersSkipped = skippedOwners;
+      }
+      // ── v12.4: IMPORT DE MÍDIAS E AGENDA (também faltava) ──
+      if (data.media && Array.isArray(data.media)) {
+        for (const md of data.media) {
+          const { _id, __v, ...rest } = md;
+          try {
+            if (overwrite) await Media.replaceOne({ _id }, rest, { upsert: true });
+            else await Media.create(rest).catch(() => {});
+            count++;
+          } catch {}
+        }
+        detail.media = data.media.length;
+      }
+      if (data.schedules && Array.isArray(data.schedules)) {
+        for (const sc of data.schedules) {
+          const { _id, __v, ...rest } = sc;
+          try {
+            if (overwrite) await Schedule.replaceOne({ _id }, rest, { upsert: true });
+            else await Schedule.create(rest).catch(() => {});
+            count++;
+          } catch {}
+        }
+        detail.schedules = data.schedules.length;
+      }
+      res.json({ ok: true, imported: count, detail });
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
 

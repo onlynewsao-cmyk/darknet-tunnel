@@ -252,11 +252,88 @@ module.exports = function registerGroupCases(registerCase) {
   });
 
   // ══════════════════════════════════════════════════════════════════
-  // !silenciar — Liga/desliga modo só admins
+  // !mute — v12.4: MUTE POR USUÁRIO ou grupo inteiro
+  //   .mute @user [10m|2h|1d] [motivo]  → silencia 1 usuário
+  //   .unmute @user                     → tira o mute
+  //   .mute / .mute on|off              → grupo inteiro (só admins)
+  // Como a API do WhatsApp NÃO tem mute individual, o bot APAGA
+  // tudo que o usuário manda (enforcement no messageListener).
   // ══════════════════════════════════════════════════════════════════
-  registerCase(['silenciar', 'mute', 'unmute', 'calar'], async ({ sock, ctx, args, isOwner, reply }) => {
+  registerCase(['silenciar', 'mute', 'unmute', 'calar'], async ({ m, sock, ctx, args, command, isOwner, reply }) => {
     if (!await requireSenderAdmin(sock, ctx, reply)) return;
-    const on = ['on','sim','ligar','ativar','1'].includes((args[0]||'').toLowerCase());
+    const GroupSettings = require('../../database/models/GroupSettings');
+    const mentioned = getMentions(m.msg || {});
+    const sub = (args[0] || '').toLowerCase();
+
+    // ── MUTE POR USUÁRIO ──
+    if (mentioned.length || /^@?\d{6,}/.test(sub)) {
+      let target = mentioned[0];
+      if (!target && /^@?\d{6,}/.test(sub)) {
+        const num = sub.replace(/\D/g, '');
+        target = num + '@s.whatsapp.net';
+      }
+      if (!target) return reply('❌ Marca alguém: `.mute @user 10m motivo`');
+      const isUn = ['unmute', 'desmutar', 'tirarmute'].includes(String(command || '').toLowerCase()) ||
+                   /^\s*(unmute|desmutar|tirarmute)/i.test(args.join(' '));
+
+      const gs = await GroupSettings.findOneAndUpdate(
+        { groupJid: ctx.remoteJid },
+        { $setOnInsert: { groupJid: ctx.remoteJid } },
+        { upsert: true, new: true }
+      );
+      gs.mutedUsers = (gs.mutedUsers || []).filter(mu => mu.jid !== target);
+
+      if (isUn) {
+        await gs.save();
+        try { require('../../bot/messageListener').mutedCacheUpdate(ctx.remoteJid, target, -1); } catch {}
+        await reply(`🔊 ${mentionTag(target)} *pode falar de novo!* Mute removido com decisão ✅`);
+        return;
+      }
+
+      // duração: 10m / 2h / 1d — sem número = permanente
+      let until = null;
+      const durMatch = args.map(a => a.toLowerCase()).find(a => /^\d+(s|m|h|d|min|hora|horas|dia|dias)$/.test(a));
+      if (durMatch) {
+        const n = parseInt(durMatch);
+        const unit = durMatch.replace(/\d+/g, '');
+        const mult = unit === 's' ? 1000
+                   : (unit === 'm' || unit === 'min') ? 60000
+                   : (unit === 'h' || unit === 'hora' || unit === 'horas') ? 3600000
+                   : 86400000;
+        until = new Date(Date.now() + n * mult);
+      }
+      const motivo = args.filter(a => !/^@/.test(a) && !/^\d{6,}/.test(a) && !/^\d+(s|m|h|d|min|hora|horas|dia|dias)$/i.test(a)).join(' ');
+      gs.mutedUsers.push({ jid: target, until, by: String(ctx.senderNumber || ''), motivo, at: new Date() });
+      await gs.save();
+      try { require('../../bot/messageListener').mutedCacheUpdate(ctx.remoteJid, target, until ? until.getTime() : null); } catch {}
+
+      // avisa se o bot não é admin (não vai conseguir apagar)
+      const botAdm = await botIsAdm(sock, ctx);
+      const durTxt = until ? ` até ${until.toLocaleString('pt-BR')}` : ' (permanente)';
+      let txt = `🔇 ${mentionTag(target)} foi *SILENCIADO*${durTxt}\n` +
+        (motivo ? `📋 Motivo: _${motivo}_\n` : '') +
+        `\n🧹 Tudo que ele mandar aqui eu *apago na hora* — mute real, não fake.`;
+      if (!botAdm) txt += `\n\n⚠️ Mas preciso ser *admin* do grupo pra apagar as msgs dele. Me promove!`;
+      await sock.sendMessage(ctx.remoteJid, { text: txt, mentions: [target] }, { quoted: m });
+      return;
+    }
+
+    // ── GRUPO INTEIRO (modo só admins) ──
+    const on = ['on','sim','ligar','ativar','1'].includes(sub);
+    const off = ['off','nao','não','desligar','0'].includes(sub);
+    if (!on && !off) {
+      const gs = await GroupSettings.findOne({ groupJid: ctx.remoteJid }).select('mutedUsers').lean().catch(() => null);
+      const mutados = (gs?.mutedUsers || []).filter(mu => !mu.until || new Date(mu.until) > new Date());
+      const mutadosJids = mutados.map(mu => mu.jid);
+      return sock.sendMessage(ctx.remoteJid, {
+        text: `🔇 *MUTE*\n\n` +
+        `👤 Silenciar usuário: \`.mute @user [10m|2h|1d] [motivo]\`\n` +
+        `🔊 Libertar: \`.unmute @user\`\n` +
+        `📢 Grupo inteiro (só admins): \`.mute on\` / \`.mute off\`\n\n` +
+        `👤 Mutados agora: *${mutados.length}*${mutados.length ? '\n' + mutados.map(mu => '  • @' + String(mu.jid).split('@')[0] + (mu.until ? ` (até ${new Date(mu.until).toLocaleString('pt-BR')})` : ' (permanente)')).join('\n') : ''}`,
+        mentions: mutadosJids,
+      });
+    }
     await tryAdminAction(sock, ctx, async () => {
       await sock.groupSettingUpdate(ctx.remoteJid, on ? 'announcement' : 'not_announcement');
       await reply(on ? '🔇 Grupo *silenciado*! Só admins falam.' : '🔊 Silêncio *removido*! Todos podem falar.');
@@ -310,6 +387,88 @@ module.exports = function registerGroupCases(registerCase) {
       const txt = (args.join(' ') || '📢 Atenção!') + '\n\n' + mentions.map(j => mentionTag(j)).join(' ');
       await sock.sendMessage(ctx.remoteJid, { text: txt, mentions }, { quoted: m });
     } catch (e) { reply('❌ ' + e.message); }
+  });
+
+  // ══════════════════════════════════════════════════════════════════
+  // !addtodos / !addall — v12.4: adiciona TODOS os usuários do banco
+  // neste grupo. Quem o WhatsApp bloquear (privacidade 403) recebe
+  // CONVITE real no PV com o link do !invite.
+  // ══════════════════════════════════════════════════════════════════
+  registerCase(['addtodos', 'addallgp', 'puxartodos'], async ({ m, sock, ctx, isOwner, reply }) => {
+    if (!isOwner) return reply('🚫 Só o *Dono* pode puxar todos.');
+    if (!ctx.isGroup) return reply('👥 Só em grupos.');
+    const User = require('../../database/models/User');
+    const botAdm = await botIsAdm(sock, ctx);
+    if (!botAdm) {
+      await reply('⚠️ Preciso ser *admin* do grupo para adicionar pessoas. Me promove primeiro — depois corre `.addtodos` de novo!');
+    }
+    const status = await reply('⏳ *ADD TODOS* — buscando usuários no banco...');
+    let users = [];
+    try { users = await User.find({ active: { $ne: false }, whatsappNumber: { $ne: '' } }).select('name whatsappNumber').lean(); } catch {}
+    const meta = ctx.groupMeta || await getGroupMeta(sock, ctx);
+    const members = new Set((meta?.participants || []).map(p => String(p.id || '').split('@')[0].split(':')[0].replace(/\D/g, '')));
+    const botNum = String(sock.user?.id || '').split(':')[0].split('@')[0].replace(/\D/g, '');
+    const alvos = users.filter(u => {
+      const n = String(u.whatsappNumber || '').replace(/\D/g, '');
+      return n && n !== botNum && !members.has(n);
+    });
+    if (!alvos.length) {
+      return sock.sendMessage(ctx.remoteJid, { text: '✅ *ADD TODOS* — todos os usuários do banco já estão no grupo (ou nenhum registrado).', edit: status?.key }, { quoted: m });
+    }
+
+    // link de convite (mesmo do !invite) para fallback
+    let inviteLink = '';
+    try { inviteLink = 'https://chat.whatsapp.com/' + await sock.groupInviteCode(ctx.remoteJid); } catch {}
+    const gname = meta?.subject || 'o grupo';
+
+    let added = 0, jaEstavam = 0, convidados = 0, erros = 0;
+    const falhados = [];
+    for (const u of alvos) {
+      const num = String(u.whatsappNumber || '').replace(/\D/g, '');
+      const jid = num + '@s.whatsapp.net';
+      let ok = false, estava = false, inviteCodePessoal = '';
+      try {
+        const r = await sock.groupParticipantsUpdate(ctx.remoteJid, [jid], 'add');
+        const list = Array.isArray(r) ? r : (Array.isArray(r?.value) ? r.value : [{ status: '200' }]);
+        const st = String(list[0]?.status || '');
+        inviteCodePessoal = list[0]?.inviteCode || list[0]?.invite_code || '';
+        if (st === '200') { ok = true; added++; }
+        else if (st === '409') { ok = true; estava = true; jaEstavam++; }
+      } catch { erros++; }
+      if (!ok && !estava) {
+        const nome = u.name || '@' + num;
+        const texto = `👋 *${nome}!* Tu foste convidado para *${gname}*\n\n` +
+          (inviteLink ? `🔗 *ENTRA AQUI:* ${inviteLink}\n\n` : '') +
+          `_(O add direto foi bloqueado pelas tuas definições de privacidade — aceita o convite!)_`;
+        let mandou = false;
+        if (inviteCodePessoal) {
+          try {
+            await sock.sendMessage(jid, {
+              groupInviteMessage: { groupJid: ctx.remoteJid, inviteCode: inviteCodePessoal, inviteExpiration: 0, groupName: gname, caption: texto },
+            });
+            mandou = true;
+          } catch {}
+        }
+        if (!mandou && inviteLink) {
+          try { await sock.sendMessage(jid, { text: texto }); mandou = true; } catch {}
+        }
+        if (mandou) { convidados++; } else { erros++; falhados.push(num); }
+      }
+      await new Promise(r => setTimeout(r, 800)); // anti-rate-limit
+    }
+    const rep = `📤 *ADD TODOS — ${gname}*\n\n` +
+      `👥 Alvos: *${alvos.length}*\n` +
+      `✅ Adicionados: *${added}*\n` +
+      (jaEstavam ? `👍 Já estavam: *${jaEstavam}*\n` : '') +
+      `📩 Convites enviados no PV (link !invite): *${convidados}*\n` +
+      `❌ Erros: *${erros}*` +
+      (falhados.length ? `\n\n⚠️ Sem convite possível: ${falhados.slice(0, 10).map(n => '+' + n).join(', ')}${falhados.length > 10 ? ' …' : ''}` : '') +
+      `\n\n💡 Dica: quem bloqueou add direto tem privacidade rígida — o convite no PV resolve.`;
+    try {
+      await sock.sendMessage(ctx.remoteJid, { text: rep, edit: status?.key }, { quoted: m });
+    } catch {
+      await sock.sendMessage(ctx.remoteJid, { text: rep }, { quoted: m });
+    }
   });
 
   // ══════════════════════════════════════════════════════════════════

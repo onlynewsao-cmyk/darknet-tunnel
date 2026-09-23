@@ -14,6 +14,54 @@ const messageCache = new Map();
 const MAX_CACHE = 2000;
 const antiStatusCache = new Set();
 
+// ── v12.4: CACHE DE MUTADOS POR GRUPO ──────────────────────
+// mutedCache: Map<groupJid, Map<jid, untilMs|null>>
+// Enforcement: tudo que usuário mutado manda é APAGADO (o WhatsApp
+// não tem mute individual na API — apagar é o mute real do bot).
+const mutedCache = new Map();
+
+async function refreshMutedCache() {
+  try {
+    const grupos = await GroupSettings.find({ mutedUsers: { $exists: true, $ne: [] } })
+      .select('groupJid mutedUsers').lean();
+    mutedCache.clear();
+    for (const g of grupos) {
+      const inner = new Map();
+      for (const mu of (g.mutedUsers || [])) {
+        // expirou? ignora
+        if (mu.until && new Date(mu.until).getTime() <= Date.now()) continue;
+        const num = String(mu.jid || '').split('@')[0].split(':')[0].replace(/\D/g, '');
+        if (num) inner.set(num, mu.until ? new Date(mu.until).getTime() : null);
+      }
+      if (inner.size) mutedCache.set(g.groupJid, inner);
+    }
+  } catch (e) {}
+}
+refreshMutedCache();
+setInterval(refreshMutedCache, 60000);
+
+// Atualização instantânea vinda do case .mute (sem esperar o refresh de 60s)
+// untilMs: número = expira em | null = permanente | -1 = remover mute
+function mutedCacheUpdate(groupJid, jid, untilMs) {
+  try {
+    const num = String(jid || '').split('@')[0].split(':')[0].replace(/\D/g, '');
+    if (!num || !groupJid) return;
+    if (untilMs === -1) {
+      if (mutedCache.has(groupJid)) {
+        mutedCache.get(groupJid).delete(num);
+        if (!mutedCache.get(groupJid).size) mutedCache.delete(groupJid);
+      }
+      return;
+    }
+    if (!mutedCache.has(groupJid)) mutedCache.set(groupJid, new Map());
+    mutedCache.get(groupJid).set(num, untilMs);
+  } catch (e) {}
+}
+
+function _numOf(jid) {
+  return String(jid || '').split('@')[0].split(':')[0].replace(/\D/g, '');
+}
+
 async function refreshAntiStatusCache() {
   try {
     const list = await AntiStatus.find({ enabled: true });
@@ -87,6 +135,26 @@ async function onUpsert(sock, m, io) {
     if (msg.key.fromMe) return;
     const fromJid = isGroup ? msg.key.participant : remoteJid;
     const fromNumber = fromJid?.split('@')[0] || '';
+
+    // ── v12.4: MUTE ENFORCEMENT — apaga msg de usuário mutado ──
+    if (isGroup && mutedCache.has(remoteJid)) {
+      try {
+        const inner = mutedCache.get(remoteJid);
+        const candidates = [_numOf(fromJid), _numOf(msg.key.participantAlt || '')].filter(Boolean);
+        const hit = candidates.find(c => inner.has(c));
+        if (hit) {
+          const until = inner.get(hit);
+          if (until === null || until === undefined || until > Date.now()) {
+            await sock.sendMessage(remoteJid, { delete: msg.key }).catch(() => {});
+            console.log('[Mute] Msg apagada de usuário mutado:', hit);
+            return; // não processa nada mais dessa msg
+          } else {
+            // expirou — limpa do cache (o refresh de 60s tira do banco via projeção)
+            inner.delete(hit);
+          }
+        }
+      } catch (e) {}
+    }
 
     // Dark Side Engine: marca atividade real dos membros e do grupo.
     if (isGroup && fromJid) {
@@ -182,4 +250,4 @@ async function onDelete(sock, update, io) {
   }
 }
 
-module.exports = { onUpsert, onDelete, messageCache, refreshAntiStatusCache };
+module.exports = { onUpsert, onDelete, messageCache, refreshAntiStatusCache, refreshMutedCache, mutedCacheUpdate, mutedCache };

@@ -243,7 +243,8 @@ module.exports = function registerRPGCommunity(registerCase) {
       let report = '📤 *ADDGLB — DARK🕸️VILLE*\n\n';
       report += '━━━━━━━━━━━━━━━━━━━━━━━━━━\n';
       report += '✅ Adicionados ao grupo geral: ' + results.added.length + '\n';
-      report += '📩 Convites enviados: ' + results.invited.length + '\n';
+      if (results.jaEstava?.length) report += '👍 Já estavam dentro: ' + results.jaEstava.length + '\n';
+      report += '📩 Convites (link do !invite) enviados: ' + results.invited.length + '\n';
       report += '❌ Erros: ' + results.errors.length + '\n';
       // v6.63: mostra os erros reais em vez de só contar.
       if (results.errors.length) {

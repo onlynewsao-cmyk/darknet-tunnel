@@ -591,7 +591,7 @@ async function createClanGroup(sock, clanName, leaderJid, members = []) {
 async function addAllUsersToMainGroup(sock, ownerJid, mainType) {
   await loadState();
   const User = require('../../database/models/User');
-  const results = { added: [], invited: [], errors: [], group: null };
+  const results = { added: [], invited: [], errors: [], jaEstava: [], group: null };
 
   // ── v6.63: BUG CRÍTICO ────────────────────────────────────
   // Procurava _groupCache.get('aldeia'), mas 'aldeia' NUNCA existiu
@@ -618,6 +618,19 @@ async function addAllUsersToMainGroup(sock, ownerJid, mainType) {
 
   if (!users.length) { results.errors.push('Nenhum usuario na base de dados.'); return results; }
 
+  // ── v12.4: CONVITE REAL para quem o add falhar ──────────
+  // Pega o código do grupo UMA vez (mesmo link do comando !invite/!convite)
+  let inviteLink = '';
+  let groupName = 'DARK VILLE';
+  try {
+    const code = await sock.groupInviteCode(mainJid);
+    if (code) inviteLink = 'https://chat.whatsapp.com/' + code;
+  } catch {}
+  try {
+    const meta = await sock.groupMetadata(mainJid);
+    if (meta?.subject) groupName = meta.subject;
+  } catch {}
+
   for (const user of users) {
     const num = String(user.whatsappNumber || '').replace(/\D/g, '');
     if (!num) continue;
@@ -625,24 +638,62 @@ async function addAllUsersToMainGroup(sock, ownerJid, mainType) {
     if (jid === ownerJid || num === String(ownerJid).split('@')[0]) continue;
 
     let entrou = false;
+    let jaEstava = false;
+    let inviteCodePessoal = '';
     try {
       // O Baileys NÃO atira erro quando o add falha: devolve
       // [{ status: '403'|'409'|'200', jid }]. O catch nunca disparava,
       // por isso ninguém recebia convite e o relatório mentia.
       const r = await sock.groupParticipantsUpdate(mainJid, [jid], 'add');
-      const st = Array.isArray(r) ? String(r[0]?.status || '') : '200';
+      const list = Array.isArray(r) ? r : (Array.isArray(r?.value) ? r.value : [{ status: '200' }]);
+      const st = String(list[0]?.status || '');
+      inviteCodePessoal = list[0]?.inviteCode || list[0]?.invite_code || '';
       if (st === '200') { results.added.push({ user: user.name || num }); entrou = true; }
+      else if (st === '409') { jaEstava = true; entrou = true; } // já é membro
+      else if (st === '403') { /* privacidade — manda convite abaixo */ }
+      else if (st === '408') { results.errors.push((user.name || num) + ': saiurecente (408) — só pode re-add após 24h'); }
+      else if (st && st !== '200') { results.errors.push((user.name || num) + ': status ' + st); }
     } catch (e) {
       results.errors.push((user.name || num) + ': ' + e.message);
     }
 
+    if (jaEstava) results.jaEstava.push({ user: user.name || num });
+
     if (!entrou) {
+      // ── v12.4: CONVITE REAL — groupInviteMessage (botão de aceitar)
+      // com inviteCode pessoal do Baileys, senão link https do !invite ──
+      const nome = user.name || 'Aventureiro';
+      const textoConvite = generateInviteMessage(nome) +
+        (inviteLink ? '\n\n🔗 *ENTRA AQUI:* ' + inviteLink : '') +
+        '\n\n_(O add direto foi bloqueado pelas tuas definições de privacidade — aceita o convite e ficas dentro!)_';
+      let mandou = false;
       try {
-        await sock.sendMessage(jid, { text: generateInviteMessage(user.name || 'Aventureiro') });
-        results.invited.push({ user: user.name || num });
-      } catch (e2) {
-        results.errors.push((user.name || num) + ': ' + e2.message);
+        if (inviteCodePessoal) {
+          await sock.sendMessage(jid, {
+            groupInviteMessage: {
+              groupJid: mainJid,
+              inviteCode: inviteCodePessoal,
+              inviteExpiration: 0,
+              groupName,
+              caption: textoConvite,
+            },
+          });
+          mandou = true;
+        }
+      } catch (eInv) { console.warn('[ADDGLB inviteMsg]', eInv.message?.slice(0, 60)); }
+      if (!mandou && inviteLink) {
+        try {
+          await sock.sendMessage(jid, { text: textoConvite });
+          mandou = true;
+        } catch (e2) {
+          results.errors.push((user.name || num) + ': ' + e2.message);
+        }
       }
+      if (!mandou && !inviteLink) {
+        // nem link conseguiu — avisa o dono no chat
+        results.errors.push(nome + ': não consegui adicionar nem enviar convite');
+      }
+      if (mandou) results.invited.push({ user: nome });
     }
     await new Promise(r => setTimeout(r, 800));
   }

@@ -46,7 +46,16 @@
     const fd = new FormData(e.target);
     const r = await fetch('/api/backup/import', { method:'POST', body: fd });
     const d = await r.json();
-    if (r.ok) toast(`Importado! ${d.imported} itens.`, 'success');
+    if (r.ok) {
+      const det = d.detail || {};
+      const parts = [];
+      if (det.users) parts.push(det.users + ' usuários');
+      if (det.commands) parts.push(det.commands + ' comandos');
+      if (det.settings) parts.push(det.settings + ' configs');
+      if (det.media) parts.push(det.media + ' mídias');
+      if (det.schedules) parts.push(det.schedules + ' agendas');
+      toast(`Importado! ${parts.length ? parts.join(', ') : d.imported + ' itens'}${det.ownersSkipped ? ' (owner local preservado)' : ''}`, 'success');
+    }
     else toast('Erro: '+d.error, 'error');
   };
   async function resetDb() {

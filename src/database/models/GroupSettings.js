@@ -194,6 +194,17 @@ const GroupSettingsSchema = new mongoose.Schema({
   infoperso:      { type: Boolean, default: false },
   fotomenugrupo:  { type: Boolean, default: false },
 
+  // ── v12.4 MUTE POR USUÁRIO ────────────────────────────────
+  // WhatsApp não tem mute individual na API — o bot "silencia"
+  // APAGANDO tudo que o usuário manda (messageListener enforcement).
+  mutedUsers: [{
+    jid:     { type: String, required: true },   // JID normalizado (número@s.whatsapp.net)
+    until:   { type: Date, default: null },      // null = permanente
+    by:      { type: String, default: '' },      // quem muteou
+    motivo:  { type: String, default: '' },
+    at:      { type: Date, default: Date.now },
+  }],
+
   // ── v7.75 Grupos PRO: modo lento (segundos entre msgs por membro; 0 = off)
   slowmode: { type: Number, default: 0 },
 
