@@ -1929,21 +1929,50 @@ module.exports = {
   },
   async membros(a) { return module.exports.participantes(a); },
 
+  // ── v12.7: LIMPAR ANTI-BRANCO ──────────────────────────────
+  // O bug: cada delete deixa um placeholder no WhatsApp ("mensagem
+  // apagada"). 20-50 seguidos = parede branca que trava o scroll.
+  // Fix: menos msgs (10 padrão, máx 30), 350ms entre apagadas e
+  // dica pra recarregar o chat (o branco some ao sair e voltar).
   async limpar({ sock, msg, ctx, args }) {
     if (!ctx.isGroup) return reply(sock, msg, ctx, '👥 Só em grupos.');
     if (!(await isAdmin(sock, ctx))) return reply(sock, msg, ctx, '🚫 Só admins.');
     if (!(await botIsAdmin(sock, ctx))) return reply(sock, msg, ctx, '⚠️ Preciso ser admin.');
-    const n = Math.min(Math.max(Number(args[0]) || 20, 1), 50);
+    const n = Math.min(Math.max(Number(args[0]) || 10, 1), 30);
     const { messageCache } = require('./messageListener');
     const recent = [...messageCache.values()].filter(m => m?.key?.remoteJid === ctx.remoteJid).slice(-n);
     let ok = 0;
+    const st = await reply(sock, msg, ctx, `🧹 Limpando *${recent.length}* mensagens... (devagar pra não bugarr o chat)`);
     for (const m of recent) {
-      try { await sock.sendMessage(ctx.remoteJid, { delete: m.key }); ok++; await new Promise(r => setTimeout(r, 120)); } catch {}
+      try { await sock.sendMessage(ctx.remoteJid, { delete: m.key }); ok++; } catch {}
+      await new Promise(r => setTimeout(r, 350)); // ← era 120ms; 350ms evita a parede branca
     }
-    return reply(sock, msg, ctx, `🧹 *DARK CLEAN*\n\nTentei apagar ${recent.length} mensagens recentes do cache.\n✅ Apagadas: ${ok}\n\nObs: WhatsApp só permite apagar mensagens dentro das regras/tempo da plataforma.`);
+    return reply(sock, msg, ctx,
+      `🧹 *DARK CLEAN*\n\n` +
+      `✅ Apagadas: ${ok}/${recent.length}\n\n` +
+      `ℹ️ Cada apagada deixa o tracinho _"mensagem apagada"_ — é limitação do WhatsApp, nenhum bot escapa.\n` +
+      `📱 Se o chat ficou com espaço branco bugado: *sai e volta do chat* (ou fecha e abre o app) que o scroll volta ao normal.\n\n` +
+      `💡 Queres zerar a conversa SÓ aqui no bot, sem tracinhos? Usa *${'`'}${ctx.prefix || '.'}limparbot${'*'}`);
   },
   async clean(a) { return module.exports.limpar(a); },
   async limpartudo(a) { return module.exports.limpar(a); },
+
+  // ── v12.7: LIMPARBOT — zero branco ─────────────────────────
+  // Esvazia a conversa SÓ no telefone do bot (chatModify clear).
+  // Não apaga nada pros participantes, não deixa placeholder —
+  // o chat fica limpo do nosso lado sem bug visual nenhum.
+  async limparbot({ sock, msg, ctx }) {
+    try {
+      await sock.chatModify({
+        clear: { message: { id: ctx.remoteJid, fromMe: true, timestamp: Math.floor(Date.now() / 1000) } },
+      }, ctx.remoteJid);
+      return reply(sock, msg, ctx, '🧹✨ *Chat zerado aqui no meu lado!*\n\nSem tracinhos, sem branco — quem mais está no chat mantém as mensagens. É o \“limpar conversa\” de sempre, mas feito por mim.');
+    } catch (e) {
+      return reply(sock, msg, ctx, '❌ WhatsApp recusou: ' + String(e.message || e).slice(0, 80));
+    }
+  },
+  async limparmeulado(a) { return module.exports.limparbot(a); },
+  async zerarchat(a) { return module.exports.limparbot(a); },
 
 
   async invokedono({ sock, msg, ctx, args, config }) {

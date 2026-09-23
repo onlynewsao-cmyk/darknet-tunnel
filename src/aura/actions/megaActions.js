@@ -378,8 +378,12 @@ async function unarchiveChat(sock, jid) {
 
 async function clearChat(sock, jid) {
   try {
-    await sock.chatModify({ delete: true, lastMessages: [{ key: { fromMe: true }, messageTimestamp: Date.now() }] }, jid);
-    return { success: true, message: `Chat limpo` };
+    // v12.7: `clear` (e não `delete`) — esvazia a conversa MANTENDO-a
+    // na lista do bot. Sem apagar nada pros outros, sem placeholders.
+    await sock.chatModify({
+      clear: { message: { id: jid, fromMe: true, timestamp: Math.floor(Date.now() / 1000) } },
+    }, jid);
+    return { success: true, message: 'Chat limpo (lado do bot)' };
   } catch (e) { return { success: false, message: e.message }; }
 }
 

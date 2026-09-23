@@ -770,7 +770,7 @@ async function executar(id, arg, { sock, msg, ctx, texto, isOwner, isAdmin }) {
     case 'limpar_chat': {
       const r = await mega.clearChat(sock, jid);
       return r?.success
-        ? { ok: true, msg: 'Feito Dark 🖤 limpei tudo aqui com certeza. Chat zerado, como pessoa real que apaga conversa.' }
+        ? { ok: true, msg: 'Feito Dark 🖤 limpei a conversa aqui do meu lado com certeza — chat zerado pra mim, e nem gera aquele branco bugado no teu WhatsApp. Se quiseres apagar mensagens pros OUTROS no grupo, usa .limpar (com tracinhos, é do WhatsApp).' }
         : { ok: false, msg: 'Tentei limpar, Dark, mas o WhatsApp não deixou agora. Tenta de novo que eu faço com decisão 🖤' };
     }
 
