@@ -244,11 +244,16 @@ module.exports = function registerRPGCommunity(registerCase) {
       report += '━━━━━━━━━━━━━━━━━━━━━━━━━━\n';
       report += '✅ Adicionados ao grupo geral: ' + results.added.length + '\n';
       if (results.jaEstava?.length) report += '👍 Já estavam dentro: ' + results.jaEstava.length + '\n';
-      report += '📩 Convites (link do !invite) enviados: ' + results.invited.length + '\n';
-      report += '❌ Erros: ' + results.errors.length + '\n';
-      // v6.63: mostra os erros reais em vez de só contar.
+      report += '❌ Não entraram: ' + (results.naoEntraram?.length || 0) + '\n';
+      // v12.5: lista quem ficou fora + motivo — convite é com !invite
+      if (results.naoEntraram?.length) {
+        report += '\n⚠️ *Ficaram de fora:*\n';
+        for (const f of results.naoEntraram.slice(0, 8)) report += '  • ' + String(f.user).slice(0, 20) + ' — ' + String(f.motivo).slice(0, 45) + '\n';
+        if (results.naoEntraram.length > 8) report += '  • (+' + (results.naoEntraram.length - 8) + ')\n';
+        report += '\n📩 Pra esses usa *!invite @user* — manda o link no PV dele';
+      }
       if (results.errors.length) {
-        report += '\n⚠️ *Motivos:*\n';
+        report += '\n🚫 *Erros:*\n';
         for (const e of results.errors.slice(0, 5)) report += '  • ' + String(e).slice(0, 70) + '\n';
         if (results.errors.length > 5) report += '  • (+' + (results.errors.length - 5) + ')\n';
       }

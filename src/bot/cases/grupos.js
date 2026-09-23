@@ -355,12 +355,39 @@ module.exports = function registerGroupCases(registerCase) {
   // ══════════════════════════════════════════════════════════════════
   // !link — Link de convite
   // ══════════════════════════════════════════════════════════════════
-  registerCase(['link', 'convite', 'invite'], async ({ sock, ctx, isOwner, reply }) => {
+  // v12.5: .invite é o ÚNICO comando que manda convite
+  //   .invite          → mostra o link aqui no chat
+  //   .invite @user    → ENVIA o convite (link + botão) no PV da pessoa
+  //   .invite +2449... → igual, por número
+  registerCase(['link', 'convite', 'invite'], async ({ m, sock, ctx, args, isOwner, reply }) => {
     if (!ctx.isGroup) return reply('👥 Só em grupos.');
     if (!await senderIsAdmOrOwner(sock, ctx)) return reply('🚫 Só o *Dono* ou *Admins* podem ver o link.');
     try {
       const code = await sock.groupInviteCode(ctx.remoteJid);
-      await reply(`🔗 *Link do grupo:*\nhttps://chat.whatsapp.com/${code}`);
+      const link = `https://chat.whatsapp.com/${code}`;
+      const meta = ctx.groupMeta || await getGroupMeta(sock, ctx);
+      const gname = meta?.subject || 'o grupo';
+
+      // ── .invite @user / .invite +numero → convite no PV ──
+      const alvoArg = (args[0] || '').trim();
+      const mentioned = getMentions(m.msg || {});
+      if (mentioned[0] || /^@?\+?\d{6,}$/.test(alvoArg)) {
+        const alvoJid = mentioned[0] || alvoArg.replace(/\D/g, '') + '@s.whatsapp.net';
+        const num = String(alvoJid).split('@')[0];
+        const texto = `👋 *Convite especial pra ti!*\n\n` +
+          `Foste convidado(a) para o grupo *${gname}* ✨\n\n` +
+          `🔗 *ENTRA AQUI:* ${link}\n\n` +
+          `_(Válido pelo link — só tocar e aceitar!)_`;
+        try {
+          await sock.sendMessage(alvoJid, { text: texto });
+          await reply(`📩 *Convite enviado no PV* de @${num}!\n🔗 ${link}`);
+        } catch (e) {
+          await reply(`❌ Não consegui mandar PV pra @${num} (${e.message?.slice(0, 60)}).\n🔗 Link pra copiar: ${link}`);
+        }
+        return;
+      }
+
+      await reply(`🔗 *Link do grupo:*\n${link}\n\n📩 Manda convite no PV: \`.invite @user\``);
     } catch (e) {
       if (/not admin|forbidden|403/i.test(e?.message || '')) {
         await reply('⚠️ Preciso ser admin para gerar o link. Promove-me!');
@@ -421,49 +448,29 @@ module.exports = function registerGroupCases(registerCase) {
     try { inviteLink = 'https://chat.whatsapp.com/' + await sock.groupInviteCode(ctx.remoteJid); } catch {}
     const gname = meta?.subject || 'o grupo';
 
-    let added = 0, jaEstavam = 0, convidados = 0, erros = 0;
+    // v12.5: SÓ ADICIONA — convite é EXCLUSIVO do comando .invite
+    let added = 0, jaEstavam = 0, erros = 0;
     const falhados = [];
     for (const u of alvos) {
       const num = String(u.whatsappNumber || '').replace(/\D/g, '');
       const jid = num + '@s.whatsapp.net';
-      let ok = false, estava = false, inviteCodePessoal = '';
+      let ok = false, estava = false;
       try {
         const r = await sock.groupParticipantsUpdate(ctx.remoteJid, [jid], 'add');
         const list = Array.isArray(r) ? r : (Array.isArray(r?.value) ? r.value : [{ status: '200' }]);
         const st = String(list[0]?.status || '');
-        inviteCodePessoal = list[0]?.inviteCode || list[0]?.invite_code || '';
         if (st === '200') { ok = true; added++; }
         else if (st === '409') { ok = true; estava = true; jaEstavam++; }
-      } catch { erros++; }
-      if (!ok && !estava) {
-        const nome = u.name || '@' + num;
-        const texto = `👋 *${nome}!* Tu foste convidado para *${gname}*\n\n` +
-          (inviteLink ? `🔗 *ENTRA AQUI:* ${inviteLink}\n\n` : '') +
-          `_(O add direto foi bloqueado pelas tuas definições de privacidade — aceita o convite!)_`;
-        let mandou = false;
-        if (inviteCodePessoal) {
-          try {
-            await sock.sendMessage(jid, {
-              groupInviteMessage: { groupJid: ctx.remoteJid, inviteCode: inviteCodePessoal, inviteExpiration: 0, groupName: gname, caption: texto },
-            });
-            mandou = true;
-          } catch {}
-        }
-        if (!mandou && inviteLink) {
-          try { await sock.sendMessage(jid, { text: texto }); mandou = true; } catch {}
-        }
-        if (mandou) { convidados++; } else { erros++; falhados.push(num); }
-      }
+        else { erros++; falhados.push({ num, st }); }
+      } catch (e) { erros++; falhados.push({ num, st: e.message?.slice(0, 30) || 'erro' }); }
       await new Promise(r => setTimeout(r, 800)); // anti-rate-limit
     }
     const rep = `📤 *ADD TODOS — ${gname}*\n\n` +
       `👥 Alvos: *${alvos.length}*\n` +
       `✅ Adicionados: *${added}*\n` +
       (jaEstavam ? `👍 Já estavam: *${jaEstavam}*\n` : '') +
-      `📩 Convites enviados no PV (link !invite): *${convidados}*\n` +
-      `❌ Erros: *${erros}*` +
-      (falhados.length ? `\n\n⚠️ Sem convite possível: ${falhados.slice(0, 10).map(n => '+' + n).join(', ')}${falhados.length > 10 ? ' …' : ''}` : '') +
-      `\n\n💡 Dica: quem bloqueou add direto tem privacidade rígida — o convite no PV resolve.`;
+      `❌ Não entraram: *${falhados.length}*` +
+      (falhados.length ? `\n\n⚠️ Bloqueados (privacidade do WhatsApp): ${falhados.slice(0, 10).map(f => '+' + f.num).join(', ')}${falhados.length > 10 ? ' …' : ''}\n\n📩 Pra esses, o convite é com o comando *.invite* — usa \`.invite @user\` pra mandar o link no PV dele` : '');
     try {
       await sock.sendMessage(ctx.remoteJid, { text: rep, edit: status?.key }, { quoted: m });
     } catch {
