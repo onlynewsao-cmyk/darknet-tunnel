@@ -63,13 +63,19 @@ async function _postLogin(user, pw, csrf, jar, guid) {
   const enc = `#PWD_INSTAGRAM_BROWSER:0:${Math.floor(Date.now() / 1000)}:${pw}`;
   const form = new URLSearchParams({
     username: user, enc_password: enc, queryParams: '{}', optIntoOneTap: 'false',
-    trustedDeviceRecords: '{}', guid: guid || crypto.randomBytes(16).toString('hex'),
+    trustedDeviceRecords: '{}',
+    guid: guid || crypto.randomBytes(16).toString('hex'),
     phone_id: crypto.randomBytes(16).toString('hex'),
+    enc_password_client_time: String(Math.floor(Date.now() / 1000) - 2),
+    login_attempt_count: '0',
   }).toString();
   const r1 = await req('POST', 'https://www.instagram.com/api/v1/web/accounts/login/ajax/', {
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(form),
-      'X-CSRFToken': csrf, 'X-IG-App-ID': APP_ID, 'X-Requested-With': 'XMLHttpRequest', 'X-Instagram-AJAX': '1',
+      'X-CSRFToken': csrf, 'X-IG-App-ID': APP_ID, 'X-Requested-With': 'XMLHttpRequest',
+      'X-Instagram-AJAX': '1013037508', 'X-ASBD-ID': '129477',
+      'Sec-Fetch-Dest': 'empty', 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Site': 'same-origin',
+      'Accept': '*/*', 'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
       'Referer': 'https://www.instagram.com/accounts/login/', 'Origin': 'https://www.instagram.com', 'Cookie': jar.join('; '),
     }, body: form,
   });
@@ -140,26 +146,34 @@ async function loginComSenha(username, password) {
   return { ok: false, erro: `resposta inesperada (${r1.status}${j.message ? ': ' + j.message : ''})`, aviso };
 }
 
-/** Abre o challenge e pede o envio do código (choice 0 = SMS/email). */
+/** Abre o challenge e pede o envio do código (choice 0 = SMS/email).
+ *  Tenta os DOIS endpoints que o IG usa: API app (i.instagram) e API web (www). */
 async function _abrirChallenge(user, path, csrf, jar, guid, pw) {
-  try {
-    const form = new URLSearchParams({ choice: '0', guid: guid || '' }).toString();
-    const r = await req('POST', `https://i.instagram.com/api/v1/challenge/${path}/`, {
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(form),
-        'X-CSRFToken': csrf, 'X-IG-App-ID': APP_ID, 'X-Requested-With': 'XMLHttpRequest',
-        'Referer': 'https://www.instagram.com/', 'Cookie': jar.join('; '),
-      }, body: form,
-    });
-    let j = {}; try { j = JSON.parse(r.body); } catch {}
-    const step = String(j.step_name || '');
-    const contact = j.step_data?.contact_point || j.step_data?.email || '';
-    if (step === 'verify_code' || step === 'select_verify_method' || j.status === 'ok') {
-      pendentes.set(user, { tipo: 'checkpoint', jar, csrf, guid, checkpointPath: path, dica: contact ? `código para ${contact}` : 'SMS ou email', pw, ts: Date.now() });
-      return { contactPoint: contact };
-    }
-    return null;
-  } catch { return null; }
+  const webPath = String(path).replace(/^challenge\//, ''); // 'challenge/123/AbC/' → '123/AbC/'
+  const tentativas = [
+    { url: `https://i.instagram.com/api/v1/challenge/${path}/`, extra: { 'X-IG-App-ID': APP_ID } },
+    { url: `https://www.instagram.com/api/v1/web/challenges/${webPath}/`, extra: {} },
+  ];
+  for (const t of tentativas) {
+    try {
+      const form = new URLSearchParams({ choice: '0', guid: guid || '', _csrftoken: csrf }).toString();
+      const r = await req('POST', t.url, {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(form),
+          'X-CSRFToken': csrf, 'X-Requested-With': 'XMLHttpRequest', ...t.extra,
+          'Referer': 'https://www.instagram.com/', 'Origin': 'https://www.instagram.com', 'Cookie': jar.join('; '),
+        }, body: form,
+      });
+      let j = {}; try { j = JSON.parse(r.body); } catch {}
+      const step = String(j.step_name || '');
+      const contact = j.step_data?.contact_point || j.step_data?.email || '';
+      if (step === 'verify_code' || step === 'select_verify_method' || j.status === 'ok' || j.action === 'yes') {
+        pendentes.set(user, { tipo: 'checkpoint', jar, csrf, guid, checkpointPath: path, dica: contact ? `código para ${contact}` : 'SMS ou email', pw, ts: Date.now() });
+        return { contactPoint: contact };
+      }
+    } catch {}
+  }
+  return null;
 }
 
 /** Estado dum login pendente (pro painel/WhatsApp mostrar). */
@@ -215,20 +229,32 @@ async function confirmarCodigo(username, codigo) {
       return { ok: false, erro: 'código recusado: ' + (j.message || j.error_title || `HTTP ${r.status}`) };
     }
 
-    // ── checkpoint: security_code no challenge aberto ──
-    const form = new URLSearchParams({ security_code: code, _csrftoken: p.csrf, guid: p.guid, device_id: p.guid }).toString();
-    const r = await req('POST', `https://i.instagram.com/api/v1/challenge/${p.checkpointPath}/`, {
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(form),
-        'X-CSRFToken': p.csrf, 'X-IG-App-ID': APP_ID, 'X-Requested-With': 'XMLHttpRequest',
-        'Referer': 'https://www.instagram.com/', 'Cookie': p.jar.join('; '),
-      }, body: form,
-    });
-    let j = {}; try { j = JSON.parse(r.body); } catch {}
-    const resolvido = j.action === 'close' || j.status === 'ok' || j.step_name === null;
+    // ── checkpoint: security_code no challenge aberto (dual endpoint) ──
+    const webPath = String(p.checkpointPath).replace(/^challenge\//, '');
+    const endpoints = [
+      `https://i.instagram.com/api/v1/challenge/${p.checkpointPath}/`,
+      `https://www.instagram.com/api/v1/web/challenges/${webPath}/`,
+    ];
+    let r = null, j = {}, resolvido = false, codigoErrado = false;
+    for (const url of endpoints) {
+      try {
+        const form = new URLSearchParams({ security_code: code, _csrftoken: p.csrf, guid: p.guid, device_id: p.guid }).toString();
+        r = await req('POST', url, {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(form),
+            'X-CSRFToken': p.csrf, 'X-IG-App-ID': APP_ID, 'X-Requested-With': 'XMLHttpRequest',
+            'Referer': 'https://www.instagram.com/', 'Origin': 'https://www.instagram.com', 'Cookie': p.jar.join('; '),
+          }, body: form,
+        });
+        try { j = JSON.parse(r.body); } catch { j = {}; }
+        resolvido = j.action === 'close' || j.status === 'ok' || j.step_name === null;
+        if (/invalid|incorrect|errado|não é válido/i.test(String(j.message || ''))) codigoErrado = true;
+        if (resolvido) break;
+      } catch (eReq) { continue; }
+    }
     if (!resolvido) {
-      if (j.challenge || /invalid|incorrect|errado/i.test(String(j.message || ''))) return { ok: false, erro: 'código errado — verifica o SMS/email e tenta de novo' };
-      return { ok: false, erro: 'challenge não aceitou o código: ' + (j.message || j.step_name || `HTTP ${r.status}`) };
+      if (codigoErrado) return { ok: false, erro: 'código errado — verifica o SMS/email e tenta de novo' };
+      return { ok: false, erro: 'challenge não aceitou o código: ' + (j.message || j.step_name || (r ? `HTTP ${r.status}` : 'sem resposta')) };
     }
     // challenge resolvido — refaz o login para obter o sessionid
     p.jar = p.jar.concat(cookiesOf(r));
