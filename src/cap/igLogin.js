@@ -28,10 +28,26 @@ function _normUser(u) {
   return String(u || '').trim().replace(/^@/, '').replace(/^https?:\/\/(www\.)?instagram\.com\//i, '').replace(/[\s]+/g, '').replace(/[/?#].*$/, '').toLowerCase();
 }
 
+// ── v12.8.1: PROXY no login por senha ──
+// O Instagram bloqueia login por senha de IP datacenter (auth_platform).
+// Com CAP_PROXY=residencial no .env o login passa como browser real.
+let _proxyAgent = null; let _proxyTried = false;
+function _agent() {
+  if (_proxyTried) return _proxyAgent; _proxyTried = true;
+  const p = String(process.env.CAP_PROXY || process.env.HTTPS_PROXY || process.env.https_proxy || '').trim();
+  if (!p) return null;
+  try {
+    const { HttpsProxyAgent } = require('https-proxy-agent');
+    _proxyAgent = new HttpsProxyAgent(p);
+    console.log('[CAP login] proxy activo (login por senha via CAP_PROXY)');
+  } catch { console.warn('[CAP login] CAP_PROXY definido mas falta: npm i https-proxy-agent'); }
+  return _proxyAgent;
+}
 function req(method, url, { headers = {}, body = null, timeout = 25000 } = {}) {
   return new Promise((resolve, reject) => {
     const u = new URL(url);
-    const r = https.request({ method, hostname: u.hostname, path: u.pathname + u.search, headers: { 'User-Agent': UA, ...headers }, timeout }, (res) => {
+    const ag = _agent();
+    const r = https.request({ method, hostname: u.hostname, path: u.pathname + u.search, headers: { 'User-Agent': UA, ...headers }, timeout, ...(ag ? { agent: ag } : {}) }, (res) => {
       const chunks = []; res.on('data', c => chunks.push(c));
       res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: Buffer.concat(chunks).toString('utf8') }));
     });
@@ -103,7 +119,8 @@ async function loginComSenha(username, password) {
     // ── v12.8b: desafio NOVO anti-bot (auth_platform) — não aceita código
     // por HTTP (é verificação JS do browser). Mensagem honesta + sessionid. ──
     if (/auth_platform/i.test(String(j.checkpoint_url || ''))) {
-      return { ok: false, erro: 'Instagram bloqueou o login por senha deste IP (desafio anti-bot novo, auth_platform) — só aceita login com browser real. Não há código que resolva por aqui: usa o *sessionid* do browser (guia: .cap login) — funciona na mesma para stories/captura', authPlatform: true, aviso };
+      const temProxy = !!(process.env.CAP_PROXY || process.env.HTTPS_PROXY || process.env.https_proxy);
+      return { ok: false, erro: 'Instagram bloqueou o login por senha deste IP' + (temProxy ? ' (mesmo com proxy — o IP do proxy também está marcado)' : ' (desafio anti-bot auth_platform — IP de datacenter)') + '. Soluções: ① usa o *sessionid* do browser (guia: .cap login) — funciona 100% pra stories/captura; ② define CAP_PROXY=http://user:pass@proxy:porta no .env com proxy RESIDENCIAL e tenta de novo', authPlatform: true, aviso };
     }
     // ── v12.8: checkpoint clássico — abre o desafio e pede código ──
     const url = String(j.checkpoint_url || '');
