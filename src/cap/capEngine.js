@@ -188,9 +188,28 @@ function delSessao(qual) {
 }
 function listSessoes() { load(); return (Array.isArray(state.session.igPool) ? state.session.igPool : []).map(s => ({ user: s.user, ok: s.ok !== false, lastErr: s.lastErr || '', addedAt: s.addedAt })); }
 // arranque: carregar IG_SESSIONID do .env se não houver nenhuma
+// v12.9: valida em fundo (sem bloquear arranque) e preenche o @user da conta;
+// se o .env tiver sessão mas o pool já tiver outra, mantém as DUAS (pool roda entre elas)
 function carregarEnv() {
   const env = String(process.env.IG_SESSIONID || '').trim();
-  if (env && !sessionsAtivas().length) { state.session.igPool = [{ sid: env, user: '', ok: true, addedAt: Date.now(), fonte: 'env' }]; state.session.ig = env; }
+  if (!env) return;
+  state.session.igPool = Array.isArray(state.session.igPool) ? state.session.igPool : [];
+  const jaEsta = state.session.igPool.some((x) => x.sid === env);
+  if (!jaEsta) {
+    state.session.igPool.push({ sid: env, user: '', ok: true, addedAt: Date.now(), fonte: 'env' });
+    if (!state.session.ig) state.session.ig = env;
+    save();
+    // valida em fundo: preenche user/id ou marca inválida
+    validarSessao(env).then((info) => {
+      const s = state.session.igPool.find((x) => x.sid === env);
+      if (!s) return;
+      if (info.ok) { s.user = info.user; s.id = info.id; s.ok = true; console.log(`[CAP] sessão do .env validada: @${info.user}`); }
+      else if (!info.temporario) { s.ok = false; s.lastErr = info.erro; console.warn('[CAP] sessão do .env inválida:', info.erro); }
+      else { console.warn('[CAP] sessão do .env: validação adiada —', info.erro); }
+      save();
+    }).catch(() => {});
+    console.log('[CAP] sessão IG do .env adicionada ao pool (validação em curso)');
+  }
 }
 
 // ─────────────────────────────────────────────────────────────
