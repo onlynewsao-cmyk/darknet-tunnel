@@ -249,4 +249,25 @@ async function confirmarCodigo(username, codigo) {
   }
 }
 
-module.exports = { loginComSenha, confirmarCodigo, estadoPendente, cancelarPendente, _normUser };
+/**
+ * v12.8.2 — LOGIN COM RETRY: o Instagram bloqueia a 1ª tentativa
+ * (auth_platform) e envia "Foi você?" ao telemóvel do dono. Quando ele
+ * toca "Fui eu", uma das tentativas seguintes passa. Esta função repete
+ * sozinha nessa janela e devolve o resultado final.
+ * onTentativa(tentativa, resultado) → callback pro bot avisar o dono.
+ */
+async function loginComRetry(username, password, { max = 8, cadaMs = 25 * 1000, onTentativa = null } = {}) {
+  for (let i = 1; i <= max; i++) {
+    const r = await loginComSenha(username, password);
+    if (onTentativa) { try { onTentativa(i, r); } catch {} }
+    if (r.ok) return r;
+    // código de verificação = também é um "pede ao dono" — devolve já
+    if (r.precisaCodigo) return r;
+    // senha errada / user inexistente não melhora com retry — sai já
+    if (/senha incorrecta|utilizador não existe/i.test(String(r.erro || ''))) return r;
+    if (i < max) await new Promise((res) => setTimeout(res, cadaMs));
+  }
+  return { ok: false, erro: `${max} tentativas sem destravar — confirma "Fui eu" no telemóvel durante o ciclo, ou usa sessionid do browser` };
+}
+
+module.exports = { loginComSenha, confirmarCodigo, estadoPendente, cancelarPendente, loginComRetry, _normUser };

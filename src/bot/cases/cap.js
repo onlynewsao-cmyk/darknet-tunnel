@@ -99,8 +99,14 @@ module.exports = function registerCap(registerCase) {
       // "cap login utilizador senha" → login real; senão trata como sessionid
       if (args.length >= 3 && !/%3A|:/.test(args[1]) && args[1].length < 31) {
         if (ctx.isGroup) return tReply(sock, msg, ctx, '🔐 C∆P LOGIN', ['❌ Login com senha só no PV do bot (a mensagem foi apagada).']);
-        await sock.sendMessage(ctx.remoteJid, { text: `🔐 A entrar como @${args[1]}…` }).catch(() => {});
-        const lg = await require('../../cap/igLogin').loginComSenha(args[1], args.slice(2).join(' '));
+        await sock.sendMessage(ctx.remoteJid, { text: `🔐 A entrar como @${args[1]}…\n\n📱 Se chegar *\“Foi você?\”* ao telemóvel dessa conta, toca em *FUI EU* — eu continuo a tentar sozinho e apanho a destrava (8 tentativas, ~3 min).` }).catch(() => {});
+        const lg = await require('../../cap/igLogin').loginComRetry(args[1], args.slice(2).join(' '), {
+          onTentativa: (nT, rT) => {
+            if (nT > 1 && !rT.ok && !rT.precisaCodigo) {
+              sock.sendMessage(ctx.remoteJid, { text: `⏳ tentativa ${nT}/${8}… confirma *FUI EU* no telemóvel 📲` }).catch(() => {});
+            }
+          },
+        });
         // ── v12.8: o Instagram pediu código → o bot pede ao dono ──
         if (lg.ok === false && lg.precisaCodigo) {
           return tReply(sock, msg, ctx, '🔐 C∆P LOGIN — CÓDIGO', [
