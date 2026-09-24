@@ -1029,14 +1029,40 @@ module.exports = function (io) {
       const mm = sid.match(/sessionid=([^;\s]+)/i); if (mm) sid = mm[1];
       if (!sid && req.body.username && req.body.password) {
         const lg = await require('../cap/igLogin').loginComSenha(req.body.username, req.body.password);
-        if (!lg.ok) return res.status(400).json({ error: lg.erro, checkpoint: !!lg.checkpoint, twoFactor: !!lg.twoFactor });
+        // ── v12.8: Instagram pediu código → painel pede ao dono ──
+        if (!lg.ok && lg.precisaCodigo) {
+          return res.json({ ok: false, precisaCodigo: true, tipo: lg.tipo, user: lg.user, dica: lg.dica || '', aviso: lg.aviso || '' });
+        }
+        if (!lg.ok) return res.status(400).json({ error: lg.erro, aviso: lg.aviso || '', checkpoint: !!lg.checkpoint, twoFactor: !!lg.twoFactor });
+        if (lg.aviso) req.body._aviso = lg.aviso;
         sid = lg.sid;
       }
       if (!sid) return res.status(400).json({ error: 'Envia sessionid ou username+password' });
       const r = await c.addSessao(sid);
       if (!r.ok) return res.status(400).json({ error: r.erro });
-      res.json({ ok: true, user: r.user, validado: r.validado, aviso: r.aviso, sessoes: c.listSessoes() });
+      res.json({ ok: true, user: r.user, validado: r.validado, aviso: r.aviso || req.body._aviso || '', sessoes: c.listSessoes() });
     } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── v12.8: confirmar o código de verificação (checkpoint/2FA) ──
+  router.post('/cap/codigo', requireApiOwner, async (req, res) => {
+    try {
+      const lg = require('../cap/igLogin');
+      const pend = lg.estadoPendente();
+      const alvo = String(req.body.username || '').trim() || (Array.isArray(pend) && pend.length ? pend[0].user : '');
+      if (!alvo) return res.status(400).json({ error: 'Nenhum login à espera de código. Faz login primeiro.' });
+      const r = await lg.confirmarCodigo(alvo, req.body.code);
+      if (!r.ok) return res.status(400).json({ error: r.erro });
+      const c = capE();
+      const rAdd = await c.addSessao(r.sid);
+      if (!rAdd.ok) return res.status(400).json({ error: 'Login OK mas validação falhou: ' + rAdd.erro });
+      res.json({ ok: true, user: r.user || rAdd.user, aviso: rAdd.aviso || '', sessoes: c.listSessoes() });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── v12.8: logins pendentes de código ──
+  router.get('/cap/pendentes', requireApiOwner, (req, res) => {
+    res.json({ pendentes: require('../cap/igLogin').estadoPendente() || [] });
   });
   router.post('/cap/logout', requireApiOwner, (req, res) => { const c = capE(); res.json({ removidas: c.delSessao(req.body.user || 'all'), sessoes: c.listSessoes() }); });
   router.post('/cap/testar', requireApiOwner, async (req, res) => {

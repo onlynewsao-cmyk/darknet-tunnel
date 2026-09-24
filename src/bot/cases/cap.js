@@ -61,7 +61,7 @@ const AJUDA = (p) => [
   `▸ ${p}cap auto @veigh on|off · ${p}cap intervalo @veigh <min>`,
   `▸ ${p}cap galeria @veigh [n] — reenvia os últimos n ficheiros guardados`,
   `▸ ${p}cap log — últimas capturas (baixou / falhou / enviou)`,
-  `▸ ${p}cap login <sessionid> — sessão IG (stories, highlights, feed completo) · ${p}cap sessoes · ${p}cap testar · ${p}cap logout [@conta|all]`,
+  `▸ ${p}cap login <sessionid> — sessão IG (stories, highlights, feed completo) · ${p}cap login <user> <senha> (PV) · ${p}cap codigo 123456 (verificação) · ${p}cap sessoes · ${p}cap testar · ${p}cap logout [@conta|all]`,
   '',
   `> Stories e feed completo exigem sessão. Sem sessão: últimos 12 posts públicos.`,
 ];
@@ -101,8 +101,46 @@ module.exports = function registerCap(registerCase) {
         if (ctx.isGroup) return tReply(sock, msg, ctx, '🔐 C∆P LOGIN', ['❌ Login com senha só no PV do bot (a mensagem foi apagada).']);
         await sock.sendMessage(ctx.remoteJid, { text: `🔐 A entrar como @${args[1]}…` }).catch(() => {});
         const lg = await require('../../cap/igLogin').loginComSenha(args[1], args.slice(2).join(' '));
-        if (!lg.ok) return tReply(sock, msg, ctx, '🔐 C∆P LOGIN', [`❌ ${lg.erro}`, '', `> Alternativa segura: ${p}cap login <sessionid> (guia: ${p}cap login)`]);
+        // ── v12.8: o Instagram pediu código → o bot pede ao dono ──
+        if (lg.ok === false && lg.precisaCodigo) {
+          return tReply(sock, msg, ctx, '🔐 C∆P LOGIN — CÓDIGO', [
+            `📲 O Instagram pediu verificação para *@${lg.user}*`,
+            lg.dica ? `📨 ${lg.dica}` : '',
+            '',
+            `Manda o código assim: *${p}cap codigo 123456*`,
+            `> Tens 15 minutos. ${lg.aviso ? '\n> ⚠️ ' + lg.aviso : ''}`,
+          ].filter(Boolean));
+        }
+        if (lg.ok === false) return tReply(sock, msg, ctx, '🔐 C∆P LOGIN', [`❌ ${lg.erro}`, lg.aviso ? `⚠️ ${lg.aviso}` : '', `> Alternativa segura: ${p}cap login <sessionid> (guia: ${p}cap login)`].filter(Boolean));
         sid = lg.sid;
+        if (lg.aviso) await sock.sendMessage(ctx.remoteJid, { text: `⚠️ ${lg.aviso}` }).catch(() => {});
+      }
+      // ── v12.8: .cap codigo 123456 — confirma verificação 2FA/checkpoint ──
+      if (sub === 'codigo' || sub === 'código' || sub === 'code') {
+        const code = (args.slice(1).join('') || '').replace(/\D/g, '');
+        if (!code) return tReply(sock, msg, ctx, '🔐 C∆P CÓDIGO', [`Uso: *${p}cap codigo 123456*`, '> Depois do `.cap login user senha`, quando o Instagram pedir verificação.']);
+        try { await sock.sendMessage(ctx.remoteJid, { delete: msg.key }); } catch {}
+        await sock.sendMessage(ctx.remoteJid, { text: '🔐 A confirmar o código…' }).catch(() => {});
+        const pend = require('../../cap/igLogin').estadoPendente();
+        const alvo = Array.isArray(pend) && pend.length ? pend[0].user : '';
+        if (!alvo) return tReply(sock, msg, ctx, '🔐 C∆P CÓDIGO', ['❌ Não há login à espera de código.', `> Faz primeiro *${p}cap login <user> <senha>*`]);
+        const rC = await require('../../cap/igLogin').confirmarCodigo(alvo, code);
+        if (!rC.ok) return tReply(sock, msg, ctx, '🔐 C∆P CÓDIGO', [`❌ ${rC.erro}`, rC.erro?.includes('errado') ? `> Tenta outra vez: *${p}cap codigo 123456*` : '']);
+        const rAdd = await cap.addSessao(rC.sid);
+        if (!rAdd.ok) return tReply(sock, msg, ctx, '🔐 C∆P CÓDIGO', [`⚠️ Login OK mas a sessão falhou a validação: ${rAdd.erro}`]);
+        const n = cap.listSessoes().length;
+        return tReply(sock, msg, ctx, '🔐 C∆P LOGIN', [
+          `✅ *Verificado e logado como @${rC.user || rAdd.user}*`,
+          `🔑 Sessões no pool: ${n}`,
+          '⏳ Stories, highlights, feed completo e perfis privados activos.',
+          '🗑️ A tua mensagem com o código foi apagada.',
+        ]);
+      }
+      // ── v12.8: .cap login pendente — ver o que está à espera de código ──
+      if (sub === 'pendente' || sub === 'pendentes') {
+        const pend = require('../../cap/igLogin').estadoPendente();
+        if (!Array.isArray(pend) || !pend.length) return tReply(sock, msg, ctx, '🔐 C∆P', ['Nenhum login à espera de código.']);
+        return tReply(sock, msg, ctx, '🔐 C∆P PENDENTES', pend.map(x => `⏳ @${x.user} — ${x.tipo} · ${x.dica || ''} · ${Math.round((Date.now() - x.ts) / 60000)}min atrás`).concat(['', `> Confirma com *${p}cap codigo 123456*`]));
       }
       await sock.sendMessage(ctx.remoteJid, { text: '🔐 A validar sessão…' }).catch(() => {});
       const r = await cap.addSessao(sid);
