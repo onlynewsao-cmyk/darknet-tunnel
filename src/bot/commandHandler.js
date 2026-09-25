@@ -654,7 +654,7 @@ async function _handleInner(sock, msg) {
   // de um comando QUE EXISTE, normaliza para o prefixo real e corre o
   // comando normalmente — a IA nem vê a mensagem.
   if (!prefixInfo) {
-    const mAt = /^([@!#$&*+~^|=;°ºª\/])([a-zA-Z][\w-]{1,20})(?:\s|$)/.exec(text.trim());
+    const mAt = /^([@!#$&*+~^|=;°ºª\/©®™·•‣§¶¤])([a-zA-Z][\w-]{1,20})(?:\s|$)/.exec(text.trim());
     const wGuess = mAt && mAt[2].toLowerCase();
     if (wGuess) {
       const _ch = require('./caseHandler');
@@ -1817,7 +1817,7 @@ _Desculpa meu Dark, ainda não sei cantar de verdade... Mas um dia aprendo! 🌹
   // v12.9.1: mensagem é claramente um COMANDO (símbolo + palavra conhecida)?
   // ex.: "@cap login 123", "!ping", "/menu" — a Aura NÃO entra nisto.
   const _cmdLike = (() => {
-    const m = /^([@!#$&*+~^|=;°ºª\/])([a-zA-Z][\w-]{1,20})(?:\s|$)/.exec(String(text || '').trim());
+    const m = /^([@!#$&*+~^|=;°ºª\/©®™·•‣§¶¤])([a-zA-Z][\w-]{1,20})(?:\s|$)/.exec(String(text || '').trim());
     if (!m) return false;
     if (prefixes.some((pp) => pp === m[1] || (pp && pp[0] === m[1]))) return true; // já é prefixo real
     const w = m[2].toLowerCase();
