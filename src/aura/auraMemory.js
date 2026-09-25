@@ -45,6 +45,27 @@ async function guardar(numero, texto, { importante } = {}) {
   slot.itens = slot.itens.slice(-12);
   slot.expira = now + HORA;
   _leve.set(num, slot);
+  // v12.9.4: write-through no Mongo — a memória recente sobrevive a restart.
+  // A IA não É a memória: ela LÊ daqui a cada resposta (lembrar→paraPrompt).
+  try {
+    const BotConfig = require('../database/models/BotConfig');
+    const key = 'aura_recent_' + num;
+    const cur = await BotConfig.findOne({ key }).lean().catch(() => null);
+    const arr = Array.isArray(cur?.value) ? cur.value : [];
+    arr.push({ t, ts: now });
+    await BotConfig.updateOne({ key }, { $set: { key, value: arr.slice(-14) } }, { upsert: true });
+  } catch {}
+}
+
+/** v12.9.4: recupera a memória recente do Mongo (usada quando a RAM está vazia,
+ *  ex.: logo após restart — a IA volta a trabalhar com a memória de imediato). */
+async function _recenteDeMongo(num) {
+  try {
+    const BotConfig = require('../database/models/BotConfig');
+    const doc = await BotConfig.findOne({ key: 'aura_recent_' + num }).lean();
+    const now = Date.now();
+    return (Array.isArray(doc?.value) ? doc.value : []).filter((x) => now - x.ts < HORA).map((x) => x.t);
+  } catch { return []; }
 }
 
 async function lembrar(numero) {
@@ -59,6 +80,14 @@ async function lembrar(numero) {
   const now = Date.now();
   if (slot) {
     out.recente = (slot.itens || []).filter(x => now - x.ts < HORA).map(x => x.t);
+  }
+  // v12.9.4: RAM vazia (restart)? — a memória recente vem do Mongo
+  if (!out.recente.length) {
+    out.recente = await _recenteDeMongo(num);
+    // repõe a RAM pra próximas leituras serem instantâneas
+    if (out.recente.length) {
+      _leve.set(num, { itens: out.recente.map((t) => ({ t, ts: now })), expira: now + HORA });
+    }
   }
   return out;
 }
@@ -104,6 +133,7 @@ async function esquecer(numero) {
   try {
     const BotConfig = require('../database/models/BotConfig');
     await BotConfig.deleteOne({ key: 'aura_facts_' + num }).catch(() => {});
+    await BotConfig.deleteOne({ key: 'aura_recent_' + num }).catch(() => {});
   } catch {}
   return true;
 }

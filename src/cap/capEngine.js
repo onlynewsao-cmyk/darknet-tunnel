@@ -191,8 +191,19 @@ function listSessoes() { load(); return (Array.isArray(state.session.igPool) ? s
 // v12.9: valida em fundo (sem bloquear arranque) e preenche o @user da conta;
 // se o .env tiver sessão mas o pool já tiver outra, mantém as DUAS (pool roda entre elas)
 function carregarEnv() {
-  const env = String(process.env.IG_SESSIONID || '').trim();
-  if (!env) return;
+  // v12.9.4: aceita o valor em qualquer formato vindo da hospedagem
+  // (Northflank/Render): com aspas, "sessionid=...", cookie inteiro,
+  // espaços ou nova linha — normaliza antes de usar.
+  const bruto = String(process.env.IG_SESSIONID || process.env.ig_sessionid || '').trim();
+  let env = bruto.replace(/^["']|["']$/g, '').trim();
+  const mCookie = /sessionid\s*=\s*([^;\s"']+)/i.exec(env);
+  if (mCookie) env = mCookie[1];
+  env = env.replace(/;.*$/, '').trim();
+  if (env && !/%3A/i.test(env) && env.includes(':')) env = encodeURIComponent(env); // sid cru com ':'
+  if (!env || env.length < 30) {
+    if (bruto) console.warn('[CAP] IG_SESSIONID definido mas inválido (curto demais) — ignorado');
+    return;
+  }
   state.session.igPool = Array.isArray(state.session.igPool) ? state.session.igPool : [];
   const jaEsta = state.session.igPool.some((x) => x.sid === env);
   if (!jaEsta) {
