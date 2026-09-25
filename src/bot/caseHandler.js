@@ -1453,8 +1453,13 @@ function init() {
   loadDynamicCases().catch(() => {});
 }
 
+// v12.9.1: saber se um comando existe (pro normalizador de prefixos trocados)
+function hasCase(cmd) {
+  return CASES.has(String(cmd || '').toLowerCase().trim());
+}
 module.exports = {
   registerCase,
+  hasCase,
   runCase,
   loadCases,
   loadDynamicCases,

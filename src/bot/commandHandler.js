@@ -646,7 +646,27 @@ async function _handleInner(sock, msg) {
   // ── PrefixEngine v2 — deteção rigorosa por grupo ──────────────
   // Substitui o antigo noPrefixBtnIds/firstTokenNoPrefix que causava
   // o bug: "?play" era tratado como botão "play" → sugeria "$play"
-  const prefixInfo = await prefixEngine.detect(text, ctx.remoteJid);
+  let prefixInfo = await prefixEngine.detect(text, ctx.remoteJid);
+
+  // ── v12.9.1: PREFIXO TROCADO (@cap, !cap, /cap, #cap…) ──────────────
+  // O dono digita @cap (o @ do WhatsApp) e o bot não reconhece → a AURA
+  // acabava a responder/executar a meio. Se o símbolo inicial for seguido
+  // de um comando QUE EXISTE, normaliza para o prefixo real e corre o
+  // comando normalmente — a IA nem vê a mensagem.
+  if (!prefixInfo) {
+    const mAt = /^([@!#$&*+~^|=;°ºª\/])([a-zA-Z][\w-]{1,20})(?:\s|$)/.exec(text.trim());
+    const wGuess = mAt && mAt[2].toLowerCase();
+    if (wGuess) {
+      const _ch = require('./caseHandler');
+      let _known = _ch.hasCase(wGuess);
+      if (!_known) { try { _known = typeof require('./nativeCommands')[wGuess] === 'function'; } catch {} }
+      if (!_known) { try { _known = !!(await Command.findOne({ $or: [{ name: wGuess }, { aliases: wGuess }], enabled: true }).select('_id').lean()); } catch {} }
+      if (_known) {
+        prefixInfo = { prefix: config.bot.prefix || '.', rest: text.trim().slice(1).trim(), source: 'prefixo-trocado' };
+        console.log('[Prefixo] normalizado', mAt[1] + wGuess, '→', prefixInfo.prefix + wGuess);
+      }
+    }
+  }
   const prefix     = prefixInfo?.prefix || prefixes[0] || config.bot.prefix || '!';
   const commandConfig = { ...config, bot: { ...config.bot, prefix } };
   ctx.prefix = prefix;
@@ -1794,7 +1814,19 @@ _Desculpa meu Dark, ainda não sei cantar de verdade... Mas um dia aprendo! 🌹
     'qual minha aura', 'mede minha aura', 'quanta aura',
     'tô com aura', 'to com aura', 'tenho aura', 'aura ativada',
   ];
-  const isAuraTrigger = !startsWithAnyPrefix(text, prefixes) && (
+  // v12.9.1: mensagem é claramente um COMANDO (símbolo + palavra conhecida)?
+  // ex.: "@cap login 123", "!ping", "/menu" — a Aura NÃO entra nisto.
+  const _cmdLike = (() => {
+    const m = /^([@!#$&*+~^|=;°ºª\/])([a-zA-Z][\w-]{1,20})(?:\s|$)/.exec(String(text || '').trim());
+    if (!m) return false;
+    if (prefixes.some((pp) => pp === m[1] || (pp && pp[0] === m[1]))) return true; // já é prefixo real
+    const w = m[2].toLowerCase();
+    const _ch = require('./caseHandler');
+    if (_ch.hasCase(w)) return true;
+    try { if (typeof require('./nativeCommands')[w] === 'function') return true; } catch {}
+    return false;
+  })();
+  const isAuraTrigger = !startsWithAnyPrefix(text, prefixes) && !_cmdLike && (
     AURA_TRIGGERS.includes(textLower) ||
     AURA_TRIGGERS.some(k => textLower.startsWith(k + ' ') || textLower === k) ||
     textLower.startsWith('aura ') ||
