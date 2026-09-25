@@ -109,6 +109,8 @@ class WhatsAppBot {
       });
       sc.arrancarVigia();
     } catch (e) { this.log('warn', 'sessionCenter: ' + String(e?.message || e).slice(0, 60)); }
+    // v12.9.3: vigia de GUARDAR SESSÃO (auto-backup 6h + auto-restauro no boot)
+    try { require('./sessionBackup').arrancar(); } catch (e) { this.log('warn', 'sessionBackup: ' + String(e?.message || e).slice(0, 60)); }
     this._qrTimer = null;
   }
 
@@ -370,6 +372,8 @@ class WhatsAppBot {
           this.setStatus('connected', { user: this.user });
           this.log('success', `✅ Conectado: ${this.user?.id}`);
           try { require('./sessionCenter').registarSucesso(this.user?.id).catch(() => {}); } catch {}
+          // v12.9.3: GUARDAR SESSÃO — snapshot diário automático (protege contra perder o pareamento)
+          try { require('./sessionBackup').abrir(); } catch {}
           startKeepAlive(config.appUrl);
 
           // v6.79 — o Dono quer que o telemóvel dele toque assim que o bot
@@ -458,8 +462,11 @@ class WhatsAppBot {
             if (rodaOk) {
               setTimeout(() => { this.starting = false; this.start({ mode: 'qr' }).catch(() => {}); }, 3000);
             } else {
+              // v12.9.3: guarda a sessão ANTES de apagar — se for falso-logout,
+              // o boot seguinte restaura sozinho deste snapshot.
+              try { await require('./sessionBackup').guardar('pre-clear', 'antes de clearSession após loggedOut'); } catch {}
               await this.clearSession();
-              this.log('warn', 'Sessão expirada — reconecte manualmente.');
+              this.log('warn', 'Sessão expirada — reconecte manualmente. (backup da sessão guardado por segurança)');
             }
           } else {
             this._conflitos = 0;

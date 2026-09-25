@@ -1816,15 +1816,28 @@ _Desculpa meu Dark, ainda não sei cantar de verdade... Mas um dia aprendo! 🌹
   ];
   // v12.9.1: mensagem é claramente um COMANDO (símbolo + palavra conhecida)?
   // ex.: "@cap login 123", "!ping", "/menu" — a Aura NÃO entra nisto.
+  // ── v12.9.3: QUALQUER prefixo + palavra = COMANDO de algum bot → Aura cala ──
+  // ".ping" ",ping" "/ping" "@cap" "©cap" "!play" "#menu"… nenhum bot de WhatsApp
+  // usa prefixo sem estar colado a um comando. A Aura NÃO entra nisso — nem se
+  // o comando não for dela (pode ser de OUTRO bot no grupo, ex: ,ping de outro).
+  // Excepção única: @NomeCapitalizado seguido de frase = menção a CONTACTO humano
+  // (ex: "@Maria oi tudo bem?") — aí a Aura pode (se estiver acordada).
   const _cmdLike = (() => {
-    const m = /^([@!#$&*+~^|=;°ºª\/©®™·•‣§¶¤])([a-zA-Z][\w-]{1,20})(?:\s|$)/.exec(String(text || '').trim());
+    const t = String(text || '').trim();
+    const m = /^([@!#$&*+~^|=;°ºª\/©®™·•‣§¶¤.,-])([a-zA-Z][\w-]{0,24})(\s|$|\n)/.exec(t);
     if (!m) return false;
-    if (prefixes.some((pp) => pp === m[1] || (pp && pp[0] === m[1]))) return true; // já é prefixo real
-    const w = m[2].toLowerCase();
-    const _ch = require('./caseHandler');
-    if (_ch.hasCase(w)) return true;
-    try { if (typeof require('./nativeCommands')[w] === 'function') return true; } catch {}
-    return false;
+    const simbolo = m[1], palavra = m[2];
+    // prefixo REAL deste chat → é comando do NOSSO bot, com certeza
+    if (prefixes.some((pp) => pp === simbolo || (pp && pp[0] === simbolo))) return true;
+    // @Nome capitalizado + resto conversacional → menção a humano, NÃO é comando
+    if (simbolo === '@' && /^[A-Z][a-zà-ú]/.test(palavra)) {
+      const resto = t.slice(m[0].length).trim();
+      // "@Maria" seco (só tag) ou frase de conversa → não é comando
+      if (!resto || /\s/.test(t.slice(m[0].length - 1))) return false;
+    }
+    // símbolo de OUTRO bot + palavra (conhecida ou não) → comando de terceiros, Aura cala
+    // (só escapa se for @ e passar no teste de menção acima)
+    return true;
   })();
   const isAuraTrigger = !startsWithAnyPrefix(text, prefixes) && !_cmdLike && (
     AURA_TRIGGERS.includes(textLower) ||
