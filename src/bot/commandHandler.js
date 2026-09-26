@@ -3053,6 +3053,20 @@ Responde como pessoa real que está olhando — comenta o que salta à vista pri
         const memA = require('../aura/auraMemory');
         memA.guardar(ctx.senderNumber, cleanText).catch(() => {});
       } catch {}
+
+      // ── v12.9.6: "prefixo" em texto puro mostra o card ──────────────
+      // O dono pergunta "prefixo" (sem ponto) e o bot calava. Agora o
+      // card vem na hora — é o pedido mais directo que existe.
+      try {
+        const _tPre = String(cleanText || '').toLowerCase().trim();
+        if (/^(meu |o |qual (é |e |o )?)?(prefixo|prefixos|getprefix)[?!.]*$/.test(_tPre) ||
+            /^qual (é |e )?o (meu )?prefixo[?!.]*$/.test(_tPre)) {
+          const pcPre = require('./prefixCard');
+          const customPre = ctx.isGroup ? await pcPre.isCustomGroupPrefix(msg, ctx.remoteJid) : false;
+          await pcPre.sendPrefixCard(sock, ctx.remoteJid, { prefix, custom: customPre }, msg);
+          return true;
+        }
+      } catch (ePre) { console.warn('[prefixo texto]', ePre.message?.slice(0, 60)); }
       const actionSticker = finalAnswer.match(/\[STICKER:([^\]]+)\]/);
       const actionImage = finalAnswer.match(/\[IMAGE:([^\]]+)\]/);
       const actionCmd = finalAnswer.match(/\[CMD:([^\]]+)\]/);
