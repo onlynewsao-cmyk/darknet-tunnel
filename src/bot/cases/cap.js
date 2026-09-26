@@ -246,7 +246,9 @@ module.exports = function registerCap(registerCase) {
         const sess = cap.hasSession('ig');
         const lines = [
           `👤 *${perfil.nome || '@' + username}* · @${username}${perfil.privado ? ' 🔒' : ''}`,
-          `📸 ${perfil.posts} posts · 👥 ${fmtN(perfil.seguidores)} followers · ➡️ ${fmtN(perfil.seguindo || 0)} following`,
+          perfil.via === 'ytdlp'
+            ? `⚡ Modo alternativo (API do IG limitada neste IP) · ${perfil.posts} posts recentes`
+            : `📸 ${perfil.posts} posts · 👥 ${fmtN(perfil.seguidores)} followers · ➡️ ${fmtN(perfil.seguindo || 0)} following`,
           perfil.bio ? `📝 ${perfil.bio.slice(0, 160).replace(/\n+/g, ' ')}` : null,
           '',
           `📸 POSTS (${posts.length}) · 🎬 REELS (${reels.length}) · ⏳ STORIES (${sess ? 'on' : 'login'}) · ⭐ HIGHLIGHTS (${perfil.highlights || 0}${sess ? '' : ' · login'})`,

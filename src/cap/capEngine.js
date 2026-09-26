@@ -291,7 +291,7 @@ function nodeToItem(n, username) {
   };
 }
 
-const IG_HOSTS = ['https://www.instagram.com', 'https://i.instagram.com'];
+const IG_HOSTS = ['https://i.instagram.com', 'https://www.instagram.com']; // v12.9.8: app host primeiro
 let _hostIdx = 0;
 // GET com rotação de host/UA/sessão e retry em 429 (backoff curto). Marca sessão inválida em login_required.
 async function igGet(pathAndQuery, { tentativas = 3 } = {}) {
@@ -310,17 +310,87 @@ async function igGet(pathAndQuery, { tentativas = 3 } = {}) {
   return last;
 }
 
+// ── v12.9.8: fallback yt-dlp (o mesmo caminho do .cap link) quando a API privada está 429 ──
+// O .cap link sempre funcionou porque yt-dlp usa outro rate-bucket (página web + graphql).
+// Agora ver/ultimo/check/all também caem nesse caminho quando o IG limita o IP do servidor.
+let _cookieFile = ''; let _cookieAt = 0; let _cookieSid = '';
+function ytdlpCookieFile() {
+  const sess = pickSession();
+  const sid = String(sess?.sid || '').trim();
+  if (!sid) return '';
+  if (_cookieFile && Date.now() - _cookieAt < 3600e3 && _cookieSid === sid) return _cookieFile;
+  try {
+    const fs = require('fs'), path = require('path');
+    const f = path.join(__dirname, '..', '..', 'data', 'cap', '.ig-cookies.txt');
+    const uid = sid.split('%3A')[0].split(':')[0] || '';
+    let out = '# Netscape HTTP Cookie File\n';
+    out += `.instagram.com\tTRUE\t/\tTRUE\t0\tsessionid\t${sid}\n`;
+    if (uid) out += `.instagram.com\tTRUE\t/\tTRUE\t0\tds_user_id\t${uid}\n`;
+    fs.writeFileSync(f, out);
+    _cookieFile = f; _cookieAt = Date.now(); _cookieSid = sid;
+    return f;
+  } catch { return ''; }
+}
+async function ytdlpProfile(username, maxPosts = 12) {
+  const u = normUser(username);
+  const { execFile } = require('child_process');
+  const run = (bin, args) => new Promise((res, rej) => execFile(bin, args, { timeout: 45000, maxBuffer: 30 * 1024 * 1024 }, (e, out, err) => e ? rej(new Error((err || e.message).split('\n')[0].slice(0, 140))) : res(out)));
+  const args = ['-j', '--flat-playlist', '--no-warnings', '--playlist-items', `1-${Math.max(2, maxPosts)}`];
+  const cf = ytdlpCookieFile();
+  if (cf) args.push('--cookies', cf);
+  let out;
+  try { out = await run('yt-dlp', [...args, `https://www.instagram.com/${u}/`]); }
+  catch (e1) { try { out = await run('python3', ['-m', 'yt_dlp', ...args, `https://www.instagram.com/${u}/`]); } catch { return null; } }
+  const entries = [];
+  for (const line of String(out || '').trim().split('\n')) {
+    if (!line.trim()) continue;
+    try { const j = JSON.parse(line); if (j._type === 'playlist' && Array.isArray(j.entries)) entries.push(...j.entries); else if (j.id || j.url) entries.push(j); } catch {}
+  }
+  if (!entries.length) return null;
+  const items = [];
+  for (const en of entries.slice(0, maxPosts)) {
+    const link = en.url || en.webpage_url || (en.id ? `https://www.instagram.com/p/${en.id}/` : '');
+    if (!link) continue;
+    try {
+      const it = await ytdlpItem(link);
+      if (!it?.url) continue;
+      items.push({ id: `y_${en.id || items.length}`, shortcode: String(en.id || '').replace(/\/$/, ''), tipo: it.isVideo ? 'reel' : 'post', ts: it.ts || 0, caption: it.caption || '', link, medias: [{ url: it.url, isVideo: it.isVideo }], username: u });
+    } catch {}
+  }
+  if (!items.length) return null;
+  items.sort((a, b) => a.ts - b.ts);
+  return { id: '', username: u, nome: '@' + u, bio: '', privado: false, seguidores: 0, seguindo: 0, posts: items.length, highlights: 0, temReels: items.some(i => i.tipo === 'reel'), foto: '', items, hasMore: false, endCursor: '', via: 'ytdlp' };
+}
+
+// cache de perfil (3 min) — o bot tinha-se auto-429 com spam de .cap ver
+const _profCache = new Map();
 async function igProfile(username) {
   const u = normUser(username);
+  const _ck = 'p:' + u;
+  const _hit = _profCache.get(_ck);
+  if (_hit && Date.now() - _hit.at < 180e3) return _hit.v;
   const r = await igGet(`/api/v1/users/web_profile_info/?username=${encodeURIComponent(u)}`);
   if (r.status === 404) throw new Error(`Perfil @${u} não existe`);
-  if (r.status === 429) throw new Error(`Instagram respondeu HTTP 429 — IP do servidor limitado${sessionsAtivas().length ? ' (mesmo com sessão; define CAP_PROXY no .env ou espera 30-60 min)' : '. Faz cap login <sessionid> (limite muito maior) ou define CAP_PROXY no .env'}`);
-  if (r.status !== 200) throw new Error(`Instagram respondeu HTTP ${r.status}${r.status === 401 || r.status === 403 ? ' (rate-limit/login)' : ''}`);
-  let j; try { j = JSON.parse(r.body.toString('utf8')); } catch { throw new Error('Resposta do Instagram não é JSON (bloqueio temporário?)'); }
+  if (r.status !== 200) {
+    // v12.9.8: API limitada → yt-dlp (mesmo caminho do .cap link, comprovado no servidor)
+    const alt = await ytdlpProfile(u, 12).catch(() => null);
+    if (alt) { _profCache.set(_ck, { at: Date.now(), v: alt }); return alt; }
+    if (r.status === 429) throw new Error(`Instagram respondeu HTTP 429 — IP limitado e yt-dlp também falhou (define CAP_PROXY no .env ou espera 30-60 min)`);
+    throw new Error(`Instagram respondeu HTTP ${r.status}${r.status === 401 || r.status === 403 ? ' (rate-limit/login)' : ''} e yt-dlp também falhou`);
+  }
+  let j; try { j = JSON.parse(r.body.toString('utf8')); } catch {
+    const alt = await ytdlpProfile(u, 12).catch(() => null);
+    if (alt) { _profCache.set(_ck, { at: Date.now(), v: alt }); return alt; }
+    throw new Error('Resposta do Instagram não é JSON (bloqueio temporário?) e yt-dlp também falhou');
+  }
   const d = j?.data?.user;
-  if (!d) throw new Error(`Perfil @${u} indisponível`);
+  if (!d) {
+    const alt = await ytdlpProfile(u, 12).catch(() => null);
+    if (alt) { _profCache.set(_ck, { at: Date.now(), v: alt }); return alt; }
+    throw new Error(`Perfil @${u} indisponível`);
+  }
   const edges = d.edge_owner_to_timeline_media?.edges || [];
-  return {
+  const ret = {
     id: d.id, username: u, nome: d.full_name, bio: d.biography || '', privado: !!d.is_private,
     seguidores: d.edge_followed_by?.count || 0, seguindo: d.edge_follow?.count || 0, posts: d.edge_owner_to_timeline_media?.count || 0,
     highlights: d.highlight_reel_count || 0, temReels: !!d.has_clips,
@@ -329,6 +399,8 @@ async function igProfile(username) {
     hasMore: !!d.edge_owner_to_timeline_media?.page_info?.has_next_page,
     endCursor: d.edge_owner_to_timeline_media?.page_info?.end_cursor || '',
   };
+  _profCache.set(_ck, { at: Date.now(), v: ret });
+  return ret;
 }
 
 // Paginação completa — só funciona com sessão; sem sessão devolve [] silenciosamente.
@@ -337,6 +409,12 @@ async function igFeedAll(userId, username, maxPages = 15) {
   const out = []; let maxId = '';
   for (let i = 0; i < maxPages; i++) {
     const r = await igGet(`/api/v1/feed/user/${userId}/?count=33${maxId ? `&max_id=${encodeURIComponent(maxId)}` : ''}`);
+    if (r.status !== 200 && i === 0) {
+      // v12.9.8: API limitada → yt-dlp (só na 1ª página; sem API não há paginação)
+      const alt = await ytdlpProfile(username, 33).catch(() => null);
+      if (alt?.items?.length) return { items: alt.items, needsLogin: false };
+      break;
+    }
     if (r.status !== 200) break;
     let j; try { j = JSON.parse(r.body.toString('utf8')); } catch { break; }
     const items = j.items || [];
@@ -345,6 +423,11 @@ async function igFeedAll(userId, username, maxPages = 15) {
     if (!j.more_available || !j.next_max_id) break;
     maxId = j.next_max_id;
     await new Promise(r => setTimeout(r, 1200));
+  }
+  if (!out.length) {
+    // v12.9.8: API devolveu nada/HTML de login → yt-dlp
+    const alt = await ytdlpProfile(username, 33).catch(() => null);
+    if (alt?.items?.length) return { items: alt.items, needsLogin: false };
   }
   return { items: out.sort((a, b) => a.ts - b.ts), needsLogin: false };
 }
@@ -697,7 +780,7 @@ module.exports = {
   load, save, arrancar, _reset, state,
   parseTargetArg, keyOf, addTarget, delTarget, getTarget, listTargets, setTargetOpt, setSession, hasSession,
   validarSessao, validarSessaoDuplo, addSessao, delSessao, listSessoes, sessionsAtivas, marcarSessaoInvalida, igGet, carregarEnv,
-  igProfile, igFeedAll, igStories, igHighlights, nodeToItem, ytdlpItem, sniffMime, baixarMedia,
+  igProfile, igFeedAll, igStories, igHighlights, nodeToItem, ytdlpItem, ytdlpProfile, sniffMime, baixarMedia,
   processarItem, verificarAlvo, capturarTudo, listarGaleria, legenda,
   registar, jaVisto, marcarVisto,
   start, stop, tick,
