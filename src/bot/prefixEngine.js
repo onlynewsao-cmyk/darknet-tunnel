@@ -225,6 +225,15 @@ async function getActivePrefix(groupJid = null) {
   return list[0] || config.bot.prefix || '!';
 }
 
+/** v12.9.6: o chat tem multiprefixo activo? (pro normalizador de prefixos trocados) */
+async function estaMultiprefixo(groupJid = null) {
+  if (!groupJid || !groupJid.endsWith('@g.us')) return false; // PV segue as globais
+  try {
+    const gs = await GroupSettings.findOne({ groupJid }).select('multiprefixo').lean().catch(() => null);
+    return !!(gs && gs.multiprefixo);
+  } catch { return false; }
+}
+
 async function getAllActivePrefixes(groupJid = null) {
   const gp = await getGroupPrefix(groupJid);
   if (gp) return [gp];
@@ -248,6 +257,7 @@ function clearCaches() {
 }
 
 module.exports = {
+  estaMultiprefixo,
   detect,
   getGlobalPrefixes,
   getGroupPrefix,

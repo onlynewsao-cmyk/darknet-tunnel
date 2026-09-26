@@ -56,8 +56,17 @@
         <div class="form-grid">
           <div class="form-group">
             <label>Prefixos de comandos</label>
-            <input type="text" id="prefixesInput" value="<%= Array.isArray(settings.prefixes) ? settings.prefixes.join(' ') : (settings.prefixes || bot.prefix) %>" placeholder="Ex: ! . # /" />
+            <div style="display:flex;gap:.4rem;align-items:center">
+              <input type="text" id="prefixesInput" value="<%= Array.isArray(settings.prefixes) ? settings.prefixes.join(' ') : (settings.prefixes || bot.prefix) %>" placeholder="Ex: ! . # /" style="flex:1" />
+              <button type="button" class="btn btn-sm btn-secondary" onclick="copiarPrefixos()" title="Copiar todos os prefixos">📋 Copiar</button>
+            </div>
             <small class="muted">Separe por espaço ou vírgula. O primeiro vira o prefixo principal nos menus.</small>
+            <div style="margin-top:.5rem">
+              <small class="muted">Símbolos rápidos (clica pra adicionar · 📋 copia só o símbolo):</small>
+              <div id="prefixChips" style="display:flex;flex-wrap:wrap;gap:.3rem;margin-top:.35rem"></div>
+              <small class="muted" style="display:block;margin-top:.4rem">Letras estilizadas (prefixo fancy):</small>
+              <div id="fancyChips" style="display:flex;flex-wrap:wrap;gap:.3rem;margin-top:.25rem"></div>
+            </div>
           </div>
           <div class="form-group form-check" style="display:flex;align-items:center;margin-top:1.8rem">
             <label><input type="checkbox" id="autoDecryptEnabled" <%= settings.auto_decrypt_enabled === false || settings.auto_decrypt_enabled === 'false' ? '' : 'checked' %> /> Auto decrypt global ATIVO</label>
@@ -141,6 +150,38 @@
   document.getElementById('advancedBotForm').onsubmit = async (e) => {
     e.preventDefault();
     try {
+      // ── v12.9.6: chips de símbolos/letras + botão copiar ──
+      const SIMBOLOS = ['!', '.', '#', '/', '?', '+', '*', '~', '^', '=', '|', ';', ':', ',', '@', '$', '&', '%', '§', '¶', '¤', '°', 'º', 'ª', '©', '®', '™', '·', '•', '‣', '☾', '☽', '⚡', '🕸️', '🖤', '💜', '👑', '⚔️', '🔥', '☠️', '🕸', ' Daemon'.trim()];
+      const FANCY = ['𝑫', 'ᖇ', 'Ⱡ', '𝘿', 'Ꮓ', '꧁', '๖ۣ', '༄', 'Ŧ', '乂', '㊣', '✠', '₊', '𝐃', '𝔇', '𝕯'];
+      function _chip(v) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'btn btn-sm btn-secondary';
+        b.style.cssText = 'min-width:2.2rem;padding:.15rem .4rem';
+        b.textContent = v;
+        b.title = 'Adicionar "' + v + '" como prefixo';
+        b.onclick = () => {
+          const inp = document.getElementById('prefixesInput');
+          const atual = inp.value.split(/[\s,]+/).filter(Boolean);
+          if (atual.includes(v)) { toast('"' + v + '" já está nos prefixos', 'warn'); return; }
+          inp.value = atual.concat(v).join(' ');
+          toast('"' + v + '" adicionado — salva pra aplicar', 'success');
+        };
+        b.oncontextmenu = (e) => { e.preventDefault(); navigator.clipboard.writeText(v).then(() => toast('📋 "' + v + '" copiado', 'success')); };
+        return b;
+      }
+      (function montarChips() {
+        const sc = document.getElementById('prefixChips');
+        if (sc) SIMBOLOS.forEach((s) => sc.appendChild(_chip(s)));
+        const fc = document.getElementById('fancyChips');
+        if (fc) FANCY.forEach((s) => fc.appendChild(_chip(s)));
+      })();
+      async function copiarPrefixos() {
+        const v = document.getElementById('prefixesInput').value.trim();
+        if (!v) { toast('Nenhum prefixo pra copiar', 'warn'); return; }
+        try { await navigator.clipboard.writeText(v); toast('📋 Prefixos copiados: ' + v, 'success'); }
+        catch { toast('Não consegui copiar — seleciona e copia à mão', 'error'); }
+      }
       const prefixes = document.getElementById('prefixesInput').value
         .split(/[\s,]+/).map(x => x.trim()).filter(Boolean).slice(0, 10);
       if (!prefixes.length) { toast('Informe pelo menos 1 prefixo', 'error'); return; }

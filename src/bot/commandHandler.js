@@ -649,11 +649,13 @@ async function _handleInner(sock, msg) {
   let prefixInfo = await prefixEngine.detect(text, ctx.remoteJid);
 
   // ── v12.9.1: PREFIXO TROCADO (@cap, !cap, /cap, #cap…) ──────────────
-  // O dono digita @cap (o @ do WhatsApp) e o bot não reconhece → a AURA
-  // acabava a responder/executar a meio. Se o símbolo inicial for seguido
-  // de um comando QUE EXISTE, normaliza para o prefixo real e corre o
-  // comando normalmente — a IA nem vê a mensagem.
+  // v12.9.6: SÓ funciona com MULTIPREFIXO activo no chat! Sem isso o bot
+  // respondia a @cap ©cap etc. sem ninguém ter activado (bug reportado).
+  // Com multiprefixo ON: símbolo + comando conhecido = executa.
+  // Com OFF (padrão): só os prefixos reais configurados funcionam.
   if (!prefixInfo) {
+    const _multiOn = await prefixEngine.estaMultiprefixo(ctx.remoteJid).catch(() => false);
+    if (!_multiOn) return false;
     const mAt = /^([@!#$&*+~^|=;°ºª\/©®™·•‣§¶¤])([a-zA-Z][\w-]{1,20})(?:\s|$)/.exec(text.trim());
     const wGuess = mAt && mAt[2].toLowerCase();
     if (wGuess) {
