@@ -57,6 +57,7 @@ function load() {
 let _saveTimer = null;
 function save() {
   ensureDir(DATA_DIR);
+  state.UpdatedAt = Date.now();
   try { fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 1)); } catch (e) { console.warn('[CAP] save:', e.message); }
   // espelho em BotConfig (best-effort, sem bloquear)
   clearTimeout(_saveTimer);
@@ -70,15 +71,32 @@ function save() {
 
 async function arrancar() {
   load();
-  // se o disco estiver vazio mas a BD tiver espelho, restaura alvos/sessão
-  if (!Object.keys(state.targets).length) {
-    try {
-      const BotConfig = require('../database/models/BotConfig');
-      const mirror = await BotConfig.get('cap_state', null);
-      if (mirror?.targets) { state.targets = mirror.targets; state.session = mirror.session || state.session; save(); }
-    } catch {}
-  }
+  await sincronizar(true);
   carregarEnv();
+  return state;
+}
+
+// ── v12.9.9: SYNC disco ↔ Mongo (o mais novo ganha) ─────────────────
+// O dashboard e o bot podem correr em processos/containers diferentes;
+// quem grava por último espelha em BotConfig e o outro lado adota.
+let _syncAt = 0;
+async function sincronizar(forcar = false) {
+  if (!forcar && Date.now() - _syncAt < 60e3) return state;
+  _syncAt = Date.now();
+  try {
+    const BotConfig = require('../database/models/BotConfig');
+    const mirror = await BotConfig.get('cap_state', null);
+    if (!mirror) return state;
+    const tsM = Number(mirror.UpdatedAt || 0);
+    const tsD = Number(state.UpdatedAt || 0);
+    if (tsM > tsD && (mirror.targets || mirror.session)) {
+      state.targets = mirror.targets || state.targets;
+      state.session = mirror.session || state.session;
+      state.UpdatedAt = tsM;
+      try { fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 1)); } catch {}
+      console.log('[CAP] sync: adoptado estado mais novo da BD (', new Date(tsM).toISOString(), ')');
+    }
+  } catch {}
   return state;
 }
 
@@ -120,7 +138,9 @@ function httpGet(url, { headers = {}, timeout = 25000, redirects = 5, proxy = tr
 }
 
 // ── Sessões IG: pool (state.session.igPool = [{sid, user, ok, addedAt, lastErr}]) + compat state.session.ig ──
+const UA_APP = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Instagram 311.0.0.109.115';
 const UAS = [
+  UA_APP,  // v12.9.9: UA de app primeiro — endpoints /api/v1 tratam app-UA melhor
   UA,
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15',
   'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0 Safari/537.36',
@@ -134,11 +154,66 @@ function sessionsAtivas() {
   return list;
 }
 function pickSession() { const l = sessionsAtivas(); if (!l.length) return null; return l[(_rr++) % l.length]; }
+// ── v12.9.9: JAR COMPLETO de cookies (não só sessionid) ──────────────
+// Aceita: export JSON do EditThisCookie/Cookie-Editor, header "k=v; k=v",
+// ou "sessionid=xxx". Devolve { sid, jar } — jar é header canónico.
+function normalizarCookies(entrada) {
+  let raw = String(entrada || '').trim();
+  if (!raw) return { sid: '', jar: '' };
+  // JSON (EditThisCookie / Cookie-Editor)
+  if (raw.startsWith('[') || raw.startsWith('{')) {
+    try {
+      const arr = JSON.parse(raw);
+      const list = Array.isArray(arr) ? arr : [arr];
+      const pairs = list.filter(x => x && x.name && x.value != null).map(x => `${x.name}=${x.value}`);
+      if (pairs.length) raw = pairs.join('; ');
+    } catch {}
+  }
+  const pairs = raw.split(';').map(s => s.trim()).filter(s => s.includes('='));
+  const jar = [];
+  let sid = '';
+  for (const p of pairs) {
+    const eq = p.indexOf('=');
+    const k = p.slice(0, eq).trim();
+    let v = p.slice(eq + 1).trim().replace(/^"|"$/g, '');
+    if (!k || !v) continue;
+    if (k.toLowerCase() === 'sessionid') {
+      // canónico: %3A único (mesma regra do carregarEnv v12.9.5)
+      let s = v;
+      while (/%253A/i.test(s)) s = s.replace(/%253A/gi, '%3A');
+      if (/:/.test(s) && !/%3A/i.test(s)) s = s.replace(/:/g, '%3A');
+      if (/^\d{5,}%3A/.test(s)) { sid = s; jar.push(`sessionid=${s}`); }
+      continue;
+    }
+    if (/^(domain|path|expires|max-age|httponly|secure|samesite)$/i.test(k)) continue;
+    jar.push(`${k}=${v}`);
+  }
+  // sessionid seco (só o valor, sem k=) — ex: ".cap login 65803996170%3A…"
+  if (!sid) {
+    let s = String(entrada || '').trim().replace(/^sessionid=/i, '');
+    while (/%253A/i.test(s)) s = s.replace(/%253A/gi, '%3A');
+    if (/:/.test(s) && !/%3A/i.test(s)) s = s.replace(/:/g, '%3A');
+    if (/^\d{5,}%3A[A-Za-z0-9_-]+%3A\d+%3A[A-Za-z0-9_-]+$/.test(s)) { sid = s; if (!jar.some(x => x.startsWith('sessionid='))) jar.unshift(`sessionid=${s}`); }
+  }
+  if (false && !sid && pairs.length === 1 && !/^[A-Za-z_]+\s*=/.test(raw)) {
+    let s = raw;
+    while (/%253A/i.test(s)) s = s.replace(/%253A/gi, '%3A');
+    if (/:/.test(s) && !/%3A/i.test(s)) s = s.replace(/:/g, '%3A');
+    if (/^\d{5,}%3A/.test(s)) { sid = s; jar.unshift(`sessionid=${s}`); }
+  }
+  return { sid, jar: jar.join('; ') };
+}
+
 function igHeaders(sess) {
   const h = { 'x-ig-app-id': IG_APP_ID, 'Accept': '*/*', 'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8', 'Referer': 'https://www.instagram.com/', 'User-Agent': UAS[_rr % UAS.length], 'X-Requested-With': 'XMLHttpRequest' };
   const s = sess === undefined ? pickSession() : sess;
   const sid = String(s?.sid || '').trim();
-  if (sid) h.Cookie = `sessionid=${sid}; ds_user_id=${sid.split('%3A')[0].split(':')[0]}`;
+  if (sid) {
+    // v12.9.9: jar completo quando existe (parece navegador real — menos 429)
+    let cookie = String(s?.cookies || '').trim();
+    if (cookie && !/sessionid=/i.test(cookie)) cookie = `sessionid=${sid}; ` + cookie;
+    h.Cookie = cookie || `sessionid=${sid}; ds_user_id=${sid.split('%3A')[0].split(':')[0]}`;
+  }
   return h;
 }
 function marcarSessaoInvalida(sid, motivo) {
@@ -194,15 +269,21 @@ async function validarSessaoDuplo(sid) {
   } catch {}
   return primeira;
 }
-async function addSessao(sid, { validar = true } = {}) {
+async function addSessao(sid, { validar = true, cookies = '' } = {}) {
   load();
   state.session.igPool = Array.isArray(state.session.igPool) ? state.session.igPool : [];
+  // v12.9.9: pode vir o JAR todo (JSON/header); extrai sid + cookies
+  if (!sid || /csrftoken|ds_user_id|mid=/i.test(String(cookies || '')) || /^[\[{"]/.test(String(sid).trim())) {
+    const nc = normalizarCookies(String(sid).trim().startsWith('[') || String(sid).trim().startsWith('{') ? sid : (cookies || sid));
+    if (nc.sid) { sid = nc.sid; cookies = nc.jar; }
+  }
   let info = { ok: true, user: '', id: '' };
   if (validar) { info = await validarSessaoDuplo(sid); if (!info.ok && !info.temporario) return info; }
   const ex = state.session.igPool.find(x => x.sid === sid);
-  if (ex) Object.assign(ex, { ok: true, user: info.user || ex.user, lastErr: '' });
-  else state.session.igPool.push({ sid: String(sid).trim(), user: info.user || '', id: info.id || '', ok: true, addedAt: Date.now() });
+  if (ex) Object.assign(ex, { ok: true, user: info.user || ex.user, lastErr: '', ...(cookies ? { cookies } : {}) });
+  else state.session.igPool.push({ sid: String(sid).trim(), user: info.user || '', id: info.id || '', ok: true, addedAt: Date.now(), ...(cookies ? { cookies } : {}) });
   state.session.ig = String(sid).trim();
+  state.UpdatedAt = Date.now();
   save();
   return { ok: true, user: info.user, id: info.id, validado: !info.temporario, aviso: info.temporario ? info.erro : '' };
 }
@@ -295,6 +376,7 @@ const IG_HOSTS = ['https://i.instagram.com', 'https://www.instagram.com']; // v1
 let _hostIdx = 0;
 // GET com rotação de host/UA/sessão e retry em 429 (backoff curto). Marca sessão inválida em login_required.
 async function igGet(pathAndQuery, { tentativas = 3 } = {}) {
+  sincronizar().catch(() => {}); // v12.9.9: sessionid novo via dashboard chega aqui sem restart
   let last = null;
   for (let i = 0; i < tentativas; i++) {
     const sess = pickSession();
@@ -324,6 +406,12 @@ function ytdlpCookieFile() {
     const f = path.join(__dirname, '..', '..', 'data', 'cap', '.ig-cookies.txt');
     const uid = sid.split('%3A')[0].split(':')[0] || '';
     let out = '# Netscape HTTP Cookie File\n';
+    // v12.9.9: TODOS os cookies do jar (parece navegador real)
+    const extra = String(sess?.cookies || '').split(';').map(x => x.trim()).filter(x => x.includes('=') && !/^sessionid=/i.test(x));
+    for (const par of extra) {
+      const eq = par.indexOf('=');
+      out += `.instagram.com\tTRUE\t/\tTRUE\t0\t${par.slice(0, eq).trim()}\t${par.slice(eq + 1).trim()}\n`;
+    }
     out += `.instagram.com\tTRUE\t/\tTRUE\t0\tsessionid\t${sid}\n`;
     if (uid) out += `.instagram.com\tTRUE\t/\tTRUE\t0\tds_user_id\t${uid}\n`;
     fs.writeFileSync(f, out);
@@ -331,6 +419,48 @@ function ytdlpCookieFile() {
     return f;
   } catch { return ''; }
 }
+// ── v12.9.9: fallback EMBED (público, sem login) para .cap link ──
+// https://www.instagram.com/p/<code>/embed/captioned/ traz a foto/vídeo
+// mesmo quando a API e o yt-dlp estão bloqueados.
+async function embedItem(shortcode) {
+  const url = `https://www.instagram.com/p/${encodeURIComponent(shortcode)}/embed/captioned/`;
+  const r = await httpGet(url, { headers: { 'User-Agent': UA, 'Referer': 'https://www.instagram.com/' }, timeout: 20000 });
+  if (r.status !== 200) throw new Error(`embed HTTP ${r.status}`);
+  const html = r.body.toString('utf8');
+  // contextJSON (reels: tem video_url) ou a imagem clássica do embed
+  let mediaUrl = '', isVideo = false, caption = '';
+  const ctxM = html.match(/contextJSON\s*=\s*(\{.+?\});/s);
+  if (ctxM) {
+    try {
+      const j = JSON.parse(ctxM[1].replace(/\\\\(\\")/g, '$1').replace(/\\\\u0026/g, '&').replace(/\\\\\\/g, '/'));
+      mediaUrl = j.video_url || j.display_url || '';
+      isVideo = !!j.video_url;
+      caption = j.edge_media_to_caption?.edges?.[0]?.node?.text || '';
+    } catch {}
+  }
+  if (!mediaUrl) {
+    const imgM = html.match(/src="(https?:\/\/[^"]+\.(?:jpg|jpeg|webp)[^"]*)"/i)
+      || html.match(/"display_url":"([^"]+)"/i) || html.match(/class="EmbeddedMediaImage"[^>]*src="([^"]+)"/i);
+    if (imgM) { mediaUrl = imgM[1].replace(/&amp;/g, "&").replace("\\u0026", "&"); isVideo = false; }
+  }
+  if (!mediaUrl) {
+    const vidM = html.match(/"video_url":"([^"]+)"/i);
+    if (vidM) { mediaUrl = vidM[1].replace("\\u0026", "&"); isVideo = true; }
+  }
+  if (!mediaUrl) throw new Error('embed sem mídia (post apagado/privado?)');
+  const capM = html.match(/class="Caption"[^>]*>([\s\S]{0,400}?)<\/div>/);
+  if (!caption && capM) caption = capM[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  return { id: `e_${shortcode}`, shortcode, tipo: isVideo ? 'reel' : 'post', ts: 0, caption: caption.slice(0, 300), link: `https://www.instagram.com/p/${shortcode}/`, medias: [{ url: mediaUrl, isVideo }], username: '' };
+}
+
+// 1 link (post/reel/story) → item, via yt-dlp
+async function ytdlpUrl(link) {
+  const it = await ytdlpItem(link);
+  if (!it?.url) throw new Error('yt-dlp sem URL');
+  const m = String(link).match(/\/(?:p|reel|reels|tv|stories(?:\/[^/]+)?)\/([A-Za-z0-9_-]+)/);
+  return { id: `y_${m ? m[1] : Date.now()}`, shortcode: m ? m[1] : '', tipo: it.isVideo ? 'reel' : 'post', ts: it.ts || 0, caption: it.caption || '', link, medias: [{ url: it.url, isVideo: it.isVideo }], username: '' };
+}
+
 async function ytdlpProfile(username, maxPosts = 12) {
   const u = normUser(username);
   const { execFile } = require('child_process');
@@ -369,7 +499,42 @@ async function igProfile(username) {
   const _ck = 'p:' + u;
   const _hit = _profCache.get(_ck);
   if (_hit && Date.now() - _hit.at < 180e3) return _hit.v;
-  const r = await igGet(`/api/v1/users/web_profile_info/?username=${encodeURIComponent(u)}`);
+  let r = await igGet(`/api/v1/users/web_profile_info/?username=${encodeURIComponent(u)}`);
+  // v12.9.9: web_profile_info é o endpoint mais bloqueado; users/search
+  // (endpoint app) provou responder 200 mesmo em IP castigado — dá pk,
+  // nome, follower_count, foto e privado.
+  if (r.status !== 200) {
+    const rs = await httpGet(`https://i.instagram.com/api/v1/users/search/?q=${encodeURIComponent(u)}`, {
+      headers: { ...igHeaders(pickSession()), 'User-Agent': UA_APP },
+    }).catch(() => null);
+    const us = (() => { try { return JSON.parse(rs?.body?.toString('utf8') || '{}')?.users || []; } catch { return []; } })()
+      .find(x => String(x.username || '').toLowerCase() === u);
+    if (us?.pk) {
+      // enriquece (seguidores/posts/bio) via usernameinfo app-UA — best-effort
+      let _extra = {};
+      try {
+        const ri = await httpGet(`https://i.instagram.com/api/v1/users/${us.pk}/usernameinfo/`, {
+          headers: { ...igHeaders(pickSession()), 'User-Agent': UA_APP },
+        });
+        const ji = JSON.parse(ri.body.toString('utf8'));
+        if (ji?.user) _extra = { seguidores: ji.user.follower_count || 0, seguindo: ji.user.following_count || 0, posts: ji.user.media_count || 0, bio: ji.user.biography || '', privado: !!ji.user.is_private };
+      } catch {}
+      // tenta feed app directo; se falhar, yt-dlp
+      const rf = await igGet(`/api/v1/feed/user/${us.pk}/?count=12`).catch(() => null);
+      const itensFeed = (() => { try { return JSON.parse(rf?.body?.toString('utf8') || '{}')?.items || []; } catch { return []; } })();
+      const items = itensFeed.map(it => nodeToItem(it, u)).filter(x => x.medias?.length).sort((a, b) => a.ts - b.ts);
+      const _ret = {
+        id: String(us.pk), username: u, nome: us.full_name || '@' + u, bio: _extra.bio || '',
+        privado: _extra.privado != null ? _extra.privado : !!us.is_private,
+        seguidores: _extra.seguidores || us.follower_count || 0, seguindo: _extra.seguindo || 0, posts: _extra.posts || items.length,
+        highlights: 0, temReels: items.some(i => i.tipo === 'reel'),
+        foto: us.profile_pic_url || '',
+        items, hasMore: false, endCursor: '', via: items.length ? 'app-search' : 'search',
+      };
+      _profCache.set(_ck, { at: Date.now(), v: _ret });
+      return _ret;
+    }
+  }
   if (r.status === 404) throw new Error(`Perfil @${u} não existe`);
   if (r.status !== 200) {
     // v12.9.8: API limitada → yt-dlp (mesmo caminho do .cap link, comprovado no servidor)
@@ -435,7 +600,13 @@ async function igFeedAll(userId, username, maxPages = 15) {
 async function igStories(userId, username) {
   if (!sessionsAtivas().length) return { items: [], needsLogin: true };
   const r = await igGet(`/api/v1/feed/reels_media/?reel_ids=${userId}`);
-  if (r.status !== 200) return { items: [], needsLogin: r.status === 401 || r.status === 403, error: `HTTP ${r.status}` };
+  if (r.status !== 200) {
+    // v12.9.9: yt-dlp saca stories activos com cookies (https://www.instagram.com/stories/<user>/)
+    const alt = await ytdlpProfile(`stories/${normUser(username)}`, 20).catch(() => null)
+      || await (async () => { try { return await ytdlpUrl(`https://www.instagram.com/stories/${normUser(username)}/`); } catch { return null; } })();
+    if (alt?.items?.length) return { items: alt.items, needsLogin: false };
+    return { items: [], needsLogin: r.status === 401 || r.status === 403, error: `HTTP ${r.status}` };
+  }
   let j; try { j = JSON.parse(r.body.toString('utf8')); } catch { return { items: [], error: 'JSON' }; }
   const reel = j.reels?.[userId] || j.reels_media?.[0];
   const items = (reel?.items || []).map(s => {
@@ -779,8 +950,8 @@ module.exports = {
   PROVIDERS, DATA_DIR, DEFAULT_INTERVAL_MIN,
   load, save, arrancar, _reset, state,
   parseTargetArg, keyOf, addTarget, delTarget, getTarget, listTargets, setTargetOpt, setSession, hasSession,
-  validarSessao, validarSessaoDuplo, addSessao, delSessao, listSessoes, sessionsAtivas, marcarSessaoInvalida, igGet, carregarEnv,
-  igProfile, igFeedAll, igStories, igHighlights, nodeToItem, ytdlpItem, ytdlpProfile, sniffMime, baixarMedia,
+  validarSessao, validarSessaoDuplo, addSessao, delSessao, listSessoes, sessionsAtivas, marcarSessaoInvalida, igGet, carregarEnv, sincronizar,
+  igProfile, igFeedAll, igStories, igHighlights, nodeToItem, ytdlpItem, ytdlpProfile, ytdlpUrl, embedItem, normalizarCookies, sniffMime, baixarMedia,
   processarItem, verificarAlvo, capturarTudo, listarGaleria, legenda,
   registar, jaVisto, marcarVisto,
   start, stop, tick,

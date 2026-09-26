@@ -1021,12 +1021,16 @@ module.exports = function (io) {
 
   // ═══ v7.34: C∆P API (dono) ═══
   const capE = () => { const c = require('../cap/capEngine'); c.load(); return c; };
-  router.get('/cap/state', requireApiOwner, (req, res) => { const c = capE(); res.json({ sessoes: c.listSessoes(), alvos: c.listTargets(), log: c.state.log.slice(0, 50) }); });
+  router.get('/cap/state', requireApiOwner, async (req, res) => { const c = capE(); await c.sincronizar(true).catch(() => {}); res.json({ sessoes: c.listSessoes(), alvos: c.listTargets(), log: c.state.log.slice(0, 50) }); });
   router.post('/cap/login', requireApiOwner, async (req, res) => {
     const c = capE();
     try {
       let sid = String(req.body.sessionid || '').trim();
-      const mm = sid.match(/sessionid=([^;\s]+)/i); if (mm) sid = mm[1];
+      let _jar = '';
+      if (/^[\[{]/.test(sid) || /csrftoken=|ds_user_id=|ig_did=/i.test(sid)) {
+        const nc = c.normalizarCookies(sid);
+        if (nc.sid) { sid = nc.sid; _jar = nc.jar; }
+      } else { const mm = sid.match(/sessionid=([^;\s]+)/i); if (mm) sid = mm[1]; }
       if (!sid && req.body.username && req.body.password) {
         const lg = await require('../cap/igLogin').loginComSenha(req.body.username, req.body.password);
         // ── v12.8: Instagram pediu código → painel pede ao dono ──
@@ -1038,7 +1042,7 @@ module.exports = function (io) {
         sid = lg.sid;
       }
       if (!sid) return res.status(400).json({ error: 'Envia sessionid ou username+password' });
-      const r = await c.addSessao(sid);
+      const r = await c.addSessao(sid, { cookies: _jar });
       if (!r.ok) return res.status(400).json({ error: r.erro });
       res.json({ ok: true, user: r.user, validado: r.validado, aviso: r.aviso || req.body._aviso || '', sessoes: c.listSessoes() });
     } catch (e) { res.status(500).json({ error: e.message }); }

@@ -1850,6 +1850,21 @@ _Desculpa meu Dark, ainda não sei cantar de verdade... Mas um dia aprendo! 🌹
     (botNameLower.length > 3 && textLower.includes(botNameLower))
   );
 
+  // ── v12.9.9: "prefixo" em TEXTO PURO → card na hora, SEM depender da
+  // Aura/IA (roda antes de qualquer gate de IA; funciona com a Aura
+  // dormida, sem chaves, em PV e em grupos).
+  try {
+    const _tPre = String(text || '').toLowerCase().trim();
+    if (text && !prefixInfo && !startsWithAnyPrefix(text, prefixes) &&
+        (/^(meu |o |qual (é |e |o )?)?(prefixo|prefixos|getprefix)[?!.]*$/.test(_tPre) ||
+         /^qual (é |e )?o (meu )?prefixo[?!.]*$/.test(_tPre))) {
+      const pcPre = require('./prefixCard');
+      const customPre = ctx.isGroup ? await pcPre.isCustomGroupPrefix(msg, ctx.remoteJid) : false;
+      await pcPre.sendPrefixCard(sock, ctx.remoteJid, { prefix, custom: customPre }, msg);
+      return true;
+    }
+  } catch (ePre) { console.warn('[prefixo texto]', ePre.message?.slice(0, 60)); }
+
   const replyHasText = isReplyToBot && text.length > 0;
   const replyHasMedia = isReplyToBot && !!(msg.message?.imageMessage || msg.message?.videoMessage || msg.message?.audioMessage || msg.message?.stickerMessage);
   const mentionedWithMedia = isBotMentioned && !!(msg.message?.imageMessage || msg.message?.videoMessage || msg.message?.audioMessage || msg.message?.stickerMessage);
@@ -3054,19 +3069,8 @@ Responde como pessoa real que está olhando — comenta o que salta à vista pri
         memA.guardar(ctx.senderNumber, cleanText).catch(() => {});
       } catch {}
 
-      // ── v12.9.6: "prefixo" em texto puro mostra o card ──────────────
-      // O dono pergunta "prefixo" (sem ponto) e o bot calava. Agora o
-      // card vem na hora — é o pedido mais directo que existe.
-      try {
-        const _tPre = String(cleanText || '').toLowerCase().trim();
-        if (/^(meu |o |qual (é |e |o )?)?(prefixo|prefixos|getprefix)[?!.]*$/.test(_tPre) ||
-            /^qual (é |e )?o (meu )?prefixo[?!.]*$/.test(_tPre)) {
-          const pcPre = require('./prefixCard');
-          const customPre = ctx.isGroup ? await pcPre.isCustomGroupPrefix(msg, ctx.remoteJid) : false;
-          await pcPre.sendPrefixCard(sock, ctx.remoteJid, { prefix, custom: customPre }, msg);
-          return true;
-        }
-      } catch (ePre) { console.warn('[prefixo texto]', ePre.message?.slice(0, 60)); }
+      // v12.9.9: o card de "prefixo" agora corre ANTES da IA (ver trigger
+      // cedo no handler) — aqui já não é preciso.
       const actionSticker = finalAnswer.match(/\[STICKER:([^\]]+)\]/);
       const actionImage = finalAnswer.match(/\[IMAGE:([^\]]+)\]/);
       const actionCmd = finalAnswer.match(/\[CMD:([^\]]+)\]/);

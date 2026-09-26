@@ -79,10 +79,15 @@ module.exports = function registerCap(registerCase) {
     // ── login/logout ──
     if (sub === 'login') {
       let sid = args.slice(1).join(' ').trim();
-      // aceita "sessionid=xxx" ou cookie inteiro colado
-      const mm = sid.match(/sessionid=([^;\s]+)/i); if (mm) sid = mm[1];
+      // aceita "sessionid=xxx", cookie inteiro colado, JSON do EditThisCookie
+      let _jarCookies = '';
+      if (/^[\[{]/.test(sid) || /csrftoken=|ds_user_id=|ig_did=/i.test(sid)) {
+        const nc = cap.normalizarCookies(sid);
+        if (nc.sid) { sid = nc.sid; _jarCookies = nc.jar; }
+      }
+      if (!_jarCookies) { const mm = sid.match(/sessionid=([^;\s]+)/i); if (mm) sid = mm[1]; }
       if (!sid) return tReply(sock, msg, ctx, '🔐 C∆P LOGIN', [
-        `Uso: ${p}cap login <sessionid>`,
+        `Uso: ${p}cap login <sessionid | cookies | JSON>`,
         `Ou:  ${p}cap login <utilizador> <senha>  (só no PV; a senha não é guardada)`,
         `Ou pelo painel web: /dashboard/cap`,
         '',
@@ -91,7 +96,8 @@ module.exports = function registerCap(registerCase) {
         '2️⃣ No Chrome do PC: instagram.com → login → F12 → Application → Cookies → instagram.com → copia o valor de *sessionid*.',
         '3️⃣ No telemóvel: Kiwi Browser / Firefox + extensão "Cookie Editor".',
         '',
-        '> Podes adicionar várias contas (pool com rotação — menos 429).',
+        '> 💡 MELHOR: cola TODOS os cookies (EditThisCookie → export) — parece navegador real e o IG limita MUITO menos. JSON colado funciona directo.',
+'> Podes adicionar várias contas (pool com rotação — menos 429).',
         '> Alternativa: variável IG_SESSIONID no .env do servidor.',
         '> Fica guardado só na base de dados do bot; a mensagem é apagada.',
       ]);
@@ -149,7 +155,7 @@ module.exports = function registerCap(registerCase) {
         return tReply(sock, msg, ctx, '🔐 C∆P PENDENTES', pend.map(x => `⏳ @${x.user} — ${x.tipo} · ${x.dica || ''} · ${Math.round((Date.now() - x.ts) / 60000)}min atrás`).concat(['', `> Confirma com *${p}cap codigo 123456*`]));
       }
       await sock.sendMessage(ctx.remoteJid, { text: '🔐 A validar sessão…' }).catch(() => {});
-      const r = await cap.addSessao(sid);
+      const r = await cap.addSessao(sid, { cookies: _jarCookies });
       if (!r.ok) return tReply(sock, msg, ctx, '🔐 C∆P LOGIN', [`❌ ${r.erro}`, '> Copia o cookie de novo (sem espaços) e tenta outra vez.']);
       const n = cap.listSessoes().length;
       return tReply(sock, msg, ctx, '🔐 C∆P LOGIN', [
@@ -246,8 +252,8 @@ module.exports = function registerCap(registerCase) {
         const sess = cap.hasSession('ig');
         const lines = [
           `👤 *${perfil.nome || '@' + username}* · @${username}${perfil.privado ? ' 🔒' : ''}`,
-          perfil.via === 'ytdlp'
-            ? `⚡ Modo alternativo (API do IG limitada neste IP) · ${perfil.posts} posts recentes`
+          /^(ytdlp|search|app-search)$/.test(perfil.via)
+            ? `⚡ Modo alternativo (API do IG limitada neste IP)${perfil.seguidores ? ` · 👥 ${fmtN(perfil.seguidores)} followers` : ''} · ${perfil.posts} posts recentes`
             : `📸 ${perfil.posts} posts · 👥 ${fmtN(perfil.seguidores)} followers · ➡️ ${fmtN(perfil.seguindo || 0)} following`,
           perfil.bio ? `📝 ${perfil.bio.slice(0, 160).replace(/\n+/g, ' ')}` : null,
           '',
@@ -287,9 +293,16 @@ module.exports = function registerCap(registerCase) {
       const shortcode = m[2];
       await sock.sendMessage(ctx.remoteJid, { react: { text: '⬇️', key: msg.key } }).catch(() => {});
       try {
-        const alt = await cap.ytdlpItem(`https://www.instagram.com/p/${shortcode}/`);
-        const t = { key: 'ig:_links', platform: 'ig', username: alt.uploader || 'instagram', destinos: [], guardar: false, stats: {} };
-        const item = { id: `p_${shortcode}`, shortcode, tipo: alt.isVideo ? 'reel' : 'post', ts: alt.ts || Date.now(), caption: alt.caption, link: `https://www.instagram.com/p/${shortcode}/`, medias: [{ url: alt.url, isVideo: alt.isVideo }], username: t.username };
+        let item;
+        try {
+          const alt = await cap.ytdlpItem(`https://www.instagram.com/p/${shortcode}/`);
+          const t = { key: 'ig:_links', platform: 'ig', username: alt.uploader || 'instagram', destinos: [], guardar: false, stats: {} };
+          item = { id: `p_${shortcode}`, shortcode, tipo: alt.isVideo ? 'reel' : 'post', ts: alt.ts || Date.now(), caption: alt.caption, link: `https://www.instagram.com/p/${shortcode}/`, medias: [{ url: alt.url, isVideo: alt.isVideo }], username: t.username };
+        } catch (eYt) {
+          // v12.9.9: yt-dlp falhou → embed público (sem login, outro rate-bucket)
+          item = await cap.embedItem(shortcode).catch(() => { throw eYt; });
+        }
+        const t = { key: 'ig:_links', platform: 'ig', username: item.username || 'instagram', destinos: [], guardar: false, stats: {} };
         const r = await cap.processarItem(sock, t, item, { destinos: [ctx.remoteJid], forcar: true, guardar: false });
         if (!r.files) return tReply(sock, msg, ctx, '📡 C∆P', [`❌ Não consegui baixar: ${r.erros.join('; ')}`]);
         return sock.sendMessage(ctx.remoteJid, { react: { text: '✅', key: msg.key } }).catch(() => {});
@@ -359,6 +372,53 @@ module.exports = function registerCap(registerCase) {
         let okN = 0, failN = 0;
         for (const it of items) { const r = await cap.processarItem(sock, t, it, { destinos: [ctx.remoteJid], forcar: true, guardar: !!cap.getTarget(alvoArg)?.guardar }); if (r.files) okN++; else failN++; }
         return tReply(sock, msg, ctx, `✅ C∆P — ${sub.toUpperCase()} @${username}`, [`✅ ${okN} baixado(s) · ❌ ${failN} falhado(s)`, failN ? `> Detalhes: ${p}cap log` : null]);
+      } catch (e) { return tReply(sock, msg, ctx, '📡 C∆P', [`❌ ${e.message}`]); }
+    }
+
+    // ── canal (broadcast channels do IG) — v12.9.9 melhor esforço honesto ──
+    if (sub === 'canal' || sub === 'canais' || sub === 'channel') {
+      if (!alvoArg) return tReply(sock, msg, ctx, '📡 C∆P', [`Uso: ${p}cap canal @user — baixa os posts recentes do canal de difusão`]);
+      const { platform, username } = cap.parseTargetArg(alvoArg);
+      if (!cap.PROVIDERS[platform]) return tReply(sock, msg, ctx, '📡 C∆P', ['❌ Plataforma não suportada (fase 1: Instagram).']);
+      await sock.sendMessage(ctx.remoteJid, { react: { text: '⬇️', key: msg.key } }).catch(() => {});
+      try {
+        // descobrir o canal do criador: endpoint de discovery (não documentado — tenta e falha com honestidade)
+        const perf = await cap.PROVIDERS[platform].profile(username);
+        const rotas = [
+          `/api/v1/channels/discovery/?pk=${perf.id}`,
+          `/api/v1/text_feed/${perf.id}/`,
+        ];
+        let achou = null;
+        for (const rota of rotas) {
+          const r = await cap.igGet(rota).catch(() => null);
+          if (r?.status === 200) {
+            try { const j = JSON.parse(r.body.toString('utf8')); if (j && (j.items?.length || j.media_items?.length)) { achou = j; break; } } catch {}
+          }
+        }
+        if (!achou) {
+          // fallback honesto: manda os últimos posts/reels do criador (o conteúdo público que existe)
+          const items = (perf.items || []).slice(-6).reverse();
+          if (!items.length) return tReply(sock, msg, ctx, '📡 C∆P', [
+            `❌ Canal de @${username}: o Instagram não expõe canais de difusão por API pública (só pela app).`,
+            '> Tentei os 2 endpoints conhecidos — sem resultado.',
+            `> Alternativa: ${p}cap all @${username} 5  (baixa os últimos posts reais)`,
+          ]);
+          const t = { key: 'ig:_canal', platform, username, destinos: [], guardar: false, stats: {} };
+          let okN = 0;
+          for (const it of items) { const r = await cap.processarItem(sock, t, it, { destinos: [ctx.remoteJid], forcar: true, guardar: false }); if (r.files) okN++; }
+          return tReply(sock, msg, ctx, '📡 C∆P — CANAL', [
+            `⚠️ Canal de difusão fechado para API — enviei os ${okN} posts públicos mais recentes de @${username}.`,
+          ]);
+        }
+        const j = achou;
+        const itemsCrus = j.items || j.media_items || [];
+        const t = { key: 'ig:_canal', platform, username, destinos: [], guardar: false, stats: {} };
+        let okN = 0;
+        for (const cru of itemsCrus.slice(0, 12)) {
+          const it = cap.nodeToItem(cru.media || cru, username);
+          if (it?.medias?.length) { const r = await cap.processarItem(sock, t, it, { destinos: [ctx.remoteJid], forcar: true, guardar: false }); if (r.files) okN++; }
+        }
+        return tReply(sock, msg, ctx, '📡 C∆P — CANAL', [`✅ ${okN} item(ns) do canal de @${username} baixados.`]);
       } catch (e) { return tReply(sock, msg, ctx, '📡 C∆P', [`❌ ${e.message}`]); }
     }
 

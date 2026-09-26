@@ -702,6 +702,14 @@ function _recusaHumana(texto, { isAdmin = false, pushName = '' } = {}) {
 }
 
 // ── RESPOSTA PRINCIPAL DA AURA ──────────────────────────
+// v12.9.9: último erro do motor de IA — visível em .auraestado
+let _ultimoErroIA = { motivo: '', ts: 0 };
+function _registarErroIA(motivo) {
+  _ultimoErroIA = { motivo: String(motivo || '').slice(0, 160), ts: Date.now() };
+  try { require('../database/models/BotConfig').set('aura_last_erro', _ultimoErroIA).catch(() => {}); } catch {}
+}
+function ultimoErroIA() { return _ultimoErroIA; }
+
 async function auraRespond(text, ctx = {}) {
   const {
     isOwner = false,
@@ -821,8 +829,10 @@ async function auraRespond(text, ctx = {}) {
         return reply;
       }
     }
+    _registarErroIA(String(reply || '').trim() || 'resposta vazia');
     throw new Error('IA indisponível');
-  } catch {
+  } catch (eIA) {
+    if (!/IA indisponível/.test(eIA.message)) _registarErroIA(eIA.message);
     // Fallback DINÂMICO (nunca repete a mesma resposta)
     const offline = generateDynamicResponse(text, userRole, mood, pushName, isOwner);
     return offline;
@@ -1454,4 +1464,5 @@ module.exports = {
   auraIndirect,
   generateDynamicResponse,
   auraRespondSmart,
+  ultimoErroIA,
 };
