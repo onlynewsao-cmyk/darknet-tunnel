@@ -156,20 +156,49 @@ async function validarSessao(sid) {
   try {
     const r = await httpGet('https://www.instagram.com/api/v1/accounts/current_user/?edit=true', { headers: igHeaders(sess), timeout: 20000 });
     if (r.status === 200) {
-      let j; try { j = JSON.parse(r.body.toString('utf8')); } catch { return { ok: false, erro: 'resposta inválida' }; }
+      let j; try { j = JSON.parse(r.body.toString('utf8')); } catch { return { ok: false, erro: 'resposta não-JSON (challenge/HTML?) — adiada', temporario: true }; }
       const u = j?.user; if (u?.username) return { ok: true, user: u.username, id: String(u.pk || u.id || '') };
       return { ok: false, erro: 'sem utilizador na resposta' };
     }
-    if (r.status === 401 || r.status === 403) return { ok: false, erro: 'sessionid inválido ou expirado (' + r.status + ')' };
+    if (r.status === 401 || r.status === 403) {
+      // v12.9.5: distinguir sid morto de IP bloqueado — o corpo diz qual
+      const corpo = r.body.toString('utf8').slice(0, 200);
+      if (/login_required|Sorry|erro|Try again/i.test(corpo) && !/bad_sessionid|invalid/i.test(corpo)) {
+        // 403 com "Ocorreu um erro" = IG a bloquear o IP do servidor, não a sessão
+        return { ok: false, erro: 'IP do servidor bloqueado pelo IG (' + r.status + ') — sessão provavelmente BOA; valida por outro caminho', temporario: true };
+      }
+      return { ok: false, erro: 'sessionid inválido ou expirado (' + r.status + ')' };
+    }
     if (r.status === 429) return { ok: false, erro: 'rate-limit 429 ao validar — tenta daqui a uns minutos', temporario: true };
     return { ok: false, erro: 'HTTP ' + r.status };
   } catch (e) { return { ok: false, erro: e.message, temporario: true }; }
+}
+/**
+ * v12.9.5: validação em DOIS caminhos — se o current_user falhar por
+ * bloqueio de IP, tenta o endpoint das DMs (raremente bloqueado).
+ * Sessão boa + IP bravo ≠ sessão inválida!
+ */
+async function validarSessaoDuplo(sid) {
+  const primeira = await validarSessao(sid);
+  if (primeira.ok) return primeira;
+  if (!primeira.temporario) return primeira;
+  try {
+    const sess = { sid: String(sid || '').trim() };
+    const r = await httpGet('https://i.instagram.com/api/v1/direct_v2/presence/?max_users=1', { headers: igHeaders(sess), timeout: 15000 });
+    if (r.status === 200) {
+      // chegou ao IG com a sessão — boa, só não conseguimos o username por este IP
+      let j; try { j = JSON.parse(r.body.toString('utf8')); } catch { j = {}; }
+      const u = j?.presence_events?.user_presence_list?.[0]?.user_id;
+      return { ok: true, user: '', id: '', viaFallback: true };
+    }
+  } catch {}
+  return primeira;
 }
 async function addSessao(sid, { validar = true } = {}) {
   load();
   state.session.igPool = Array.isArray(state.session.igPool) ? state.session.igPool : [];
   let info = { ok: true, user: '', id: '' };
-  if (validar) { info = await validarSessao(sid); if (!info.ok && !info.temporario) return info; }
+  if (validar) { info = await validarSessaoDuplo(sid); if (!info.ok && !info.temporario) return info; }
   const ex = state.session.igPool.find(x => x.sid === sid);
   if (ex) Object.assign(ex, { ok: true, user: info.user || ex.user, lastErr: '' });
   else state.session.igPool.push({ sid: String(sid).trim(), user: info.user || '', id: info.id || '', ok: true, addedAt: Date.now() });
@@ -199,7 +228,15 @@ function carregarEnv() {
   const mCookie = /sessionid\s*=\s*([^;\s"']+)/i.exec(env);
   if (mCookie) env = mCookie[1];
   env = env.replace(/;.*$/, '').trim();
-  if (env && !/%3A/i.test(env) && env.includes(':')) env = encodeURIComponent(env); // sid cru com ':'
+  if (env && /%253A|%25253A/i.test(env)) {
+    // duplo/triplo-encode → descodifica até ficar com um único %3A
+    let vezes = 0;
+    while (/%25/i.test(env) && vezes < 3) { env = decodeURIComponent(env); vezes++; }
+  }
+  if (env && env.includes(':')) {
+    // sid cru com ':' literal → codifica
+    env = encodeURIComponent(env);
+  }
   if (!env || env.length < 30) {
     if (bruto) console.warn('[CAP] IG_SESSIONID definido mas inválido (curto demais) — ignorado');
     return;
@@ -211,7 +248,7 @@ function carregarEnv() {
     if (!state.session.ig) state.session.ig = env;
     save();
     // valida em fundo: preenche user/id ou marca inválida
-    validarSessao(env).then((info) => {
+    validarSessaoDuplo(env).then((info) => {
       const s = state.session.igPool.find((x) => x.sid === env);
       if (!s) return;
       if (info.ok) { s.user = info.user; s.id = info.id; s.ok = true; console.log(`[CAP] sessão do .env validada: @${info.user}`); }
@@ -659,7 +696,7 @@ module.exports = {
   PROVIDERS, DATA_DIR, DEFAULT_INTERVAL_MIN,
   load, save, arrancar, _reset, state,
   parseTargetArg, keyOf, addTarget, delTarget, getTarget, listTargets, setTargetOpt, setSession, hasSession,
-  validarSessao, addSessao, delSessao, listSessoes, sessionsAtivas, marcarSessaoInvalida, igGet, carregarEnv,
+  validarSessao, validarSessaoDuplo, addSessao, delSessao, listSessoes, sessionsAtivas, marcarSessaoInvalida, igGet, carregarEnv,
   igProfile, igFeedAll, igStories, igHighlights, nodeToItem, ytdlpItem, sniffMime, baixarMedia,
   processarItem, verificarAlvo, capturarTudo, listarGaleria, legenda,
   registar, jaVisto, marcarVisto,
