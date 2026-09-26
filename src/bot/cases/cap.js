@@ -51,6 +51,8 @@ const AJUDA = (p) => [
   `▸ ${p}cap del @veigh — parar de monitorizar`,
   `▸ ${p}cap lista — alvos e estatísticas`,
   `▸ ${p}cap ver @veigh — perfil + últimos posts`,
+  `▸ ${p}cap link <link> — QUALQUER link: post, reel, story, highlight, share/ig.me`,
+  `▸ ${p}cap canal @user — posts do canal de difusão (melhor esforço)`,
   `▸ ${p}cap check [@veigh] — verificar agora (só novos)`,
   `▸ ${p}cap all @veigh [aqui|jid] [limite] — *capture all*: baixa tudo e manda no grupo`,
   `▸ ${p}cap ultimo @veigh — baixa e envia o post mais recente`,
@@ -288,23 +290,29 @@ module.exports = function registerCap(registerCase) {
     // ── link: baixa um post/reel pelo URL (funciona mesmo com o perfil em 429) ──
     if (sub === 'link' || sub === 'url' || /^https?:\/\//i.test(sub)) {
       const url = /^https?:\/\//i.test(sub) ? sub : (args[1] || '');
-      const m = url.match(/instagram\.com\/(?:[^/]+\/)?(p|reel|reels|tv)\/([A-Za-z0-9_-]+)/);
-      if (!m) return tReply(sock, msg, ctx, '📡 C∆P', [`Uso: ${p}cap link https://www.instagram.com/p/XXXX/`]);
-      const shortcode = m[2];
+      // v12.9.10: QUALQUER link — post/reel/tv, stories, highlights, /share/, ig.me
+      const infoL = await cap.resolverLink(url).catch(() => null);
+      if (!infoL) return tReply(sock, msg, ctx, '📡 C∆P', [`Uso: ${p}cap link <link do Instagram>`, 'Aceita: posts, reels, IGTV, stories, highlights e links de partilha (share/ig.me).']);
       await sock.sendMessage(ctx.remoteJid, { react: { text: '⬇️', key: msg.key } }).catch(() => {});
-      try {
-        let item;
+      // stories/highlights têm caminho próprio (sessão vê dentro do IG)
+      if (infoL.tipo === 'story' || infoL.tipo === 'highlight') {
         try {
-          const alt = await cap.ytdlpItem(`https://www.instagram.com/p/${shortcode}/`);
-          const t = { key: 'ig:_links', platform: 'ig', username: alt.uploader || 'instagram', destinos: [], guardar: false, stats: {} };
-          item = { id: `p_${shortcode}`, shortcode, tipo: alt.isVideo ? 'reel' : 'post', ts: alt.ts || Date.now(), caption: alt.caption, link: `https://www.instagram.com/p/${shortcode}/`, medias: [{ url: alt.url, isVideo: alt.isVideo }], username: t.username };
-        } catch (eYt) {
-          // v12.9.9: yt-dlp falhou → embed público (sem login, outro rate-bucket)
-          item = await cap.embedItem(shortcode).catch(() => { throw eYt; });
-        }
-        const t = { key: 'ig:_links', platform: 'ig', username: item.username || 'instagram', destinos: [], guardar: false, stats: {} };
-        const r = await cap.processarItem(sock, t, item, { destinos: [ctx.remoteJid], forcar: true, guardar: false });
-        if (!r.files) return tReply(sock, msg, ctx, '📡 C∆P', [`❌ Não consegui baixar: ${r.erros.join('; ')}`]);
+          const items = await cap.itemDeLink(infoL.url);
+          const t = { key: 'ig:_links', platform: 'ig', username: infoL.username || 'instagram', destinos: [], guardar: false, stats: {} };
+          let okN = 0;
+          for (const it of items.slice(0, 10)) { const r = await cap.processarItem(sock, t, it, { destinos: [ctx.remoteJid], forcar: true, guardar: false }); if (r.files) okN++; }
+          if (!okN) return tReply(sock, msg, ctx, '📡 C∆P', ['❌ Não consegui baixar — vê .cap log']);
+          return sock.sendMessage(ctx.remoteJid, { react: { text: '✅', key: msg.key } }).catch(() => {});
+        } catch (e) { return tReply(sock, msg, ctx, '📡 C∆P', [`❌ ${e.message}`]); }
+      }
+      const shortcode = infoL.shortcode;
+      try {
+        // v12.9.10: cadeia completa num sítio só — yt-dlp → embed → oEmbed+sessão
+        const items = await cap.itemDeLink(infoL.url);
+        const t = { key: 'ig:_links', platform: 'ig', username: items[0].username || 'instagram', destinos: [], guardar: false, stats: {} };
+        let okN = 0;
+        for (const it of items.slice(0, 10)) { const r = await cap.processarItem(sock, t, it, { destinos: [ctx.remoteJid], forcar: true, guardar: false }); if (r.files) okN++; }
+        if (!okN) return tReply(sock, msg, ctx, '📡 C∆P', ['❌ Não consegui baixar — detalhes em ' + p + 'cap log']);
         return sock.sendMessage(ctx.remoteJid, { react: { text: '✅', key: msg.key } }).catch(() => {});
       } catch (e) { return tReply(sock, msg, ctx, '📡 C∆P', [`❌ ${e.message}`]); }
     }

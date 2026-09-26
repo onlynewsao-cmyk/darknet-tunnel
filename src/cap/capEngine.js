@@ -422,6 +422,120 @@ function ytdlpCookieFile() {
 // ── v12.9.9: fallback EMBED (público, sem login) para .cap link ──
 // https://www.instagram.com/p/<code>/embed/captioned/ traz a foto/vídeo
 // mesmo quando a API e o yt-dlp estão bloqueados.
+// ── v12.9.10: QUALQUER link do IG → mídia (a sessão vê dentro, o bot baixa) ──
+// Aceita: /p/ /reel/ /reels/ /tv/ · /stories/<user>/<pk>/ · /stories/highlights/<rid>/
+// e links de partilha: /share/…, /share_reel/…, ig.me/m/… (segue o redirect).
+const IG_LINK_RE = /instagram\.com\/(?:[^/]+\/)?(p|reel|reels|tv)\/([A-Za-z0-9_-]+)/i;
+const IG_STORY_RE = /instagram\.com\/stories\/([^/#?]+)\/([A-Za-z0-9_-]+)/i;
+const IG_HL_RE = /instagram\.com\/stories\/highlights\/([A-Za-z0-9_-]+)/i;
+
+async function resolverLink(link) {
+  let url = String(link || '').trim();
+  if (!/^https?:\/\//i.test(url)) url = 'https://' + url.replace(/^\/+/, '');
+  // links de partilha (redirect 30x) → destino final
+  if (/instagram\.com\/share|ig\.me\/m\//i.test(url)) {
+    let atual = url;
+    for (let i = 0; i < 4; i++) {
+      const r = await httpGet(atual, { redirects: 0, timeout: 15000 }).catch(() => null);
+      if (r?.headers?.location) { atual = r.headers.location.startsWith('http') ? r.headers.location : new URL(r.headers.location, atual).href; continue; }
+      // alguns share links respondem 200 com meta-refresh/HTML — extrair o link canónico do corpo
+      if (r?.status === 200) {
+        const corpo = r.body?.toString('utf8') || '';
+        const canon = corpo.match(/(?:og:url|canonical)[^>]*(?:content|href)="(https:[^"]+instagram\.com[^"]+)"/i)
+          || corpo.match(/content="0;\s*url=(https:[^"]+instagram\.com[^"]+)"/i)
+          || corpo.match(/"(https:\/\/www\.instagram\.com\/(?:p|reel|reels|tv)\/[A-Za-z0-9_-]+\/)"/i);
+        if (canon) { atual = canon[1].replace(/&amp;/g, '&'); continue; }
+      }
+      break;
+    }
+    url = atual;
+  }
+  let m = url.match(IG_HL_RE);
+  if (m) return { tipo: 'highlight', id: m[1], url };
+  m = url.match(IG_STORY_RE);
+  if (m && m[1].toLowerCase() !== 'highlights') return { tipo: 'story', username: m[1], pk: m[2], url };
+  m = url.match(IG_LINK_RE);
+  if (m) return { tipo: m[1].toLowerCase() === 'tv' ? 'post' : (m[1].toLowerCase() === 'p' ? 'post' : 'reel'), shortcode: m[2], url };
+  return null;
+}
+
+// link → item(s) pronto(s) para processarItem. Camadas: sessão (API app) → yt-dlp → embed.
+async function itemDeLink(link) {
+  const info = await resolverLink(link);
+  if (!info) throw new Error('Link do Instagram não reconhecido');
+  if (info.tipo === 'story') {
+    // 1. sessão: stories activos do user → apanha o pk do link
+    try {
+      const us = await igProfile(info.username).catch(() => null);
+      if (us?.id) {
+        const st = await igStories(us.id, info.username);
+        const hit = st.items?.find(x => String(x.shortcode) === String(info.pk));
+        if (hit) return [hit];
+        if (st.items?.length && !st.needsLogin) throw new Error(`Esse story de @${info.username} já expirou (não está nos activos)`);
+      }
+    } catch (e) { if (/expirou/.test(e.message)) throw e; }
+    // 2. yt-dlp no URL do story
+    try {
+      const it = await ytdlpUrl(info.url);
+      if (it?.medias?.[0]?.url) return [{ ...it, username: info.username }];
+    } catch {}
+    throw new Error(`Story de @${info.username} indisponível (expirou ou o IG bloqueou — tenta ${'{p}'}cap story @${info.username})`);
+  }
+  if (info.tipo === 'highlight') {
+    // sessão: reels_media highlight:<rid>
+    const sess = pickSession();
+    if (sess) {
+      const r = await igGet(`/api/v1/feed/reels_media/?reel_ids=highlight%3A${info.id}`).catch(() => null);
+      if (r?.status === 200) {
+        try {
+          const j = JSON.parse(r.body.toString('utf8'));
+          const items = [];
+          for (const rid of Object.keys(j.reels || {})) {
+            for (const cru of (j.reels[rid].items || [])) {
+              const it = nodeToItem(cru, '');
+              if (it?.medias?.length) items.push(it);
+            }
+          }
+          if (items.length) return items;
+        } catch {}
+      }
+    }
+    // yt-dlp no URL do highlight
+    try {
+      const it = await ytdlpUrl(info.url);
+      if (it?.medias?.[0]?.url) return [it];
+    } catch {}
+    throw new Error('Highlight indisponível (sessão precisa de estar válida — .cap login <cookies>)');
+  }
+  // post / reel / tv
+  const erros = [];
+  try {
+    const it = await ytdlpUrl(info.url);
+    if (it?.medias?.[0]?.url) return [it];
+  } catch (e) { erros.push('yt-dlp: ' + e.message.slice(0, 60)); }
+  try {
+    const it = await embedItem(info.shortcode);
+    if (it?.medias?.[0]?.url) return [it];
+  } catch (e) { erros.push('embed: ' + e.message.slice(0, 60)); }
+  // sessão: shortcode → media info via oEmbed (dá o pk) → /media/{pk}/info/
+  try {
+    const oe = await httpGet(`https://api.instagram.com/oembed/?url=${encodeURIComponent(info.url)}`, { headers: { 'User-Agent': UA }, timeout: 15000 });
+    if (oe.status === 200) {
+      const j = JSON.parse(oe.body.toString('utf8'));
+      const mid = String(j.media_id || '').split('_')[0];
+      if (mid) {
+        const r = await igGet(`/api/v1/media/${mid}/info/`).catch(() => null);
+        if (r?.status === 200) {
+          const jm = JSON.parse(r.body.toString('utf8'));
+          const cru = jm.items?.[0];
+          if (cru) { const it = nodeToItem(cru, ''); if (it?.medias?.length) return [it]; }
+        }
+      }
+    }
+  } catch {}
+  throw new Error(`Não consegui baixar o link (${erros.join(' · ')})`);
+}
+
 async function embedItem(shortcode) {
   const url = `https://www.instagram.com/p/${encodeURIComponent(shortcode)}/embed/captioned/`;
   const r = await httpGet(url, { headers: { 'User-Agent': UA, 'Referer': 'https://www.instagram.com/' }, timeout: 20000 });
@@ -951,7 +1065,7 @@ module.exports = {
   load, save, arrancar, _reset, state,
   parseTargetArg, keyOf, addTarget, delTarget, getTarget, listTargets, setTargetOpt, setSession, hasSession,
   validarSessao, validarSessaoDuplo, addSessao, delSessao, listSessoes, sessionsAtivas, marcarSessaoInvalida, igGet, carregarEnv, sincronizar,
-  igProfile, igFeedAll, igStories, igHighlights, nodeToItem, ytdlpItem, ytdlpProfile, ytdlpUrl, embedItem, normalizarCookies, sniffMime, baixarMedia,
+  igProfile, igFeedAll, igStories, igHighlights, nodeToItem, ytdlpItem, ytdlpProfile, ytdlpUrl, embedItem, resolverLink, itemDeLink, normalizarCookies, sniffMime, baixarMedia,
   processarItem, verificarAlvo, capturarTudo, listarGaleria, legenda,
   registar, jaVisto, marcarVisto,
   start, stop, tick,
