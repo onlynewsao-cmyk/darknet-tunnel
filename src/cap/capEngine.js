@@ -916,11 +916,23 @@ async function processarItem(sock, t, item, { destinos, guardar = t.guardar, for
       let f;
       try { f = await baixarMedia(item.medias[i]); }
       catch (e0) {
-        // fallback yt-dlp (só faz sentido para a 1.ª media / reels; carrosséis só devolvem 1 item)
-        if (i === 0 && item.link && /instagram\.com\/(p|reel|tv)\//.test(item.link)) {
-          const alt = await ytdlpItem(item.link);
-          f = await baixarMedia({ url: alt.url, isVideo: alt.isVideo });
-          f.viaYtdlp = true;
+        // v12.9.11: fallback UNIVERSAL — resolve pelo LINK com a cadeia
+        // completa (yt-dlp → embed → oEmbed+sessão → stories/highlights
+        // pela sessão). Monitoramento e links falam a mesma língua.
+        if (i === 0 && item.link && /instagram\.com\//.test(item.link)) {
+          try {
+            const alts = await itemDeLink(item.link).catch(() => []);
+            const alt = (alts || []).find(x => x?.medias?.[0]?.url);
+            if (alt) { f = await baixarMedia(alt.medias[0]); f.viaLink = true; }
+          } catch {}
+          if (!f) {
+            // última rede de segurança: yt-dlp directo (post/reel/tv)
+            if (/instagram\.com\/(p|reel|tv)\//.test(item.link)) {
+              const alt = await ytdlpItem(item.link);
+              f = await baixarMedia({ url: alt.url, isVideo: alt.isVideo });
+              f.viaYtdlp = true;
+            } else throw e0;
+          }
         } else throw e0;
       }
       files.push(f);

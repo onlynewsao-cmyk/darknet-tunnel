@@ -1019,6 +1019,33 @@ module.exports = function (io) {
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
+  // ═══ v12.9.11: CENTRAL DE CONTACTOS API (dono) ═══
+  const centralBase = () => require('../bot/centralBase');
+  router.get('/central/state', requireApiOwner, (req, res) => {
+    const cb = centralBase(); cb.carregar();
+    const s = cb.stats();
+    res.json({
+      total: s.total, nGrupos: s.nGrupos, updatedAt: s.updatedAt,
+      grupos: s.porGrupo,
+      contactos: Object.entries(cb.carregar().contactos).map(([num, c]) => ({
+        num, nome: c.nome || '', grupos: Object.values(c.grupos || {}).slice(0, 3).join(', '), nGrupos: Object.keys(c.grupos || {}).length, ts: c.addedAt,
+      })).sort((a, b) => b.ts - a.ts),
+    });
+  });
+  router.post('/central/remover', requireApiOwner, (req, res) => {
+    const cb = centralBase();
+    res.json({ ok: cb.remover(String(req.body.num || '').replace(/\D/g, '')) });
+  });
+  router.post('/central/limpar', requireApiOwner, (req, res) => { const cb = centralBase(); cb.limpar(); res.json({ ok: true }); });
+  router.get('/central/csv', requireApiOwner, (req, res) => {
+    const cb = centralBase(); cb.carregar();
+    const linhas = ['numero,nome,grupos'];
+    for (const [num, c] of Object.entries(cb.carregar().contactos)) linhas.push(`${num},"${(c.nome || '').replace(/"/g, "'")}","${Object.values(c.grupos || {}).join(' | ').replace(/"/g, "'")}"`);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="central-contactos.csv"');
+    res.send(linhas.join('\n'));
+  });
+
   // ═══ v7.34: C∆P API (dono) ═══
   const capE = () => { const c = require('../cap/capEngine'); c.load(); return c; };
   router.get('/cap/state', requireApiOwner, async (req, res) => { const c = capE(); await c.sincronizar(true).catch(() => {}); res.json({ sessoes: c.listSessoes(), alvos: c.listTargets(), log: c.state.log.slice(0, 50) }); });

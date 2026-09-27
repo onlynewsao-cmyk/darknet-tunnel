@@ -106,6 +106,13 @@ router.get('/schedule', requireOwner, async (req, res) => {
 });
 
 // v7.34: C∆P — capturas de redes sociais (sessões IG + alvos)
+// v12.9.11: Central de Contactos (captura de grupos)
+router.get('/central', requireOwner, async (req, res) => {
+  const cb = require('../bot/centralBase'); cb.carregar();
+  const s = cb.stats();
+  res.render('dashboard/central', { title: 'Central de Contactos', total: s.total, nGrupos: s.nGrupos, grupos: s.porGrupo, updatedAt: s.updatedAt });
+});
+
 router.get('/cap', requireOwner, async (req, res) => {
   const cap = require('../cap/capEngine'); cap.load();
   res.render('dashboard/cap', { title: 'C∆P Capture', sessoes: cap.listSessoes(), alvos: cap.listTargets(), log: cap.state.log.slice(0, 30) });

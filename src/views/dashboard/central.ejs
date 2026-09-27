@@ -1,0 +1,85 @@
+<%- include('../partials/head') %>
+<div class="app-shell">
+  <%- include('../partials/sidebar') %>
+  <main class="main">
+    <header class="page-header">
+      <div>
+        <h1>🕸️ Central de Contactos</h1>
+        <p class="muted">Contactos capturados dos grupos (sem duplicados) — v12.9.11 · alimentada por <code>.capturartodos</code> / <code>.capturar &lt;nº&gt;</code> no WhatsApp</p>
+      </div>
+    </header>
+
+    <div class="card">
+      <h2>📊 Resumo</h2>
+      <div class="form-grid" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr))">
+        <div class="card" style="margin:0"><h3 style="font-size:1.6rem;margin:0">📇 <%= total %></h3><small class="muted">contactos únicos</small></div>
+        <div class="card" style="margin:0"><h3 style="font-size:1.6rem;margin:0">📋 <%= nGrupos %></h3><small class="muted">grupos conhecidos</small></div>
+        <div class="card" style="margin:0"><h3 style="font-size:1.6rem;margin:0">🕒 <%= updatedAt ? new Date(updatedAt).toLocaleString('pt-PT') : '—' %></h3><small class="muted">última captura</small></div>
+      </div>
+      <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+        <a class="btn btn-primary" href="/api/central/csv">⬇️ Exportar CSV</a>
+        <button class="btn" onclick="centralRefresh()">🔄 Recarregar</button>
+        <button class="btn btn-danger" onclick="centralLimpar()">🗑️ Limpar base</button>
+      </div>
+      <small class="muted">No WhatsApp: <code>.central</code> (menu), <code>.gruposbot</code>, <code>.capturartodos</code>, <code>.contactos</code>, <code>.addcentral &lt;dest&gt; [de &lt;nº|todos&gt;]</code>, <code>.comunidade</code> — tudo só do dono.</small>
+    </div>
+
+    <div class="card">
+      <h2>📋 Grupos capturados</h2>
+      <table class="table">
+        <thead><tr><th>#</th><th>Grupo</th><th>Contactos capturados</th><th>Membros</th><th>Capturado</th></tr></thead>
+        <tbody>
+          <% grupos.forEach((g, i) => { %>
+            <tr><td><%= i + 1 %></td><td><%= g.nome %></td><td><b><%= g.capturados %></b></td><td><%= g.membros %></td><td><%= new Date(g.ts).toLocaleDateString('pt-PT') %></td></tr>
+          <% }) %>
+          <% if (!grupos.length) { %><tr><td colspan="5" class="muted">Nada capturado ainda — corre <code>.capturartodos</code> no WhatsApp.</td></tr><% } %>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>📇 Contactos</h2>
+      <div class="form-group"><input type="text" id="centralBusca" placeholder="🔍 procurar por número ou nome…" oninput="centralFiltrar()" style="max-width:340px" /></div>
+      <table class="table" id="centralTabela">
+        <thead><tr><th>Número</th><th>Nome</th><th>Grupos</th><th>Capturado</th><th></th></tr></thead>
+        <tbody id="centralTbody"><tr><td colspan="5" class="muted">a carregar…</td></tr></tbody>
+      </table>
+      <small class="muted" id="centralCount"></small>
+    </div>
+  </main>
+</div>
+
+<script>
+let _centralDados = [];
+async function centralRefresh() {
+  const r = await fetch('/api/central/state').then(x => x.json()).catch(() => null);
+  if (!r) return;
+  _centralDados = r.contactos || [];
+  centralRender();
+}
+function centralRender() {
+  const tb = document.getElementById('centralTbody');
+  if (!_centralDados.length) { tb.innerHTML = '<tr><td colspan="5" class="muted">Base vazia — usa .capturartodos no WhatsApp.</td></tr>'; document.getElementById('centralCount').textContent = ''; return; }
+  tb.innerHTML = _centralDados.map(c => `<tr data-busca="${(c.num + ' ' + (c.nome || '')).toLowerCase()}">
+    <td><code>${c.num}</code></td><td>${c.nome || '—'}</td><td>${c.grupos || '—'}${c.nGrupos > 3 ? ` <small class="muted">+${c.nGrupos - 3}</small>` : ''}</td>
+    <td>${c.ts ? new Date(c.ts).toLocaleDateString('pt-PT') : '—'}</td>
+    <td><button class="btn btn-sm" onclick="centralRemover('${c.num}')">Remover</button></td></tr>`).join('');
+  document.getElementById('centralCount').textContent = _centralDados.length + ' contactos';
+}
+function centralFiltrar() {
+  const q = (document.getElementById('centralBusca').value || '').toLowerCase();
+  document.querySelectorAll('#centralTbody tr[data-busca]').forEach(tr => { tr.style.display = tr.dataset.busca.includes(q) ? '' : 'none'; });
+}
+async function centralRemover(num) {
+  if (!confirm('Remover ' + num + ' da base?')) return;
+  await fetch('/api/central/remover', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ num }) });
+  centralRefresh();
+}
+async function centralLimpar() {
+  if (!confirm('APAGAR a base TODA?')) return;
+  await fetch('/api/central/limpar', { method: 'POST' });
+  centralRefresh();
+}
+centralRefresh();
+</script>
+<%- include('../partials/footer') %>
