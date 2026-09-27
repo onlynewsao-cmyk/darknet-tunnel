@@ -780,46 +780,66 @@ function _digTimeline(obj, st) {
   return null;
 }
 const _htmlCache = new Map();
+// foto na MÁXIMA qualidade: IG CDN traz /s150x150/, /s320x320/… → pedir 1080x1080
+function fotoHD(u) { return String(u || '').replace(/\/s\d{2,4}x\d{2,4}\//g, '/s1080x1080/'); }
 async function htmlPayload(username) {
   const u = normUser(username);
   const ck = 'h:' + u;
   const hit = _htmlCache.get(ck);
   if (hit && Date.now() - hit.at < 300e3) return hit.v;
-  const out = { user: null, og: null, lsd: '', posts: [], status: 0 };
-  try {
-    const sess = pickSession();
-    const h = igHeaders(sess);
-    const r = await httpGet(`https://www.instagram.com/${u}/`, {
-      headers: {
-        'User-Agent': UA, 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8', 'Upgrade-Insecure-Requests': '1',
-        ...(h.Cookie ? { Cookie: h.Cookie } : {}), ...(h['X-IG-App-ID'] ? { 'X-IG-App-ID': h['X-IG-App-ID'] } : {}),
-      }, timeout: 20000,
-    });
-    out.status = r.status;
-    if (r.status === 200 && r.body) {
-      const html = r.body.toString('utf8');
-      const scripts = html.match(/<script[^>]*type="application\/json"[^>]*>[\s\S]*?<\/script>/g) || [];
-      for (const s of scripts.slice(0, 40)) {
-        if (!/xig_user_by_username|followed_by|media_count/.test(s)) continue;
-        try {
-          const j = JSON.parse(s.replace(/^<script[^>]*>/, '').replace(/<\/script>$/, ''));
-          if (!out.user) { const us = _digUser(j); if (us) out.user = us; }
-        } catch {}
-      }
-      const og = _parseOgFollowers(html);
-      if (og.followers || og.posts || og.nome) out.og = og;
-      out.lsd = (html.match(/"LSD",\[\],\{"token":"([^"]+)"/) || [])[1] || '';
-      for (const s of scripts.slice(0, 40)) {
-        if (!/user_timeline_graphql_connection|shortcode/.test(s)) continue;
-        try {
-          const j = JSON.parse(s.replace(/^<script[^>]*>/, '').replace(/<\/script>$/, ''));
-          const tl = _digTimeline(j);
-          if (tl?.edges?.length) { out.posts = tl.edges.map(e => e?.node).filter(Boolean); break; }
-        } catch {}
-      }
+  const _parse = (html) => {
+    const o = { user: null, og: null, lsd: '', posts: [], status: 200 };
+    const scripts = html.match(/<script[^>]*type="application\/json"[^>]*>[\s\S]*?<\/script>/g) || [];
+    for (const s of scripts.slice(0, 40)) {
+      if (!/xig_user_by_username|followed_by|media_count/.test(s)) continue;
+      try {
+        const j = JSON.parse(s.replace(/^<script[^>]*>/, '').replace(/<\/script>$/, ''));
+        if (!o.user) { const us = _digUser(j); if (us) o.user = us; }
+      } catch {}
     }
-  } catch {}
+    const og = _parseOgFollowers(html);
+    if (og.followers || og.posts || og.nome) o.og = og;
+    o.lsd = (html.match(/"LSD",\[\],\{"token":"([^"]+)"/) || [])[1] || '';
+    for (const s of scripts.slice(0, 40)) {
+      if (!/user_timeline_graphql_connection|shortcode/.test(s)) continue;
+      try {
+        const j = JSON.parse(s.replace(/^<script[^>]*>/, '').replace(/<\/script>$/, ''));
+        const tl = _digTimeline(j);
+        if (tl?.edges?.length) { o.posts = tl.edges.map(e => e?.node).filter(Boolean); break; }
+      } catch {}
+    }
+    return o;
+  };
+  const out = { user: null, og: null, lsd: '', posts: [], status: 0 };
+  const _try = async (comCookie) => {
+    try {
+      const h = comCookie ? igHeaders(pickSession()) : {};
+      const r = await httpGet(`https://www.instagram.com/${u}/`, {
+        headers: {
+          'User-Agent': UA, 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8', 'Upgrade-Insecure-Requests': '1',
+          ...(h.Cookie ? { Cookie: h.Cookie } : {}), ...(h['X-IG-App-ID'] ? { 'X-IG-App-ID': h['X-IG-App-ID'] } : {}),
+        }, timeout: 20000,
+      });
+      out.status = r.status;
+      if (r.status === 200 && r.body) {
+        const p = _parse(r.body.toString('utf8'));
+        out.user = out.user || p.user;
+        out.og = out.og || p.og;
+        out.lsd = out.lsd || p.lsd;
+        if (!out.posts.length) out.posts = p.posts;
+      }
+    } catch {}
+  };
+  // 1ª tentativa LOGADO (a vista de utilizador)
+  const tinhaSessao = !!igHeaders(pickSession()).Cookie;
+  await _try(true);
+  // 2ª tentativa COMO VISITANTE (sem cookies) — é AQUI que o IG serve os números
+  // (og:description + xig_user_by_username completos). A vista logada vem em modo app-shell.
+  if (!out.user && !out.og && tinhaSessao) {
+    await new Promise(r2 => setTimeout(r2, _rand(400, 1000)));
+    await _try(false);
+  }
   _htmlCache.set(ck, { at: Date.now(), v: out });
   return out;
 }
@@ -840,7 +860,7 @@ async function perfilStats(username) {
         out.seguidores = d.edge_followed_by?.count || 0; out.seguindo = d.edge_follow?.count || 0;
         out.posts = d.edge_owner_to_timeline_media?.count || 0;
         out.privado = !!d.is_private; out.verificado = !!d.is_verified;
-        out.foto = d.profile_pic_url_hd || d.profile_pic_url || '';
+        out.foto = out.foto || fotoHD(d.profile_pic_url_hd || d.profile_pic_url || '');
         out.fontes.push('web_profile');
       }
     }
@@ -858,7 +878,7 @@ async function perfilStats(username) {
       out.posts = out.posts || ju.media_count || ju.edge_owner_to_timeline_media?.count || 0;
       out.privado = out.privado || !!ju.is_private;
       out.verificado = out.verificado || !!ju.is_verified;
-      out.foto = out.foto || ju.profile_pic_url_hd || ju.profile_pic_url || '';
+      out.foto = out.foto || fotoHD(ju.profile_pic_url_hd || ju.profile_pic_url || '');
       out.fontes.push('html-payload');
     }
     if (hp.og) {
@@ -878,7 +898,7 @@ async function perfilStats(username) {
       });
       if (r3.status === 200) {
         const us = (JSON.parse(r3.body.toString('utf8'))?.users || []).find(x => String(x.username).toLowerCase() === u);
-        if (us) { out.id = String(us.pk); out.nome = out.nome || us.full_name || ''; out.seguidores = out.seguidores || us.follower_count || 0; out.privado = out.privado || !!us.is_private; out.foto = out.foto || us.profile_pic_url || ''; out.fontes.push('search'); }
+        if (us) { out.id = String(us.pk); out.nome = out.nome || us.full_name || ''; out.seguidores = out.seguidores || us.follower_count || 0; out.privado = out.privado || !!us.is_private; out.foto = out.foto || fotoHD(us.profile_pic_url || ''); out.fontes.push('search'); }
       }
     } catch {}
   }
@@ -895,6 +915,7 @@ async function perfilStats(username) {
           out.posts = out.posts || ju.media_count || 0;
           out.bio = out.bio || ju.biography || '';
           out.verificado = out.verificado || !!ju.is_verified;
+          out.foto = out.foto || fotoHD(ju.hd_profile_pic_url_info?.url || ju.profile_pic_url || '');
           out.fontes.push('usernameinfo');
         }
       }
@@ -958,7 +979,7 @@ async function igProfile(username) {
         seguindo: _stats.seguindo || _extra.seguindo || 0,
         posts: _stats.posts || _extra.posts || items.length,
         highlights: 0, temReels: items.some(i => i.tipo === 'reel'),
-        foto: us.profile_pic_url || _stats.foto || '',
+        foto: fotoHD(us.profile_pic_url || _stats.foto || ''),
         verificado: _stats.verificado || false,
         items, hasMore: false, endCursor: '', via: items.length ? 'app-search' : 'search',
       };
@@ -990,7 +1011,7 @@ async function igProfile(username) {
     id: d.id, username: u, nome: d.full_name, bio: d.biography || '', privado: !!d.is_private,
     seguidores: d.edge_followed_by?.count || 0, seguindo: d.edge_follow?.count || 0, posts: d.edge_owner_to_timeline_media?.count || 0,
     highlights: d.highlight_reel_count || 0, temReels: !!d.has_clips,
-    foto: d.profile_pic_url_hd || d.profile_pic_url || '',
+    foto: fotoHD(d.profile_pic_url_hd || d.profile_pic_url || ''),
     items: edges.map(e => nodeToItem(e.node, u)).sort((a, b) => a.ts - b.ts),
     hasMore: !!d.edge_owner_to_timeline_media?.page_info?.has_next_page,
     endCursor: d.edge_owner_to_timeline_media?.page_info?.end_cursor || '',
@@ -1408,7 +1429,7 @@ module.exports = {
   PROVIDERS, DATA_DIR, DEFAULT_INTERVAL_MIN,
   load, save, arrancar, _reset, state,
   parseTargetArg, keyOf, addTarget, delTarget, getTarget, listTargets, setTargetOpt, setSession, hasSession,
-  validarSessao, validarSessaoDuplo, addSessao, delSessao, listSessoes, sessionsAtivas, marcarSessaoInvalida, igGet, carregarEnv, sincronizar, inferirUsername, feedViaGraphql, perfilStats, htmlPayload,
+  validarSessao, validarSessaoDuplo, addSessao, delSessao, listSessoes, sessionsAtivas, marcarSessaoInvalida, igGet, carregarEnv, sincronizar, inferirUsername, feedViaGraphql, perfilStats, htmlPayload, fotoHD,
   igProfile, igFeedAll, igStories, igHighlights, nodeToItem, ytdlpItem, ytdlpProfile, ytdlpUrl, embedItem, resolverLink, itemDeLink, normalizarCookies, sniffMime, baixarMedia,
   processarItem, verificarAlvo, capturarTudo, listarGaleria, legenda,
   registar, jaVisto, marcarVisto,

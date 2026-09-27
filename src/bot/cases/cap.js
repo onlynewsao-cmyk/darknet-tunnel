@@ -288,17 +288,19 @@ module.exports = function registerCap(registerCase) {
           `📊 *ESTATÍSTICAS @${s.username}*`,
           s.nome ? `👤 ${s.nome}${s.verificado ? ' ✅' : ''}` : null,
           '',
-          s.seguidores || s.posts || s.seguindo
-            ? [
-                `👥 Seguidores: *${s.seguidores ? fmt(s.seguidores) : '?'}*`,
-                `➡️ Seguindo: *${s.seguindo ? fmt(s.seguindo) : '?'}*`,
-                `📸 Posts: *${s.posts ? fmt(s.posts) : '?'}*`,
-                s.privado ? '🔒 Conta privada' : '🌍 Conta pública',
-                '',
-                `🔎 Fontes: ${s.fontes.join(' + ') || '—'}`,
-              ].join('\n')
-            : `❌ O Instagram não libertou os números agora (IP limitado).\n> Tenta de novo em 5-15 min — a cache refresca sozinha.`,
+          ...(s.seguidores || s.posts || s.seguindo ? [
+            `👥 Seguidores: *${s.seguidores ? fmt(s.seguidores) : '?'}*`,
+            `➡️ Seguindo: *${s.seguindo ? fmt(s.seguindo) : '?'}*`,
+            `📸 Posts: *${s.posts ? fmt(s.posts) : '?'}*`,
+            s.privado ? '🔒 Conta privada' : '🌍 Conta pública',
+            '',
+            `🔎 Fontes: ${s.fontes.join(' + ') || '—'}`,
+          ] : [
+            `❌ O Instagram não libertou os números agora.`,
+            `> A vista de visitante também falhou — tenta em 5-15 min.`,
+          ]),
         ];
+        if (s.foto) s.foto = s.foto.replace(/\/s\d{2,4}x\d{2,4}\//g, '/s1080x1080/');
         if (s.foto) { try { const f = await cap.baixarMedia({ url: s.foto, isVideo: false }); const RE = require('../renderEngine'); const th = await RE.getTheme(ctx.remoteJid); return sock.sendMessage(ctx.remoteJid, { image: f.buffer, caption: RE.renderBlock(th, '📡 C∆P — STATS', L.filter(Boolean), { botName: config.bot.name }) }, { quoted: msg }); } catch {} }
         return tReply(sock, msg, ctx, '📡 C∆P — STATS', L.filter(Boolean));
       } catch (e) { return tReply(sock, msg, ctx, '📡 C∆P', [`❌ ${e.message}`]); }
@@ -314,6 +316,7 @@ module.exports = function registerCap(registerCase) {
         if (!perfil.seguidores && !perfil.seguindo) {
           try { const st = await cap.perfilStats(username); perfil.seguidores = perfil.seguidores || st.seguidores; perfil.seguindo = perfil.seguindo || st.seguindo; perfil.posts = perfil.posts || st.posts; perfil.bio = perfil.bio || st.bio; perfil.verificado = perfil.verificado || st.verificado; } catch {}
         }
+        if (perfil.foto) perfil.foto = perfil.foto.replace(/\/s\d{2,4}x\d{2,4}\//g, '/s1080x1080/');
         const ult = perfil.items.slice(-6).reverse();
         const reels = perfil.items.filter(i => i.tipo === 'reel');
         const posts = perfil.items.filter(i => i.tipo !== 'reel');
