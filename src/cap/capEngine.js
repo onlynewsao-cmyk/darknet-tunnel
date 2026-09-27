@@ -878,9 +878,10 @@ async function perfilStats(username) {
   const hit = _statsCache.get(ck);
   if (hit && Date.now() - hit.at < 300e3) return hit.v;
   const out = { username: u, nome: '', bio: '', seguidores: 0, seguindo: 0, posts: 0, privado: false, verificado: false, foto: '', id: '', fontes: [] };
-  // FONTE 1: web_profile_info
+  // FONTE 1: web_profile_info (APP-UA primeiro — v12.9.21)
   try {
-    const r = await igGet(`/api/v1/users/web_profile_info/?username=${encodeURIComponent(u)}`);
+    let r = await igGetApp(`/api/v1/users/web_profile_info/?username=${encodeURIComponent(u)}`);
+    if (r.status !== 200) r = await igGet(`/api/v1/users/web_profile_info/?username=${encodeURIComponent(u)}`);
     if (r.status === 200) {
       const d = JSON.parse(r.body.toString('utf8'))?.data?.user;
       if (d) {
@@ -921,9 +922,7 @@ async function perfilStats(username) {
   // FONTE 3: usernameinfo app (se temos id) — bio completa
   if (!out.id) {
     try {
-      const r3 = await httpGet(`https://i.instagram.com/api/v1/users/search/?q=${encodeURIComponent(u)}`, {
-        headers: { ...igHeaders(pickSession()), 'User-Agent': UA_APP }, timeout: 15000,
-      });
+      const r3 = await igGetApp(`/api/v1/users/search/?q=${encodeURIComponent(u)}`).catch(() => null);
       if (r3.status === 200) {
         const us = (JSON.parse(r3.body.toString('utf8'))?.users || []).find(x => String(x.username).toLowerCase() === u);
         if (us) { out.id = String(us.pk); out.nome = out.nome || us.full_name || ''; out.seguidores = out.seguidores || us.follower_count || 0; out.privado = out.privado || !!us.is_private; out.foto = out.foto || fotoHD(us.profile_pic_url || ''); out.fontes.push('search'); }
@@ -932,9 +931,7 @@ async function perfilStats(username) {
   }
   if (out.id) {
     try {
-      const r4 = await httpGet(`https://i.instagram.com/api/v1/users/${out.id}/usernameinfo/`, {
-        headers: { ...igHeaders(pickSession()), 'User-Agent': UA_APP }, timeout: 15000,
-      });
+      const r4 = await igGetApp(`/api/v1/users/${out.id}/usernameinfo/`).catch(() => null);
       if (r4.status === 200) {
         const ju = JSON.parse(r4.body.toString('utf8'))?.user;
         if (ju) {
@@ -1010,23 +1007,22 @@ async function igProfile(username) {
   const _ck = 'p:' + u;
   const _hit = _profCache.get(_ck);
   if (_hit && Date.now() - _hit.at < 180e3) return _hit.v;
-  let r = await igGet(`/api/v1/users/web_profile_info/?username=${encodeURIComponent(u)}`);
+  // v12.9.21: CANAL DA APP PRIMEIRO — web_profile_info (web-UA) é o mais
+  // bloqueado de todos; users/search e feed/user com UA da APP provaram passar.
+  let r = await igGetApp(`/api/v1/users/web_profile_info/?username=${encodeURIComponent(u)}`);
+  if (r.status !== 200) r = await igGet(`/api/v1/users/web_profile_info/?username=${encodeURIComponent(u)}`);
   // v12.9.9: web_profile_info é o endpoint mais bloqueado; users/search
   // (endpoint app) provou responder 200 mesmo em IP castigado — dá pk,
   // nome, follower_count, foto e privado.
   if (r.status !== 200) {
-    const rs = await httpGet(`https://i.instagram.com/api/v1/users/search/?q=${encodeURIComponent(u)}`, {
-      headers: { ...igHeaders(pickSession()), 'User-Agent': UA_APP },
-    }).catch(() => null);
+    const rs = await igGetApp(`/api/v1/users/search/?q=${encodeURIComponent(u)}`).catch(() => null);
     const us = (() => { try { return JSON.parse(rs?.body?.toString('utf8') || '{}')?.users || []; } catch { return []; } })()
       .find(x => String(x.username || '').toLowerCase() === u);
     if (us?.pk) {
       // enriquece (seguidores/posts/bio) via usernameinfo app-UA — best-effort
       let _extra = {};
       try {
-        const ri = await httpGet(`https://i.instagram.com/api/v1/users/${us.pk}/usernameinfo/`, {
-          headers: { ...igHeaders(pickSession()), 'User-Agent': UA_APP },
-        });
+        const ri = await igGetApp(`/api/v1/users/${us.pk}/usernameinfo/`).catch(() => null);
         const ji = JSON.parse(ri.body.toString('utf8'));
         if (ji?.user) _extra = { seguidores: ji.user.follower_count || 0, seguindo: ji.user.following_count || 0, posts: ji.user.media_count || 0, bio: ji.user.biography || '', privado: !!ji.user.is_private };
       } catch {}
@@ -1119,9 +1115,11 @@ async function igFeedAll(userId, username, maxPages = 15) {
   if (!sessionsAtivas().length) return { items: [], needsLogin: true };
   const out = []; let maxId = '';
   for (let i = 0; i < maxPages; i++) {
-    const r = await igGet(`/api/v1/feed/user/${userId}/?count=33${maxId ? `&max_id=${encodeURIComponent(maxId)}` : ''}`);
+    // v12.9.21: CANAL DA APP PRIMEIRO (o web-UA leva 401 à primeira)
+    let r = await igGetApp(`/api/v1/feed/user/${userId}/?count=33${maxId ? `&max_id=${encodeURIComponent(maxId)}` : ''}`);
+    if (r.status !== 200) r = await igGet(`/api/v1/feed/user/${userId}/?count=33${maxId ? `&max_id=${encodeURIComponent(maxId)}` : ''}`);
     if (r.status !== 200 && i === 0) {
-      // v12.9.16: CANAL DA APP (o que o IG não bloqueia) → graphql web → yt-dlp
+      // graphql web → yt-dlp (o canal da APP já foi tentado acima)
       try {
         let a = await feedViaApp(userId, username, 33);
         const all = [...a.items];
@@ -1163,7 +1161,10 @@ async function igFeedAll(userId, username, maxPages = 15) {
 
 async function igStories(userId, username) {
   if (!sessionsAtivas().length) return { items: [], needsLogin: true };
-  const r = await igGet(`/api/v1/feed/reels_media/?reel_ids=${userId}`);
+  // v12.9.21: reels_media é o canal QUE FUNCIONA (200 até com IP queimado) —
+  // mas ia com UA web! Agora primeiro com os headers DA APP (o estilo vencedor).
+  let r = await igGetApp(`/api/v1/feed/reels_media/?reel_ids=${userId}`);
+  if (r.status !== 200) r = await igGet(`/api/v1/feed/reels_media/?reel_ids=${userId}`);
   if (r.status !== 200) {
     // v12.9.9: yt-dlp saca stories activos com cookies (https://www.instagram.com/stories/<user>/)
     const alt = await ytdlpProfile(`stories/${normUser(username)}`, 20).catch(() => null)
