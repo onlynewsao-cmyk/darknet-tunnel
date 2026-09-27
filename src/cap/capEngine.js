@@ -1333,6 +1333,42 @@ async function enviarItem(sock, t, item, files, destinos) {
 }
 
 // Processa 1 item: baixa todas as medias, verifica, guarda, envia, marca visto.
+// ─────────────────────────────────────────────────────────────
+// v12.9.19 — WEBHOOKS: o CAP avisa os TEUS sistemas em tempo real 🪝
+// Regista URLs; sempre que um item é capturado, POST JSON best-effort.
+function addWebhook(url) {
+  load();
+  const u = String(url || '').trim();
+  if (!/^https?:\/\//.test(u)) throw new Error('URL do webhook inválida (http/https)');
+  if (!state.webhooks) state.webhooks = [];
+  if (!state.webhooks.includes(u)) state.webhooks.push(u);
+  save();
+  return state.webhooks.slice();
+}
+function delWebhook(url) {
+  load();
+  if (!state.webhooks) state.webhooks = [];
+  state.webhooks = state.webhooks.filter(x => x !== String(url || '').trim());
+  save();
+  return state.webhooks.slice();
+}
+function listWebhooks() { load(); return (state.webhooks || []).slice(); }
+function fireWebhooks(evento, dados) {
+  const urls = (state.webhooks || []);
+  if (!urls.length) return;
+  const corpo = JSON.stringify({ evento, dados, ts: new Date().toISOString() });
+  for (const u of urls) {
+    httpReq('POST', u, { headers: { 'Content-Type': 'application/json', 'X-Dark-Evento': String(evento || '').slice(0, 40) }, body: corpo, timeout: 5000, proxy: false }).catch(() => {});
+  }
+}
+
+// v12.9.19 — limpar TODAS as caches (perfil/stats/html)
+function limparCache() {
+  const n = _profCache.size + _statsCache.size + _htmlCache.size;
+  _profCache.clear(); _statsCache.clear(); _htmlCache.clear();
+  return n;
+}
+
 async function processarItem(sock, t, item, { destinos, guardar = t.guardar, forcar = false } = {}) {
   if (!forcar && jaVisto(t.key, item.id)) return { skipped: true };
   const files = []; const erros = [];
@@ -1380,6 +1416,13 @@ async function processarItem(sock, t, item, { destinos, guardar = t.guardar, for
   }
   // marca visto mesmo se falhou o download (evita loop); falhas ficam no log
   marcarVisto(t.key, item.id);
+  // v12.9.19: webhook — avisa os sistemas externos do item capturado
+  if (files.length) fireWebhooks('item.capturado', {
+    alvo: t.username, plataforma: t.platform, tipo: item.tipo, shortcode: item.shortcode,
+    legenda: String(item.caption || '').slice(0, 300), link: item.link,
+    midias: files.map(f => ({ caminho: f.path || f.file || '', bytes: f.bytes, video: !!f.isVideo })),
+    enviadoWhatsApp: envio.ok > 0,
+  });
   save();
   return { skipped: false, baixou, parcial, files: files.length, total: item.medias.length, erros, envio, bytes: files.reduce((a, f) => a + f.bytes, 0) };
 }
@@ -1505,7 +1548,7 @@ module.exports = {
   PROVIDERS, DATA_DIR, DEFAULT_INTERVAL_MIN,
   load, save, arrancar, _reset, state,
   parseTargetArg, keyOf, addTarget, delTarget, getTarget, listTargets, setTargetOpt, setSession, hasSession,
-  validarSessao, validarSessaoDuplo, addSessao, delSessao, listSessoes, sessionsAtivas, marcarSessaoInvalida, igGet, carregarEnv, sincronizar, inferirUsername, feedViaGraphql, feedViaApp, perfilStats, rescueProfile, htmlPayload, fotoHD, igGetApp,
+  validarSessao, validarSessaoDuplo, addSessao, delSessao, listSessoes, sessionsAtivas, marcarSessaoInvalida, igGet, carregarEnv, sincronizar, inferirUsername, feedViaGraphql, feedViaApp, perfilStats, rescueProfile, addWebhook, delWebhook, listWebhooks, limparCache, htmlPayload, fotoHD, igGetApp,
   igProfile, igFeedAll, igStories, igHighlights, nodeToItem, ytdlpItem, ytdlpProfile, ytdlpUrl, embedItem, resolverLink, itemDeLink, normalizarCookies, sniffMime, baixarMedia,
   processarItem, verificarAlvo, capturarTudo, listarGaleria, legenda,
   registar, jaVisto, marcarVisto,

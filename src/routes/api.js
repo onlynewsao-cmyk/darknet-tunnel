@@ -1268,5 +1268,151 @@ module.exports = function (io) {
     } catch (e) { res.status(502).json({ ok: false, erro: e.message }); }
   });
 
+
+  // ═══ 📶 IG+ (lote, comparar, monitor, canal, webhooks, cache) ═══
+  router.get('/ig/lote/:users', requireApiOwner, async (req, res) => {
+    try {
+      const c = igE();
+      const users = String(req.params.users || '').split(',').map(u => u.trim().replace(/^@/, '')).filter(Boolean).slice(0, 10);
+      if (!users.length) return res.status(400).json({ ok: false, erro: 'Passa usernames: /api/ig/lote/veigh,pinkchyu' });
+      const out = [];
+      for (let i = 0; i < users.length; i++) {
+        try {
+          const s = await c.perfilStats(users[i]);
+          out.push({ username: s.username, ok: !!(s.seguidores || s.posts), nome: s.nome, verificado: !!s.verificado, privado: !!s.privado, seguidores: s.seguidores, seguindo: s.seguindo, posts: s.posts, foto_hd: _hd(s.foto) });
+        } catch (e) { out.push({ username: users[i], ok: false, erro: e.message.slice(0, 80) }); }
+        if (i < users.length - 1) await new Promise(r => setTimeout(r, 400 + Math.floor(Math.random() * 500))); // ritmo humano
+      }
+      res.json({ ok: out.some(x => x.ok), total: out.length, resultados: out });
+    } catch (e) { res.json({ ok: false, erro: e.message }); }
+  });
+
+  router.get('/ig/comparar/:a/:b', requireApiOwner, async (req, res) => {
+    try {
+      const c = igE();
+      const [A, B] = await Promise.all([c.perfilStats(req.params.a).catch(() => null), c.perfilStats(req.params.b).catch(() => null)]);
+      if (!A && !B) return res.json({ ok: false, erro: 'Nenhum dos perfis respondeu agora' });
+      const fmt = (x) => x ? { username: x.username, nome: x.nome, verificado: !!x.verificado, privado: !!x.privado, seguidores: x.seguidores, seguindo: x.seguindo, posts: x.posts, foto_hd: _hd(x.foto) } : null;
+      const a = fmt(A), b = fmt(B);
+      const dif = (A && B) ? { seguidores: (A.seguidores || 0) - (B.seguidores || 0), posts: (A.posts || 0) - (B.posts || 0) } : null;
+      res.json({ ok: !!(A || B), a, b, vencedor: (A && B) ? ((A.seguidores || 0) >= (B.seguidores || 0) ? A.username : B.username) : null, diferenca: dif });
+    } catch (e) { res.json({ ok: false, erro: e.message }); }
+  });
+
+  router.get('/ig/monitor', requireApiOwner, (req, res) => {
+    const c = igE();
+    res.json({ ok: true, total: c.listTargets().length, alvos: c.listTargets() });
+  });
+
+  router.post('/ig/monitor/add', requireApiOwner, (req, res) => {
+    try {
+      const c = igE();
+      const r = c.addTarget(String(req.body.user || ''), { destino: req.body.destino || '', addedBy: 'api' });
+      res.json({ ok: true, novo: r.novo, alvo: { username: r.target.username, destinos: r.target.destinos, stories: r.target.stories !== false, intervaloMin: r.target.intervaloMin } });
+    } catch (e) { res.json({ ok: false, erro: e.message }); }
+  });
+
+  router.post('/ig/monitor/del', requireApiOwner, (req, res) => {
+    const c = igE();
+    res.json({ ok: c.delTarget(String(req.body.user || '')) });
+  });
+
+  router.get('/ig/canal/:user', requireApiOwner, async (req, res) => {
+    try {
+      const c = igE();
+      const p = await c.PROVIDERS.ig.profile(req.params.user);
+      for (const rota of [`/api/v1/channels/discovery/?pk=${p.id}`, `/api/v1/text_feed/${p.id}/`]) {
+        const r = await c.igGetApp(rota).catch(() => null);
+        let j = {}; try { j = JSON.parse(r?.body?.toString('utf8') || '{}'); } catch {}
+        const items = (j.items || []).slice(0, 12).map(x => ({ texto: (x.text || '').slice(0, 200), ts: x.created_at ? new Date(x.created_at * 1000).toISOString() : null, midia: x.media?.image_versions2?.candidates?.[0]?.url || x.clip?.video_versions?.[0]?.url || null }));
+        if (items.length) return res.json({ ok: true, canal: j.channel?.channel_title || null, total: items.length, itens: items });
+      }
+      res.json({ ok: false, erro: `@${p.username} não expõe canal de difusão por API (só pela app)` });
+    } catch (e) { res.json({ ok: false, erro: e.message }); }
+  });
+
+  router.get('/ig/webhooks', requireApiOwner, (req, res) => { res.json({ ok: true, total: igE().listWebhooks().length, urls: igE().listWebhooks() }); });
+  router.post('/ig/webhook', requireApiOwner, (req, res) => {
+    try { const urls = igE().addWebhook(req.body.url); res.json({ ok: true, total: urls.length, urls }); }
+    catch (e) { res.json({ ok: false, erro: e.message }); }
+  });
+  router.post('/ig/webhook/remover', requireApiOwner, (req, res) => {
+    const urls = igE().delWebhook(req.body.url);
+    res.json({ ok: true, total: urls.length, urls });
+  });
+
+  router.post('/ig/cache/limpar', requireApiOwner, (req, res) => {
+    res.json({ ok: true, entradas_limpas: igE().limparCache() });
+  });
+
+  // ═══ 💬 WHATSAPP (o bot responde às tuas apps) ═══
+  const waBot = () => getBot();
+  const _jid = (v) => {
+    const s = String(v || '').trim();
+    if (!s) return '';
+    if (/@(s\.whatsapp\.net|g\.us)$/.test(s)) return s;
+    const digitos = s.replace(/\D/g, '');
+    return digitos ? `${digitos}@s.whatsapp.net` : '';
+  };
+
+  router.get('/wa/estado', requireApiOwner, (req, res) => {
+    const st = waBot().getStatus();
+    res.json({ ok: st.status === 'connected', status: st.status, ligadoComo: st.user ? (st.user.name || st.user.id || '') : null, mensagens: st.messageCount, comandos: st.commandCount, uptime_seg: st.uptime, ultimo_erro: st.lastError || null });
+  });
+
+  router.post('/wa/enviar', requireApiOwner, async (req, res) => {
+    try {
+      const bot = waBot();
+      if (bot.getStatus().status !== 'connected') return res.status(400).json({ ok: false, erro: 'Bot não conectado' });
+      const jid = _jid(req.body.para);
+      if (!jid) return res.status(400).json({ ok: false, erro: 'Passa "para" (número ou jid)' });
+      const texto = String(req.body.texto || '').slice(0, 4000);
+      let payload;
+      if (req.body.midia) {
+        const buf = await mediaHandler.fetchBuffer(String(req.body.midia));
+        const tipo = ['image', 'video', 'audio'].includes(req.body.tipo) ? req.body.tipo : 'image';
+        payload = tipo === 'audio' ? { audio: buf, mimetype: 'audio/mp4' } : { [tipo]: buf, caption: texto };
+      } else payload = { text: texto };
+      const r = await bot.sock.sendMessage(jid, payload);
+      res.json({ ok: true, para: jid, enviado: true, id: r?.key?.id || null });
+    } catch (e) { res.json({ ok: false, erro: e.message }); }
+  });
+
+  router.get('/wa/grupos', requireApiOwner, async (req, res) => {
+    try {
+      const bot = waBot();
+      if (bot.getStatus().status !== 'connected') return res.status(400).json({ ok: false, erro: 'Bot não conectado' });
+      const chats = await bot.sock.groupFetchAllParticipating();
+      const grupos = Object.entries(chats).map(([id, g]) => ({ id, nome: g.subject || id, participantes: (g.participants || []).length }));
+      res.json({ ok: true, total: grupos.length, grupos });
+    } catch (e) { res.json({ ok: false, erro: e.message }); }
+  });
+
+  router.get('/wa/contactos', requireApiOwner, (req, res) => {
+    const cb = require('../bot/centralBase'); cb.carregar();
+    const s = cb.stats();
+    res.json({ ok: true, total: s.total, nGrupos: s.nGrupos, grupos: s.porGrupo, actualizado: s.updatedAt });
+  });
+
+  // ═══ 🖥️ SISTEMA ═══
+  router.get('/sistema/estado', requireApiOwner, (req, res) => {
+    const c = igE();
+    const st = getBot().getStatus();
+    res.json({
+      ok: true,
+      versao: (() => { try { return require('../package.json').version || null; } catch { return null; } })(),
+      node: process.version, uptime_seg: Math.floor(process.uptime()),
+      memoria_mb: Math.round(process.memoryUsage().rss / 1048576),
+      whatsapp: { status: st.status, mensagens: st.messageCount },
+      ig: { sessoes: c.sessionsAtivas().length, alvos: c.listTargets().length, webhooks: (c.state.webhooks || []).length },
+    });
+  });
+
+  router.get('/sistema/log', requireApiOwner, (req, res) => {
+    const c = igE();
+    const n = Math.min(parseInt(req.query.n) || 50, 200);
+    res.json({ ok: true, total: c.state.log.length, log: c.state.log.slice(-n).reverse() });
+  });
+
   return router;
 };

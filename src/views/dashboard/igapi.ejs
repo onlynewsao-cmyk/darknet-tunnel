@@ -38,17 +38,37 @@
   </main>
 </div>
 <script>
+  const OWNER = '<%= owner.number %>';
   const ENDPOINTS = [
+    { sec: '📡 Instagram — dados reais' },
     { id: 'perfil',    path: '/api/ig/perfil/USER?limit=6',  desc: 'Perfil completo + últimos posts (todas as vias + resgate automático)' },
     { id: 'stats',     path: '/api/ig/stats/USER',           desc: 'SÓ os números verdadeiros: seguidores, seguindo, posts + fontes' },
     { id: 'posts',     path: '/api/ig/posts/USER?limit=12',  desc: 'Posts do feed com URLs directos das mídias' },
     { id: 'reels',     path: '/api/ig/reels/USER?limit=12',  desc: 'Reels com URLs de vídeo directos' },
     { id: 'stories',   path: '/api/ig/stories/USER',         desc: 'Stories ACTIVOS agora, com URLs directos' },
-    { id: 'highlights',path: '/api/ig/highlights/USER',      desc: 'Destaques (albuns + itens)' },
+    { id: 'highlights',path: '/api/ig/highlights/USER',      desc: 'Destaques (álbuns + itens)' },
     { id: 'tudo',      path: '/api/ig/tudo/USER',            desc: 'MEGA: perfil + posts + reels + stories + highlights num só pedido' },
     { id: 'buscar',    path: '/api/ig/buscar/QUERY',         desc: 'Pesquisa de utilizadores por nome (top 10)' },
-    { id: 'sessoes',   path: '/api/ig/sessoes',              desc: 'Estado do pool de sessões (rotação anti-429)' },
-    { id: 'media',     path: '/api/ig/media?url=URL_IG',     desc: 'Proxy de mídia IG (só cdninstagram/fbcdn) — devolve os bytes' },
+    { id: 'lote',      path: '/api/ig/lote/USER,pinkchyu',   desc: 'Lote: stats de até 10 perfis num pedido (ritmo humano)' },
+    { id: 'comparar',  path: '/api/ig/comparar/USER,nennyfans', desc: 'Compara 2 perfis: seguidores/posts/vencedor' },
+    { id: 'canal',     path: '/api/ig/canal/USER',           desc: 'Canal de difusão do criador (best-effort)' },
+    { sec: '📡 Monitorização + Webhooks' },
+    { id: 'monitor',   path: '/api/ig/monitor',              desc: 'Alvos monitorizados + estatísticas de captura' },
+    { id: 'monadd',    path: '/api/ig/monitor/add',  method: 'POST', body: (u) => ({ user: '@' + u }), desc: 'ADICIONA alvo à monitorização (captura automática → WhatsApp + webhook)' },
+    { id: 'mondel',    path: '/api/ig/monitor/del',  method: 'POST', body: (u) => ({ user: '@' + u }), desc: 'Remove alvo da monitorização' },
+    { id: 'whooks',    path: '/api/ig/webhooks',             desc: 'Webhooks registados' },
+    { id: 'whadd',     path: '/api/ig/webhook',      method: 'POST', promptUrl: true, desc: 'Regista webhook: o CAP faz POST JSON a cada item capturado (tempo real nos TEUS sistemas)' },
+    { id: 'whdel',     path: '/api/ig/webhook/remover', method: 'POST', promptUrl: true, desc: 'Remove um webhook' },
+    { sec: '💬 WhatsApp — o bot responde às tuas apps' },
+    { id: 'waestado',  path: '/api/wa/estado',               desc: 'Estado do WhatsApp: ligado, mensagens, comandos, uptime' },
+    { id: 'waenviar',  path: '/api/wa/enviar',       method: 'POST', body: (u) => ({ para: OWNER, texto: 'Teste das APIs DARK ✅ ' + new Date().toLocaleString() }), desc: 'ENVIA texto/mídia para qualquer número/grupo (midia+tipo opcionais)' },
+    { id: 'wagrupos',  path: '/api/wa/grupos',               desc: 'Todos os grupos: id, nome, nº de participantes' },
+    { id: 'waconts',   path: '/api/wa/contactos',            desc: 'Central de contactos: total, grupos, actualização' },
+    { sec: '🖥️ Sistema' },
+    { id: 'sestado',   path: '/api/sistema/estado',          desc: 'Versão, uptime, memória, WhatsApp, IG (sessões/alvos/webhooks)' },
+    { id: 'slog',      path: '/api/sistema/log?n=30',        desc: 'Últimos N eventos do CAP' },
+    { id: 'sessoes',   path: '/api/ig/sessoes',              desc: 'Estado do pool de sessões IG (rotação anti-429)' },
+    { id: 'cachelim',  path: '/api/ig/cache/limpar', method: 'POST', desc: 'Limpa as caches de perfis/stats/html' },
   ];
   const base = () => location.origin;
   const user = () => (document.getElementById('igUser').value || 'veigh').replace(/^@/, '').trim();
@@ -56,12 +76,21 @@
   document.getElementById('resumo').textContent = ENDPOINTS.length + ' APIs • dados reais';
   const lista = document.getElementById('lista');
   ENDPOINTS.forEach(e => {
+    if (e.sec) {
+      const h = document.createElement('h3');
+      h.textContent = e.sec;
+      h.style.cssText = 'margin:8px 0 -4px;opacity:.85';
+      lista.appendChild(h);
+      return;
+    }
     const card = document.createElement('div');
     card.className = 'card'; card.style.cssText = 'margin:0';
     const rota = e.path.replace('USER', '@' + user()).replace('QUERY', user()).replace('URL_IG', 'https://…cdninstagram…jpg');
+    const metodo = e.method || 'GET';
+    const cor = metodo === 'POST' ? '#c70' : '#0a7';
     card.innerHTML = `
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <span style="background:#0a7;font-weight:700;padding:2px 8px;border-radius:6px;font-size:12px">GET</span>
+        <span style="background:${cor};font-weight:700;padding:2px 8px;border-radius:6px;font-size:12px">${metodo}</span>
         <code style="flex:1;min-width:220px;word-break:break-all">${rota}</code>
         <button class="btn btn-primary" onclick="testar('${e.id}')">▶ Testar</button>
         <button class="btn" onclick="copiarCurl('${e.id}')">📋 curl</button>
@@ -73,12 +102,25 @@
   let ultima = '';
   async function testar(id) {
     const e = ENDPOINTS.find(x => x.id === id);
+    if (!e || e.sec) return;
     let rota = e.path.replace('USER', encodeURIComponent(user())).replace('QUERY', encodeURIComponent(user()));
+    const opts = { headers: { Accept: 'application/json' } };
+    if (e.method === 'POST') {
+      opts.method = 'POST';
+      opts.headers['Content-Type'] = 'application/json';
+      let body = {};
+      if (e.promptUrl) {
+        const url = prompt('URL do webhook (https://…):', '');
+        if (!url) return;
+        body = { url };
+      } else if (e.body) body = e.body(user());
+      opts.body = JSON.stringify(body);
+    }
     const chip = document.getElementById('stChip');
     chip.textContent = '⏳ a correr…'; chip.className = 'muted';
     const t0 = performance.now();
     try {
-      const r = await fetch(rota, { headers: { Accept: 'application/json' } });
+      const r = await fetch(rota, opts);
       const j = await r.json().catch(() => ({}));
       const ms = Math.round(performance.now() - t0);
       chip.textContent = `HTTP ${r.status} · ${ms}ms · ${j.ok === true ? '✅ ok' : j.ok === false ? '⚠️ vazio/erro honesto' : '?'}`;
@@ -94,11 +136,13 @@
   function copiarResp() { navigator.clipboard.writeText(ultima || ''); }
   function copiarCurl(id) {
     const e = ENDPOINTS.find(x => x.id === id);
+    if (!e || e.sec) return;
     let rota = e.path.replace('USER', encodeURIComponent(user())).replace('QUERY', encodeURIComponent(user()));
-    navigator.clipboard.writeText(`curl -b "connect.sid=TEU_COOKIE" "${base()}${rota}"`);
+    let cmd = `curl -b "connect.sid=TEU_COOKIE" "${base()}${rota}"`;
+    if (e.method === 'POST') {
+      const body = e.promptUrl ? '{ "url": "https://teu-sistema/webhook" }' : JSON.stringify(e.body ? e.body(user()) : {});
+      cmd = `curl -X POST -b "connect.sid=TEU_COOKIE" -H "Content-Type: application/json" -d '${body}' "${base()}${rota}"`;
+    }
+    navigator.clipboard.writeText(cmd);
   }
-  document.querySelectorAll('#lista .card').forEach(card => {
-    const ep = card.dataset.ep;
-    if (['perfil', 'stats', 'stories'].includes(ep)) return;
-  });
 </script>
