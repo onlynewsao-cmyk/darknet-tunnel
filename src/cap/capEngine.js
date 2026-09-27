@@ -686,6 +686,107 @@ async function feedViaGraphql(username, first = 12, after = '') {
   return { items: items.sort((a, b) => a.ts - b.ts), hasMore: !!conn?.page_info?.has_next_page, endCursor: conn?.page_info?.end_cursor || '' };
 }
 
+// ─────────────────────────────────────────────────────────────
+// v12.9.13 — API FUNDAMENTAL DE ESTATÍSTICAS 📊
+// Garante NÚMEROS VERDADEIROS (seguidores/following/posts/bio/foto)
+// combinando TODAS as fontes em cascata + merge + cache 5 min.
+//   1. web_profile_info   (JSON completo)
+//   2. HTML da página     (og:description: "8M Followers, 997 Following, 171 Posts")
+//   3. usernameinfo app   (JSON por pk)
+//   4. users/search       (pk + nome + follower_count)
+// O que uma fonte não der, outra preenche. Nunca devolve 0 tendo dado para saber.
+const _statsCache = new Map(); // 'p:username' → { at, v }
+function _parseOgFollowers(html) {
+  const m = (html.match(/og:description"\s+content="([^"]*)/) || html.match(/content="([^"]*)"[^>]*property="og:description"/) || [])[1] || '';
+  const dec = m.replace(/&#[0-9]+;/g, (x) => String.fromCharCode(parseInt(x.slice(2, -1)))).replace(/&amp;/g, '&');
+  const num = (s) => {
+    if (!s) return 0;
+    const mm = s.replace(/\s+/g, '').replace(/,(?=\d{3}\b)/g, '.').match(/^([\d.,]+)\s*([KMB])?/i);
+    if (!mm) return 0;
+    let n = parseFloat(String(mm[1]).replace(/\.(?=.*\.)/g, '').replace(',', '.'));
+    if (isNaN(n)) return 0;
+    const suf = (mm[2] || '').toUpperCase();
+    if (suf === 'K') n *= 1e3; else if (suf === 'M') n *= 1e6; else if (suf === 'B') n *= 1e9;
+    return Math.round(n);
+  };
+  const followers = num((dec.match(/([\d.,]+(?:\s\d{3})*\s*[KMB]?)\s*Followers/i) || [])[1]);
+  const following = num((dec.match(/([\d.,]+(?:\s\d{3})*\s*[KMB]?)\s*Following/i) || [])[1]);
+  const posts = num((dec.match(/([\d.,]+(?:\s\d{3})*\s*[KMB]?)\s*Posts/i) || [])[1]);
+  const nome = (dec.match(/from\s+(.+?)\s*\(@/i) || [])[1] || '';
+  const user = (dec.match(/\(@([^)]+)\)/i) || [])[1] || '';
+  return { followers, following, posts, nome, user };
+}
+
+async function perfilStats(username) {
+  const u = normUser(username);
+  const ck = 'p:' + u;
+  const hit = _statsCache.get(ck);
+  if (hit && Date.now() - hit.at < 300e3) return hit.v;
+  const out = { username: u, nome: '', bio: '', seguidores: 0, seguindo: 0, posts: 0, privado: false, verificado: false, foto: '', id: '', fontes: [] };
+  // FONTE 1: web_profile_info
+  try {
+    const r = await igGet(`/api/v1/users/web_profile_info/?username=${encodeURIComponent(u)}`);
+    if (r.status === 200) {
+      const d = JSON.parse(r.body.toString('utf8'))?.data?.user;
+      if (d) {
+        out.id = String(d.id || ''); out.nome = d.full_name || ''; out.bio = d.biography || '';
+        out.seguidores = d.edge_followed_by?.count || 0; out.seguindo = d.edge_follow?.count || 0;
+        out.posts = d.edge_owner_to_timeline_media?.count || 0;
+        out.privado = !!d.is_private; out.verificado = !!d.is_verified;
+        out.foto = d.profile_pic_url_hd || d.profile_pic_url || '';
+        out.fontes.push('web_profile');
+      }
+    }
+  } catch {}
+  // FONTE 2: HTML og:description (SEMPRE atravessa — é o canal do navegador)
+  try {
+    const r2 = await httpGet(`https://www.instagram.com/${u}/`, {
+      headers: { 'User-Agent': UA, 'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8', ...(igHeaders(pickSession()).Cookie ? { Cookie: igHeaders(pickSession()).Cookie } : {}) },
+      timeout: 15000,
+    });
+    if (r2.status === 200) {
+      const og = _parseOgFollowers(r2.body.toString('utf8'));
+      if (og.followers) { out.seguidores = out.seguidores || og.followers; out.fontes.push('og-html'); }
+      if (og.following) out.seguindo = out.seguindo || og.following;
+      if (og.posts) out.posts = out.posts || og.posts;
+      if (!out.nome && og.nome) out.nome = og.nome;
+      if (!out.username && og.user) out.username = og.user;
+    }
+  } catch {}
+  // FONTE 3: usernameinfo app (se temos id) — bio completa
+  if (!out.id) {
+    try {
+      const r3 = await httpGet(`https://i.instagram.com/api/v1/users/search/?q=${encodeURIComponent(u)}`, {
+        headers: { ...igHeaders(pickSession()), 'User-Agent': UA_APP }, timeout: 15000,
+      });
+      if (r3.status === 200) {
+        const us = (JSON.parse(r3.body.toString('utf8'))?.users || []).find(x => String(x.username).toLowerCase() === u);
+        if (us) { out.id = String(us.pk); out.nome = out.nome || us.full_name || ''; out.seguidores = out.seguidores || us.follower_count || 0; out.privado = out.privado || !!us.is_private; out.foto = out.foto || us.profile_pic_url || ''; out.fontes.push('search'); }
+      }
+    } catch {}
+  }
+  if (out.id) {
+    try {
+      const r4 = await httpGet(`https://i.instagram.com/api/v1/users/${out.id}/usernameinfo/`, {
+        headers: { ...igHeaders(pickSession()), 'User-Agent': UA_APP }, timeout: 15000,
+      });
+      if (r4.status === 200) {
+        const ju = JSON.parse(r4.body.toString('utf8'))?.user;
+        if (ju) {
+          out.seguidores = out.seguidores || ju.follower_count || 0;
+          out.seguindo = out.seguindo || ju.following_count || 0;
+          out.posts = out.posts || ju.media_count || 0;
+          out.bio = out.bio || ju.biography || '';
+          out.verificado = out.verificado || !!ju.is_verified;
+          out.fontes.push('usernameinfo');
+        }
+      }
+    } catch {}
+  }
+  _statsCache.set(ck, { at: Date.now(), v: out });
+  return out;
+}
+
 async function igProfile(username) {
   const u = normUser(username);
   const _ck = 'p:' + u;
@@ -722,12 +823,18 @@ async function igProfile(username) {
           if (g.items?.length) { items.push(...g.items); items.sort((a, b) => a.ts - b.ts); }
         } catch {}
       }
+      // v12.9.13: ESTATÍSTICAS VERDADEIRAS via perfilStats (og-html + usernameinfo + search)
+      let _stats = {};
+      try { _stats = await perfilStats(u); } catch {}
       const _ret = {
-        id: String(us.pk), username: u, nome: us.full_name || '@' + u, bio: _extra.bio || '',
+        id: String(us.pk), username: u, nome: us.full_name || _stats.nome || '@' + u, bio: _extra.bio || _stats.bio || '',
         privado: _extra.privado != null ? _extra.privado : !!us.is_private,
-        seguidores: _extra.seguidores || us.follower_count || 0, seguindo: _extra.seguindo || 0, posts: _extra.posts || items.length,
+        seguidores: _stats.seguidores || _extra.seguidores || us.follower_count || 0,
+        seguindo: _stats.seguindo || _extra.seguindo || 0,
+        posts: _stats.posts || _extra.posts || items.length,
         highlights: 0, temReels: items.some(i => i.tipo === 'reel'),
-        foto: us.profile_pic_url || '',
+        foto: us.profile_pic_url || _stats.foto || '',
+        verificado: _stats.verificado || false,
         items, hasMore: false, endCursor: '', via: items.length ? 'app-search' : 'search',
       };
       _profCache.set(_ck, { at: Date.now(), v: _ret });
@@ -1176,7 +1283,7 @@ module.exports = {
   PROVIDERS, DATA_DIR, DEFAULT_INTERVAL_MIN,
   load, save, arrancar, _reset, state,
   parseTargetArg, keyOf, addTarget, delTarget, getTarget, listTargets, setTargetOpt, setSession, hasSession,
-  validarSessao, validarSessaoDuplo, addSessao, delSessao, listSessoes, sessionsAtivas, marcarSessaoInvalida, igGet, carregarEnv, sincronizar, inferirUsername, feedViaGraphql,
+  validarSessao, validarSessaoDuplo, addSessao, delSessao, listSessoes, sessionsAtivas, marcarSessaoInvalida, igGet, carregarEnv, sincronizar, inferirUsername, feedViaGraphql, perfilStats,
   igProfile, igFeedAll, igStories, igHighlights, nodeToItem, ytdlpItem, ytdlpProfile, ytdlpUrl, embedItem, resolverLink, itemDeLink, normalizarCookies, sniffMime, baixarMedia,
   processarItem, verificarAlvo, capturarTudo, listarGaleria, legenda,
   registar, jaVisto, marcarVisto,

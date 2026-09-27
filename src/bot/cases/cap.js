@@ -51,6 +51,7 @@ const AJUDA = (p) => [
   `▸ ${p}cap del @veigh — parar de monitorizar`,
   `▸ ${p}cap lista — alvos e estatísticas`,
   `▸ ${p}cap ver @veigh — perfil + últimos posts`,
+  `▸ ${p}cap stats @veigh — estatísticas verdadeiras (seguidores/posts)`,
   `▸ ${p}cap link <link> — QUALQUER link: post, reel, story, highlight, share/ig.me`,
   `▸ ${p}cap canal @user — posts do canal de difusão (melhor esforço)`,
   `▸ ${p}cap check [@veigh] — verificar agora (só novos)`,
@@ -275,6 +276,34 @@ module.exports = function registerCap(registerCase) {
     }
 
     // ── ver ──
+    // v12.9.13: .cap stats @user — SÓ os números verdadeiros (cascata completa)
+    if (sub === 'stats' || sub === 'estatisticas' || sub === 'estatísticas') {
+      if (!alvoArg) return tReply(sock, msg, ctx, '📡 C∆P', [`Uso: ${p}cap stats @veigh`]);
+      const { platform, username } = cap.parseTargetArg(alvoArg);
+      if (!cap.PROVIDERS[platform]) return tReply(sock, msg, ctx, '📡 C∆P', ['❌ Plataforma não suportada.']);
+      try {
+        const s = await cap.perfilStats(username);
+        const fmt = (n) => n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'K' : String(n || 0);
+        const L = [
+          `📊 *ESTATÍSTICAS @${s.username}*`,
+          s.nome ? `👤 ${s.nome}${s.verificado ? ' ✅' : ''}` : null,
+          '',
+          s.seguidores || s.posts || s.seguindo
+            ? [
+                `👥 Seguidores: *${s.seguidores ? fmt(s.seguidores) : '?'}*`,
+                `➡️ Seguindo: *${s.seguindo ? fmt(s.seguindo) : '?'}*`,
+                `📸 Posts: *${s.posts ? fmt(s.posts) : '?'}*`,
+                s.privado ? '🔒 Conta privada' : '🌍 Conta pública',
+                '',
+                `🔎 Fontes: ${s.fontes.join(' + ') || '—'}`,
+              ].join('\n')
+            : `❌ O Instagram não libertou os números agora (IP limitado).\n> Tenta de novo em 5-15 min — a cache refresca sozinha.`,
+        ];
+        if (s.foto) { try { const f = await cap.baixarMedia({ url: s.foto, isVideo: false }); const RE = require('../renderEngine'); const th = await RE.getTheme(ctx.remoteJid); return sock.sendMessage(ctx.remoteJid, { image: f.buffer, caption: RE.renderBlock(th, '📡 C∆P — STATS', L.filter(Boolean), { botName: config.bot.name }) }, { quoted: msg }); } catch {} }
+        return tReply(sock, msg, ctx, '📡 C∆P — STATS', L.filter(Boolean));
+      } catch (e) { return tReply(sock, msg, ctx, '📡 C∆P', [`❌ ${e.message}`]); }
+    }
+
     if (sub === 'ver' || sub === 'perfil' || sub === 'info') {
       if (!alvoArg) return tReply(sock, msg, ctx, '📡 C∆P', [`Uso: ${p}cap ver @veigh`]);
       const { platform, username } = cap.parseTargetArg(alvoArg);
@@ -286,11 +315,14 @@ module.exports = function registerCap(registerCase) {
         const posts = perfil.items.filter(i => i.tipo !== 'reel');
         const fmtN = (n) => n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'K' : String(n);
         const sess = cap.hasSession('ig');
+        // v12.9.13: stats VERDADEIRAS ou honestidade total
+        const temStats = perfil.seguidores || perfil.posts || perfil.seguindo;
+        const statsLine = temStats
+          ? `📊 *${perfil.posts} posts* · 👥 *${fmtN(perfil.seguidores)}* seguidores${perfil.seguindo ? ` · ➡️ ${fmtN(perfil.seguindo)} following` : ''}`
+          : '📊 Estatísticas indisponíveis agora (IG a limitar este IP) — tenta *cap stats @' + username + '* em minutos';
         const lines = [
-          `👤 *${perfil.nome || '@' + username}* · @${username}${perfil.privado ? ' 🔒' : ''}`,
-          /^(ytdlp|search|app-search)$/.test(perfil.via)
-            ? `⚡ Modo alternativo (API do IG limitada neste IP)${perfil.seguidores ? ` · 👥 ${fmtN(perfil.seguidores)} followers` : ''} · ${perfil.posts} posts recentes`
-            : `📸 ${perfil.posts} posts · 👥 ${fmtN(perfil.seguidores)} followers · ➡️ ${fmtN(perfil.seguindo || 0)} following`,
+          `👤 *${perfil.nome || '@' + username}*${perfil.verificado ? ' ✅' : ''} · @${username}${perfil.privado ? ' 🔒' : ''}`,
+          statsLine,
           perfil.bio ? `📝 ${perfil.bio.slice(0, 160).replace(/\n+/g, ' ')}` : null,
           '',
           `📸 POSTS (${posts.length}) · 🎬 REELS (${reels.length}) · ⏳ STORIES (${sess ? 'on' : 'login'}) · ⭐ HIGHLIGHTS (${perfil.highlights || 0}${sess ? '' : ' · login'})`,
