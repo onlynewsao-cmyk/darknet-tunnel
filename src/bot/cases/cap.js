@@ -57,7 +57,8 @@ const AJUDA = (p) => [
   `▸ ${p}cap all @veigh [aqui|jid] [limite] — *capture all*: baixa tudo e manda no grupo`,
   `▸ ${p}cap ultimo @veigh — baixa e envia o post mais recente`,
   `▸ ${p}cap link <url> — baixa um post/reel pelo link (funciona mesmo com 429 no perfil)`,
-  `▸ ${p}cap reels|highlights|storys @veigh [n] — só esse separador (como no sssinstagram)`,
+  `▸ ${p}cap story @veigh — baixa os stories ACTIVOS agora · reels|storys @veigh [n] — separador`,
+  `▸ ${p}cap resolver — descobrir os @users das sessões`,
   `▸ ${p}cap destino @veigh aqui|<jid>|remover — para onde enviar`,
   `▸ ${p}cap guardar @veigh on|off — guardar na galeria do servidor`,
   `▸ ${p}cap auto @veigh on|off · ${p}cap intervalo @veigh <min>`,
@@ -184,7 +185,30 @@ module.exports = function registerCap(registerCase) {
     if (sub === 'sessoes' || sub === 'sessões' || sub === 'sessions' || sub === 'contas') {
       const ss = cap.listSessoes();
       if (!ss.length) return tReply(sock, msg, ctx, '🔐 C∆P SESSÕES', ['Nenhuma sessão.', `> ${p}cap login <sessionid>`]);
-      return tReply(sock, msg, ctx, '🔐 C∆P SESSÕES', ss.map((x, i) => `${x.ok ? '🟢' : '🔴'} ${i + 1}. @${x.user || '?'}${x.ok ? '' : ' — ' + x.lastErr} · ${new Date(x.addedAt).toLocaleDateString('pt-PT')}`).concat(['', `> ${p}cap logout @conta · ${p}cap logout all`]));
+      return tReply(sock, msg, ctx, '🔐 C∆P SESSÕES', ss.map((x, i) => `${x.ok ? (x.porConfirmar ? '🟡' : '🟢') : '🔴'} ${i + 1}. @${x.user || 'a-resolver…'}${x.id ? ` · id ${x.id}` : ''}${x.cool ? ' · 😴 cooldown' : ''}${x.porConfirmar ? ' · por-confirmar' : (!x.ok ? ' — ' + x.lastErr : '')} · ${x.addedAt ? new Date(x.addedAt).toLocaleDateString('pt-PT') : '—'}`).concat([
+        '',
+        `🔑 ${ss.length} sessão(ões) — rotação automática entre todas`,
+        `> ${p}cap resolver — descobrir os @users em falta`,
+        `> ${p}cap login <outro sessionid> adiciona mais conta (anti-429)`,
+        `> ${p}cap logout @conta · ${p}cap logout all`,
+      ]));
+    }
+    // v12.9.12: resolver @users em falta
+    if (sub === 'resolver' || sub === 'users') {
+      const ss = cap.state.session.igPool || [];
+      const faltam = ss.filter(x => !x.user);
+      if (!faltam.length) return tReply(sock, msg, ctx, '🔐 C∆P', ['Todos os @users estão resolvidos ✅', ss.map((x, i) => `${i + 1}. @${x.user} (id ${x.id || '?'})`).join('\n')]);
+      await tReply(sock, msg, ctx, '🔐 C∆P', [`🔎 A resolver ${faltam.length} @user(s)…`]);
+      const achados = [];
+      for (const s of faltam) {
+        const u = await cap.inferirUsername(s.sid).catch(() => '');
+        if (u) { s.user = u; achados.push(`@${u} (id ${s.id || '?'})`); }
+        await new Promise(r => setTimeout(r, 1200 + Math.random() * 1200));
+      }
+      cap.save();
+      return tReply(sock, msg, ctx, '🔐 C∆P', achados.length
+        ? [`✅ Resolvidos: ${achados.join(' · ')}`, ...ss.map((x, i) => `${i + 1}. @${x.user || '?'}${x.porConfirmar ? ' 🟡' : ''}`)]
+        : ['❌ Não consegui agora (IG a limitar). Tenta daqui a pouco ou usa o dashboard → C∆P (botão Resolver @users).']);
     }
     if (sub === 'testar' || sub === 'test') {
       const ss = cap.sessionsAtivas();
@@ -370,7 +394,8 @@ module.exports = function registerCap(registerCase) {
     }
 
     // ── reels / highlights / stories (baixar só esse separador, como no sssinstagram) ──
-    if (['reels', 'highlights', 'destaques', 'storiesnow', 'storys'].includes(sub)) {
+    // v12.9.12: story/stories SEM "on|off" = baixar os stories activos AGORA
+    if (['reels', 'highlights', 'destaques', 'storiesnow', 'storys', 'story', 'stories'].includes(sub) && !/^(on|off)$/i.test(args[1] || '')) {
       if (!alvoArg) return tReply(sock, msg, ctx, '📡 C∆P', [`Uso: ${p}cap ${sub} @veigh [limite]`]);
       const { platform, username } = cap.parseTargetArg(alvoArg);
       const prov = cap.PROVIDERS[platform];
@@ -384,7 +409,12 @@ module.exports = function registerCap(registerCase) {
         else if (sub === 'highlights' || sub === 'destaques') { const h = await prov.highlights(perfil.id, username); items = h.items; if (h.needsLogin) aviso = `⭐ Highlights exigem sessão: ${p}cap login <sessionid>`; }
         else { const st = await prov.stories(perfil.id, username); items = st.items; if (st.needsLogin) aviso = `⏳ Stories exigem sessão: ${p}cap login <sessionid>`; }
         if (aviso) return tReply(sock, msg, ctx, '📡 C∆P', [aviso]);
-        if (!items.length) return tReply(sock, msg, ctx, '📡 C∆P', [`Nada em ${sub} para @${username}${sub === 'reels' && perfil.hasMore && !cap.hasSession('ig') ? ' (nos últimos 12 posts públicos)' : ''}.`]);
+        if (!items.length) return tReply(sock, msg, ctx, '📡 C∆P', [
+          `Nada em ${sub} para @${username}.`,
+          /^(reels|storys|story|stories)$/.test(sub) && /search|ytdlp/.test(perfil.via || '')
+            ? `> O feed da API está limitado neste IP — tenta *${p}cap story @${username}* (vai por cookies) ou *${p}cap link <link do reel>*.`
+            : sub.includes('story') ? '> Sem stories activos agora — volta mais tarde.' : '',
+        ]);
         items = items.slice(-limite);
         await sock.sendMessage(ctx.remoteJid, { react: { text: '⬇️', key: msg.key } }).catch(() => {});
         let okN = 0, failN = 0;

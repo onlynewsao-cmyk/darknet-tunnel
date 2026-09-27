@@ -153,7 +153,15 @@ function sessionsAtivas() {
   if (!list.length && state.session?.ig) list.push({ sid: state.session.ig, user: '' });
   return list;
 }
-function pickSession() { const l = sessionsAtivas(); if (!l.length) return null; return l[(_rr++) % l.length]; }
+// v12.9.12 ANTI-DETECÇÃO: escolha ALEATÓRIA (ciclo fixo delata bot)
+// + sessões em cooldown (429) evitadas durante 3-8 min
+function _rand(a, b) { return a + Math.random() * (b - a); }
+function pickSession() {
+  const boas = sessionsAtivas().filter(s => !(s.coolAte > Date.now()));
+  const list = boas.length ? boas : sessionsAtivas();
+  if (!list.length) return null;
+  return list[Math.floor(Math.random() * list.length)];
+}
 // ── v12.9.9: JAR COMPLETO de cookies (não só sessionid) ──────────────
 // Aceita: export JSON do EditThisCookie/Cookie-Editor, header "k=v; k=v",
 // ou "sessionid=xxx". Devolve { sid, jar } — jar é header canónico.
@@ -330,7 +338,7 @@ function delSessao(qual) {
   save();
   return before - state.session.igPool.length;
 }
-function listSessoes() { load(); return (Array.isArray(state.session.igPool) ? state.session.igPool : []).map(s => ({ user: s.user, ok: s.ok !== false, lastErr: s.lastErr || '', addedAt: s.addedAt })); }
+function listSessoes() { load(); return (Array.isArray(state.session.igPool) ? state.session.igPool : []).map(s => ({ user: s.user, ok: s.ok !== false, lastErr: s.lastErr || '', addedAt: s.addedAt, id: s.id || String(s.sid || '').split('%3A')[0] || '', porConfirmar: !!s.porConfirmar, cool: !!(s.coolAte > Date.now()) })); }
 // arranque: carregar IG_SESSIONID do .env se não houver nenhuma
 // v12.9: valida em fundo (sem bloquear arranque) e preenche o @user da conta;
 // se o .env tiver sessão mas o pool já tiver outra, mantém as DUAS (pool roda entre elas)
@@ -420,7 +428,11 @@ async function igGet(pathAndQuery, { tentativas = 3 } = {}) {
     if (r.status === 200) return r;
     const body = r.body?.toString('utf8').slice(0, 300) || '';
     if (sess && (r.status === 401 || r.status === 403) && /login_required|logged out|checkpoint/i.test(body)) { marcarSessaoInvalida(sess.sid, 'login_required'); continue; }
-    if (r.status === 429 || (r.status === 401 && /wait a few minutes/i.test(body))) { await new Promise(res => setTimeout(res, 1500 * (i + 1))); continue; }
+    if (r.status === 429 || (r.status === 401 && /wait a few minutes/i.test(body))) {
+      if (sess) sess.coolAte = Date.now() + _rand(180e3, 480e3); // v12.9.12: sessão descansa 3-8 min
+      await new Promise(res => setTimeout(res, _rand(1200, 3200)));
+      continue;
+    }
     return r;
   }
   return last;
@@ -642,6 +654,38 @@ async function ytdlpProfile(username, maxPosts = 12) {
 
 // cache de perfil (3 min) — o bot tinha-se auto-429 com spam de .cap ver
 const _profCache = new Map();
+// ── v12.9.12: FEED via graphql/query web (doc_id 9310670392322965) ──
+// A /api/v1 está bloqueada por IP em datacenters; o graphql da WEB
+// (com cookies de sessão) continua a servir o timeline — o mesmo canal
+// dos stories do yt-dlp. Resposta: data.xdt_api__v1__feed__user_timeline_graphql_connection
+async function feedViaGraphql(username, first = 12, after = '') {
+  const u = normUser(username);
+  const vars = { username: u, first };
+  if (after) vars.after = after;
+  const q = `https://www.instagram.com/graphql/query/?doc_id=9310670392322965&variables=${encodeURIComponent(JSON.stringify(vars))}`;
+  const r = await httpGet(q, {
+    headers: {
+      ...igHeaders(pickSession()),
+      'User-Agent': UA,
+      'X-Requested-With': 'XMLHttpRequest',
+      'Accept': '*/*',
+      'Referer': `https://www.instagram.com/${u}/`,
+    },
+    timeout: 20000,
+  });
+  if (r.status !== 200) throw new Error('graphql HTTP ' + r.status);
+  const j = JSON.parse(r.body.toString('utf8'));
+  const conn = j?.data?.xdt_api__v1__feed__user_timeline_graphql_connection;
+  const items = [];
+  for (const e of (conn?.edges || [])) {
+    const node = e?.node;
+    if (!node || node.__typename === 'XDTGraphUser') continue;
+    const it = nodeToItem(node, u);
+    if (it?.medias?.length && it.medias[0].url) items.push(it);
+  }
+  return { items: items.sort((a, b) => a.ts - b.ts), hasMore: !!conn?.page_info?.has_next_page, endCursor: conn?.page_info?.end_cursor || '' };
+}
+
 async function igProfile(username) {
   const u = normUser(username);
   const _ck = 'p:' + u;
@@ -671,6 +715,13 @@ async function igProfile(username) {
       const rf = await igGet(`/api/v1/feed/user/${us.pk}/?count=12`).catch(() => null);
       const itensFeed = (() => { try { return JSON.parse(rf?.body?.toString('utf8') || '{}')?.items || []; } catch { return []; } })();
       const items = itensFeed.map(it => nodeToItem(it, u)).filter(x => x.medias?.length).sort((a, b) => a.ts - b.ts);
+      if (!items.length) {
+        // v12.9.12: graphql web (canal vivo) → posts reais
+        try {
+          const g = await feedViaGraphql(u, 12);
+          if (g.items?.length) { items.push(...g.items); items.sort((a, b) => a.ts - b.ts); }
+        } catch {}
+      }
       const _ret = {
         id: String(us.pk), username: u, nome: us.full_name || '@' + u, bio: _extra.bio || '',
         privado: _extra.privado != null ? _extra.privado : !!us.is_private,
@@ -723,7 +774,14 @@ async function igFeedAll(userId, username, maxPages = 15) {
   for (let i = 0; i < maxPages; i++) {
     const r = await igGet(`/api/v1/feed/user/${userId}/?count=33${maxId ? `&max_id=${encodeURIComponent(maxId)}` : ''}`);
     if (r.status !== 200 && i === 0) {
-      // v12.9.8: API limitada → yt-dlp (só na 1ª página; sem API não há paginação)
+      // v12.9.12: API limitada → graphql web → yt-dlp
+      try {
+        let g = await feedViaGraphql(username, 33);
+        const all = [...g.items];
+        let pages = 0;
+        while (g.hasMore && g.endCursor && pages < 4) { await new Promise(r2 => setTimeout(r2, _rand(1200, 2600))); g = await feedViaGraphql(username, 33, g.endCursor); all.push(...g.items); pages++; }
+        if (all.length) return { items: all.sort((a, b) => a.ts - b.ts), needsLogin: false };
+      } catch {}
       const alt = await ytdlpProfile(username, 33).catch(() => null);
       if (alt?.items?.length) return { items: alt.items, needsLogin: false };
       break;
@@ -735,10 +793,14 @@ async function igFeedAll(userId, username, maxPages = 15) {
     for (const it of items) out.push(nodeToItem(it, username));
     if (!j.more_available || !j.next_max_id) break;
     maxId = j.next_max_id;
-    await new Promise(r => setTimeout(r, 1200));
+    await new Promise(r => setTimeout(r, _rand(900, 2200)));  // v12.9.12 humano
   }
   if (!out.length) {
-    // v12.9.8: API devolveu nada/HTML de login → yt-dlp
+    // v12.9.12: graphql web → yt-dlp
+    try {
+      const g = await feedViaGraphql(username, 33);
+      if (g.items?.length) return { items: g.items, needsLogin: false };
+    } catch {}
     const alt = await ytdlpProfile(username, 33).catch(() => null);
     if (alt?.items?.length) return { items: alt.items, needsLogin: false };
   }
@@ -1030,7 +1092,7 @@ async function verificarAlvo(sock, t, { forcar = false, incluirStories = t.stori
       if (r.baixou || r.parcial) res.baixados++; else res.falhados++;
       res.enviados += r.envio.ok;
       if (it.tipo === 'story') res.stories++;
-      await new Promise(r => setTimeout(r, 800));
+      await new Promise(r => setTimeout(r, _rand(700, 1900)));
     }
     t.primed = true;
   } catch (e) {
@@ -1062,7 +1124,7 @@ async function capturarTudo(sock, t, { destinos, limite = 200, onProgress } = {}
     if (r.baixou || r.parcial) res.baixados++; else res.falhados++;
     res.enviados += r.envio?.ok || 0; res.bytes += r.bytes || 0;
     if (onProgress && (i % 5 === 4 || i === items.length - 1)) { try { await onProgress(i + 1, items.length, res); } catch {} }
-    await new Promise(r => setTimeout(r, 1000));
+    await new Promise(r => setTimeout(r, _rand(800, 2000)));
   }
   t.primed = true; t.lastCheck = Date.now(); save();
   return res;
@@ -1095,10 +1157,14 @@ async function tick() {
         if (owner) sock.sendMessage(`${owner}@s.whatsapp.net`, { text: `🔐 C∆P: a sessão Instagram${sx.user ? ' @' + sx.user : ''} expirou (${sx.lastErr || 'login_required'}).\nRefaz: cap login <sessionid>` }).catch(() => {});
       }
     }
-    for (const t of Object.values(state.targets)) {
+    // v12.9.12: ordem aleatória (nunca a mesma sequência) + jitter ±35%
+    const alvos = Object.values(state.targets).sort(() => Math.random() - 0.5);
+    for (const t of alvos) {
       if (!t.auto) continue;
-      const iv = Math.max(5, t.intervaloMin || DEFAULT_INTERVAL_MIN) * 60000;
+      const base = Math.max(5, t.intervaloMin || DEFAULT_INTERVAL_MIN) * 60000;
+      const iv = base * (t._jitter || 1);
       if (now - (t.lastCheck || 0) < iv) continue;
+      t._jitter = 0.75 + Math.random() * 0.6; // próximo ciclo varia
       const r = await verificarAlvo(sock, t).catch(e => ({ erro: e.message }));
       if (r.novos || r.erro) console.log(`[CAP] ${t.key}: novos=${r.novos || 0} baixados=${r.baixados || 0} falhados=${r.falhados || 0}${r.erro ? ' erro=' + r.erro : ''}`);
     }
@@ -1110,7 +1176,7 @@ module.exports = {
   PROVIDERS, DATA_DIR, DEFAULT_INTERVAL_MIN,
   load, save, arrancar, _reset, state,
   parseTargetArg, keyOf, addTarget, delTarget, getTarget, listTargets, setTargetOpt, setSession, hasSession,
-  validarSessao, validarSessaoDuplo, addSessao, delSessao, listSessoes, sessionsAtivas, marcarSessaoInvalida, igGet, carregarEnv, sincronizar, inferirUsername,
+  validarSessao, validarSessaoDuplo, addSessao, delSessao, listSessoes, sessionsAtivas, marcarSessaoInvalida, igGet, carregarEnv, sincronizar, inferirUsername, feedViaGraphql,
   igProfile, igFeedAll, igStories, igHighlights, nodeToItem, ytdlpItem, ytdlpProfile, ytdlpUrl, embedItem, resolverLink, itemDeLink, normalizarCookies, sniffMime, baixarMedia,
   processarItem, verificarAlvo, capturarTudo, listarGaleria, legenda,
   registar, jaVisto, marcarVisto,
