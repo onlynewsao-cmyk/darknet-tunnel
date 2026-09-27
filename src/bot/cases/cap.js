@@ -160,10 +160,20 @@ module.exports = function registerCap(registerCase) {
       const r = await cap.addSessao(sid, { cookies: _jarCookies });
       if (!r.ok) return tReply(sock, msg, ctx, '🔐 C∆P LOGIN', [`❌ ${r.erro}`, '> Copia o cookie de novo (sem espaços) e tenta outra vez.']);
       const n = cap.listSessoes().length;
+      if (r.ok && !r.user) {
+        // v12.9.11c: username em falta → inferir em background (não bloqueia a resposta)
+        const _sidGuardado = cap.state.session.ig;
+        cap.inferirUsername(_sidGuardado).then(u => {
+          if (!u) return;
+          const s = (cap.state.session.igPool || []).find(x => x.sid === _sidGuardado);
+          if (s && !s.user) { s.user = u; cap.save(); }
+        }).catch(() => {});
+      }
       return tReply(sock, msg, ctx, '🔐 C∆P LOGIN', [
-        r.validado ? `✅ Logado como *@${r.user}*` : `🟡 Sessão guardada sem validar (${r.aviso})`,
-        `🔑 Sessões no pool: ${n}`,
+        r.user ? `✅ Logado como *@${r.user}*` : r.validado ? `✅ Sessão activa (id ${r.id || '?'})` : `🟡 Sessão guardada${r.aviso ? ` (${r.aviso})` : ' — vou confirmar o @user em segundo plano'}`,
+        `🔑 Sessões no pool: ${n}${n > 1 ? ' (rotação automática entre todas)' : ''}`,
         '⏳ Stories, ⭐ highlights, feed completo e perfis privados (que a conta siga) activos.',
+        '> Confirma a qualquer momento: ' + p + 'cap testar · ' + p + 'cap sessoes',
         '🗑️ A tua mensagem com o cookie foi apagada.',
       ]);
     }

@@ -1048,7 +1048,14 @@ module.exports = function (io) {
 
   // ═══ v7.34: C∆P API (dono) ═══
   const capE = () => { const c = require('../cap/capEngine'); c.load(); return c; };
-  router.get('/cap/state', requireApiOwner, async (req, res) => { const c = capE(); await c.sincronizar(true).catch(() => {}); res.json({ sessoes: c.listSessoes(), alvos: c.listTargets(), log: c.state.log.slice(0, 50) }); });
+  router.get('/cap/state', requireApiOwner, async (req, res) => {
+    const c = capE(); await c.sincronizar(true).catch(() => {});
+    res.json({
+      sessoes: (c.state.session.igPool || []).map(s => ({ user: s.user, ok: s.ok !== false, lastErr: s.lastErr || '', addedAt: s.addedAt, id: s.id || '', porConfirmar: !!s.porConfirmar, temJar: !!(s.cookies && s.cookies.length > 40), sid: s.sid.slice(0, 14) + '…' })),
+      activa: (c.state.session.ig || '').slice(0, 14) + '…',
+      alvos: c.listTargets(), log: c.state.log.slice(0, 50),
+    });
+  });
   router.post('/cap/login', requireApiOwner, async (req, res) => {
     const c = capE();
     try {
@@ -1096,6 +1103,37 @@ module.exports = function (io) {
     res.json({ pendentes: require('../cap/igLogin').estadoPendente() || [] });
   });
   router.post('/cap/logout', requireApiOwner, (req, res) => { const c = capE(); res.json({ removidas: c.delSessao(req.body.user || 'all'), sessoes: c.listSessoes() }); });
+  // v12.9.11c: remover por uid (id da sessão) — multi-contas
+  router.post('/cap/sessao/remover', requireApiOwner, (req, res) => {
+    const c = capE(); c.load();
+    const uid = String(req.body.id || '').replace(/\D/g, '');
+    const antes = (c.state.session.igPool || []).length;
+    c.state.session.igPool = (c.state.session.igPool || []).filter(s => String(s.id || '') !== uid && String(s.sid || '').split('%3A')[0] !== uid);
+    if (!c.state.session.igPool.some(x => x.sid === c.state.session.ig)) c.state.session.ig = c.state.session.igPool[0]?.sid || '';
+    c.save();
+    res.json({ ok: true, removidas: antes - c.state.session.igPool.length, sessoes: c.listSessoes() });
+  });
+  // activar uma sessão do pool (trocar a activa)
+  router.post('/cap/sessao/activar', requireApiOwner, (req, res) => {
+    const c = capE(); c.load();
+    const uid = String(req.body.id || '').replace(/\D/g, '');
+    const alvo = (c.state.session.igPool || []).find(s => String(s.id || '') === uid || String(s.sid || '').split('%3A')[0] === uid);
+    if (!alvo) return res.status(404).json({ error: 'sessão não encontrada' });
+    c.state.session.ig = alvo.sid; c.save();
+    res.json({ ok: true, activa: alvo.user || uid });
+  });
+  // inferir usernames em falta (botão "resolver @users")
+  router.post('/cap/sessao/inferir', requireApiOwner, async (req, res) => {
+    const c = capE(); c.load();
+    const out = [];
+    for (const s of (c.state.session.igPool || [])) {
+      if (s.user) continue;
+      const u = await c.inferirUsername(s.sid).catch(() => '');
+      if (u) { s.user = u; out.push({ id: s.id || '', user: u }); }
+    }
+    c.save();
+    res.json({ ok: true, resolvidos: out, sessoes: c.listSessoes() });
+  });
   router.post('/cap/testar', requireApiOwner, async (req, res) => {
     const c = capE(); const out = [];
     for (const x of c.sessionsAtivas()) { const v = await c.validarSessao(x.sid); out.push({ user: x.user || v.user, ok: v.ok, erro: v.erro || '' }); if (!v.ok && !v.temporario) c.marcarSessaoInvalida(x.sid, v.erro); }

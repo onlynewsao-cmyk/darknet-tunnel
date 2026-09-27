@@ -216,6 +216,23 @@ function igHeaders(sess) {
   }
   return h;
 }
+// v12.9.11c: completar o @user de uma sessão por-confirmar (best-effort, async)
+async function inferirUsername(sid) {
+  const uid = String(sid || '').split('%3A')[0].split(':')[0].replace(/\D/g, '');
+  if (!uid) return '';
+  // 1. search pelo uid (alguns IPs deixam)
+  try {
+    const r = await httpGet(`https://i.instagram.com/api/v1/users/search/?q=${uid}`, { headers: igHeaders(pickSession()), timeout: 12000 });
+    if (r.status === 200) {
+      const j = JSON.parse(r.body.toString('utf8'));
+      const hit = (j.users || []).find(x => String(x.pk) === uid);
+      if (hit?.username) return hit.username;
+    }
+  } catch {}
+  // 2. se o uid for um username numérico raro — nada mais a fazer sem rede
+  return '';
+}
+
 function marcarSessaoInvalida(sid, motivo) {
   const pool = Array.isArray(state.session?.igPool) ? state.session.igPool : [];
   const s = pool.find(x => x.sid === sid);
@@ -245,6 +262,7 @@ async function validarSessao(sid) {
       return { ok: false, erro: 'sessionid inválido ou expirado (' + r.status + ')' };
     }
     if (r.status === 429) return { ok: false, erro: 'rate-limit 429 ao validar — tenta daqui a uns minutos', temporario: true };
+    if (r.status === 400 || r.status === 404) return { ok: false, erro: 'HTTP ' + r.status + ' — endpoint bloqueado neste IP (sessão não testada)', temporario: true };
     return { ok: false, erro: 'HTTP ' + r.status };
   } catch (e) { return { ok: false, erro: e.message, temporario: true }; }
 }
@@ -257,8 +275,8 @@ async function validarSessaoDuplo(sid) {
   const primeira = await validarSessao(sid);
   if (primeira.ok) return primeira;
   if (!primeira.temporario) return primeira;
+  const sess = { sid: String(sid || '').trim() };
   try {
-    const sess = { sid: String(sid || '').trim() };
     const r = await httpGet('https://i.instagram.com/api/v1/direct_v2/presence/?max_users=1', { headers: igHeaders(sess), timeout: 15000 });
     if (r.status === 200) {
       // chegou ao IG com a sessão — boa, só não conseguimos o username por este IP
@@ -266,6 +284,14 @@ async function validarSessaoDuplo(sid) {
       const u = j?.presence_events?.user_presence_list?.[0]?.user_id;
       return { ok: true, user: '', id: '', viaFallback: true };
     }
+  } catch {}
+  // 3ª perna: users/search com UA de app (a que provou 200 mesmo em IP castigado)
+  try {
+    const uid = sid.split('%3A')[0].split(':')[0];
+    const rs = await httpGet(`https://i.instagram.com/api/v1/users/search/?q=${uid}`, {
+      headers: { ...igHeaders(sess), 'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Instagram 311.0.0.109.115' }, timeout: 15000,
+    });
+    if (rs.status === 200) return { ok: true, user: '', id: uid, viaSearch: true };
   } catch {}
   return primeira;
 }
@@ -278,14 +304,22 @@ async function addSessao(sid, { validar = true, cookies = '' } = {}) {
     if (nc.sid) { sid = nc.sid; cookies = nc.jar; }
   }
   let info = { ok: true, user: '', id: '' };
-  if (validar) { info = await validarSessaoDuplo(sid); if (!info.ok && !info.temporario) return info; }
+  if (validar) {
+    info = await validarSessaoDuplo(sid);
+    if (!info.ok && !info.temporario) {
+      // v12.9.11c: endpoint disse "inválido" MAS o IG anda a bloquear endpoints
+      // por IP inteiro — guardar como POR-CONFIRMAR em vez de recusar. O uso
+      // real (download) é quem prova; se estiver morto, .cap testar marca.
+      info = { ok: true, user: '', id: sid.split('%3A')[0].split(':')[0] || '', porConfirmar: true, avisoValidacao: info.erro };
+    }
+  }
   const ex = state.session.igPool.find(x => x.sid === sid);
-  if (ex) Object.assign(ex, { ok: true, user: info.user || ex.user, lastErr: '', ...(cookies ? { cookies } : {}) });
-  else state.session.igPool.push({ sid: String(sid).trim(), user: info.user || '', id: info.id || '', ok: true, addedAt: Date.now(), ...(cookies ? { cookies } : {}) });
+  if (ex) Object.assign(ex, { ok: true, user: info.user || ex.user, lastErr: '', porConfirmar: !!info.porConfirmar, ...(info.id ? { id: info.id } : {}), ...(cookies ? { cookies } : {}) });
+  else state.session.igPool.push({ sid: String(sid).trim(), user: info.user || '', id: info.id || (sid.split('%3A')[0].split(':')[0] || ''), ok: true, addedAt: Date.now(), porConfirmar: !!info.porConfirmar, ...(info.avisoValidacao ? { lastErr: info.avisoValidacao } : {}), ...(cookies ? { cookies } : {}) });
   state.session.ig = String(sid).trim();
   state.UpdatedAt = Date.now();
   save();
-  return { ok: true, user: info.user, id: info.id, validado: !info.temporario, aviso: info.temporario ? info.erro : '' };
+  return { ok: true, user: info.user, id: info.id || sid.split('%3A')[0].split(':')[0] || '', validado: !info.temporario && !info.porConfirmar, aviso: info.temporario ? info.erro : (info.avisoValidacao || '') };
 }
 function delSessao(qual) {
   load();
@@ -1076,7 +1110,7 @@ module.exports = {
   PROVIDERS, DATA_DIR, DEFAULT_INTERVAL_MIN,
   load, save, arrancar, _reset, state,
   parseTargetArg, keyOf, addTarget, delTarget, getTarget, listTargets, setTargetOpt, setSession, hasSession,
-  validarSessao, validarSessaoDuplo, addSessao, delSessao, listSessoes, sessionsAtivas, marcarSessaoInvalida, igGet, carregarEnv, sincronizar,
+  validarSessao, validarSessaoDuplo, addSessao, delSessao, listSessoes, sessionsAtivas, marcarSessaoInvalida, igGet, carregarEnv, sincronizar, inferirUsername,
   igProfile, igFeedAll, igStories, igHighlights, nodeToItem, ytdlpItem, ytdlpProfile, ytdlpUrl, embedItem, resolverLink, itemDeLink, normalizarCookies, sniffMime, baixarMedia,
   processarItem, verificarAlvo, capturarTudo, listarGaleria, legenda,
   registar, jaVisto, marcarVisto,

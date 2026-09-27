@@ -29,23 +29,72 @@
           <small class="muted">Se a conta tiver 2FA ou o Instagram pedir verificação, usa o sessionid ao lado.</small>
         </form>
         <form id="capLoginSid" class="card" style="margin:0">
-          <h3>Ou colar o sessionid</h3>
-          <div class="form-group"><label>sessionid</label><input type="text" id="igSid" placeholder="12345678%3AabcDEF...%3A28%3A..." autocomplete="off" /></div>
+          <h3>Ou colar o sessionid / cookies completos</h3>
+          <div class="form-group"><label>sessionid ou JSON de cookies (EditThisCookie)</label><input type="text" id="igSid" placeholder="12345678%3AabcDEF...%3A28%3A...  ou  [ {...}, {...} ]" autocomplete="off" /></div>
           <button type="submit" class="btn btn-primary">➕ Adicionar sessão</button>
-          <small class="muted">Chrome PC: instagram.com logado → F12 → Application → Cookies → instagram.com → <code>sessionid</code>. Telemóvel: Kiwi/Firefox + "Cookie Editor". Também aceita <code>IG_SESSIONID</code> no .env.</small>
+          <small class="muted">💡 Adiciona VÁRIAS contas — o bot roda entre todas (rotação = menos 429). Melhor: cola o JSON completo do EditThisCookie (parece navegador real). Chrome PC: F12 → Application → Cookies. Telemóvel: Kiwi/Firefox + "Cookie Editor". Também aceita <code>IG_SESSIONID</code> no .env.</small>
         </form>
       </div>
       <div id="capLoginMsg" class="muted" style="margin-top:8px"></div>
-      <table class="table" style="margin-top:12px">
-        <thead><tr><th>Conta</th><th>Estado</th><th>Adicionada</th><th></th></tr></thead>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
+        <button class="btn" onclick="capTestar()">🧪 Testar todas</button>
+        <button class="btn" onclick="capInferir()">🔎 Resolver @users</button>
+        <button class="btn btn-danger" onclick="capLogout('all')">🗑️ Remover TODAS</button>
+      </div>
+      <table class="table" style="margin-top:10px">
+        <thead><tr><th>Conta</th><th>ID</th><th>Estado</th><th>Cookies</th><th>Adicionada</th><th></th></tr></thead>
         <tbody id="sessTbody">
           <% sessoes.forEach(s => { %>
-            <tr><td>@<%= s.user || '?' %></td><td><%= s.ok ? '🟢 OK' : '🔴 ' + s.lastErr %></td><td><%= s.addedAt ? new Date(s.addedAt).toLocaleString('pt-PT') : '' %></td><td><button class="btn btn-sm" onclick="capLogout('<%= s.user %>')">Remover</button></td></tr>
+            <tr data-uid="<%= s.id || '' %>">
+              <td>@<%= s.user || '<i class=muted>a resolver…</i>' %></td>
+              <td><code><%= s.id || '—' %></code></td>
+              <td><%= s.ok ? (s.porConfirmar ? '🟡 por-confirmar' : '🟢 OK') : '🔴 ' + (s.lastErr || 'erro') %></td>
+              <td><%= s.temJar !== undefined ? (s.temJar ? '🍪 jar completo' : '—') : '—' %></td>
+              <td><%= s.addedAt ? new Date(s.addedAt).toLocaleString('pt-PT') : '' %></td>
+              <td style="white-space:nowrap">
+                <button class="btn btn-sm" onclick="capActivar('<%= s.id %>')" title="tornar a sessão activa">⭐ Activar</button>
+                <button class="btn btn-sm" onclick="capRemoverSessao('<%= s.id %>')">Remover</button>
+              </td>
+            </tr>
           <% }) %>
-          <% if (!sessoes.length) { %><tr><td colspan="4" class="muted">Nenhuma sessão — sem login só há 12 posts públicos por perfil e o limite 429 é baixo.</td></tr><% } %>
+          <% if (!sessoes.length) { %><tr><td colspan="6" class="muted">Nenhuma sessão — sem login só há 12 posts públicos por perfil e o limite 429 é baixo. Podes adicionar VÁRIAS contas (rotação automática = menos 429).</td></tr><% } %>
         </tbody>
       </table>
-      <button class="btn" onclick="capTestar()">🧪 Testar sessões</button>
+      <small class="muted" id="capSessInfo"></small>
+      <script>
+        async function capRefreshState() {
+          try {
+            const r = await fetch('/api/cap/state').then(x => x.json());
+            const tb = document.getElementById('sessTbody');
+            if (!r?.sessoes?.length) { tb.innerHTML = '<tr><td colspan="6" class="muted">Nenhuma sessão.</td></tr>'; return; }
+            tb.innerHTML = r.sessoes.map(s => `<tr data-uid="${s.id || ''}">
+              <td>@${s.user || '<i class=muted>a resolver…</i>'}</td><td><code>${s.id || '—'}</code></td>
+              <td>${s.ok ? (s.porConfirmar ? '🟡 por-confirmar' : '🟢 OK') : '🔴 ' + (s.lastErr || 'erro')}</td>
+              <td>${s.temJar ? '🍪 jar completo' : '—'}</td>
+              <td>${s.addedAt ? new Date(s.addedAt).toLocaleString('pt-PT') : ''}</td>
+              <td style="white-space:nowrap"><button class="btn btn-sm" onclick="capActivar('${s.id}')">⭐</button> <button class="btn btn-sm" onclick="capRemoverSessao('${s.id}')">Remover</button></td></tr>`).join('');
+            const pc = r.sessoes.filter(s => s.porConfirmar).length;
+            document.getElementById('capSessInfo').textContent = `${r.sessoes.length} sessão(ões) · activa: ${r.activa || '—'}${pc ? ` · ${pc} por-confirmar (usa Testar todas)` : ''}`;
+          } catch {}
+        }
+        async function capRemoverSessao(id) {
+          if (!confirm('Remover a sessão ' + id + '?')) return;
+          await fetch('/api/cap/sessao/remover', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
+          capRefreshState();
+        }
+        async function capActivar(id) {
+          await fetch('/api/cap/sessao/activar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
+          capRefreshState();
+        }
+        async function capInferir() {
+          const btn = event?.target; if (btn) { btn.disabled = true; btn.textContent = '⏳ a resolver…'; }
+          await fetch('/api/cap/sessao/inferir', { method: 'POST' });
+          if (btn) { btn.disabled = false; btn.textContent = '🔎 Resolver @users'; }
+          capRefreshState();
+        }
+        capRefreshState();
+        setInterval(capRefreshState, 30000);
+      </script>
     </div>
 
     <div class="card">
