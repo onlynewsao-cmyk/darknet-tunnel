@@ -118,14 +118,19 @@ function proxyAgent() {
   catch { console.warn('[CAP] CAP_PROXY definido mas pacote https-proxy-agent não instalado (npm i https-proxy-agent)'); }
   return _proxyAgent;
 }
-function httpGet(url, { headers = {}, timeout = 25000, redirects = 5, proxy = true } = {}) {
+function httpReq(method, url, { headers = {}, timeout = 25000, redirects = 5, proxy = true, body = null } = {}) {
   return new Promise((resolve, reject) => {
     const ag = proxy && /instagram\.com/.test(url) ? proxyAgent() : null;
-    const req = https.get(url, { headers: { 'User-Agent': UA, ...headers }, timeout, ...(ag ? { agent: ag } : {}) }, (res) => {
-      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location && redirects > 0) {
+    let u; try { u = new URL(url); } catch { return reject(new Error('URL inválida')); }
+    const req = https.request({
+      hostname: u.hostname, path: u.pathname + u.search, method,
+      headers: { 'User-Agent': UA, ...headers, ...(body ? { 'Content-Type': headers['Content-Type'] || 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(body) } : {}) },
+      timeout, ...(ag ? { agent: ag } : {}),
+    }, (res) => {
+      if (method === 'GET' && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location && redirects > 0) {
         const next = res.headers.location.startsWith('http') ? res.headers.location : new URL(res.headers.location, url).href;
         res.resume();
-        return httpGet(next, { headers, timeout, redirects: redirects - 1 }).then(resolve, reject);
+        return httpReq('GET', next, { headers, timeout, redirects: redirects - 1 }).then(resolve, reject);
       }
       const chunks = [];
       res.on('data', c => chunks.push(c));
@@ -134,8 +139,11 @@ function httpGet(url, { headers = {}, timeout = 25000, redirects = 5, proxy = tr
     });
     req.on('error', reject);
     req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
+    if (body) req.write(body);
+    req.end();
   });
 }
+function httpGet(url, opts = {}) { return httpReq('GET', url, opts); }
 
 // ── Sessões IG: pool (state.session.igPool = [{sid, user, ok, addedAt, lastErr}]) + compat state.session.ig ──
 const UA_APP = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Instagram 311.0.0.109.115';
@@ -662,28 +670,51 @@ async function feedViaGraphql(username, first = 12, after = '') {
   const u = normUser(username);
   const vars = { username: u, first };
   if (after) vars.after = after;
-  const q = `https://www.instagram.com/graphql/query/?doc_id=9310670392322965&variables=${encodeURIComponent(JSON.stringify(vars))}`;
-  const r = await httpGet(q, {
-    headers: {
-      ...igHeaders(pickSession()),
-      'User-Agent': UA,
-      'X-Requested-With': 'XMLHttpRequest',
-      'Accept': '*/*',
-      'Referer': `https://www.instagram.com/${u}/`,
-    },
-    timeout: 20000,
-  });
-  if (r.status !== 200) throw new Error('graphql HTTP ' + r.status);
-  const j = JSON.parse(r.body.toString('utf8'));
-  const conn = j?.data?.xdt_api__v1__feed__user_timeline_graphql_connection;
-  const items = [];
-  for (const e of (conn?.edges || [])) {
-    const node = e?.node;
-    if (!node || node.__typename === 'XDTGraphUser') continue;
-    const it = nodeToItem(node, u);
-    if (it?.medias?.length && it.medias[0].url) items.push(it);
-  }
-  return { items: items.sort((a, b) => a.ts - b.ts), hasMore: !!conn?.page_info?.has_next_page, endCursor: conn?.page_info?.end_cursor || '' };
+  const _parse = (body) => {
+    const j = JSON.parse(body.toString('utf8'));
+    const conn = j?.data?.xdt_api__v1__feed__user_timeline_graphql_connection;
+    if (!conn && j?.errors) throw new Error('graphql execution error');
+    const items = [];
+    for (const e of (conn?.edges || [])) {
+      const node = e?.node;
+      if (!node || node.__typename === 'XDTGraphUser') continue;
+      const it = nodeToItem(node, u);
+      if (it?.medias?.length && it.medias[0].url) items.push(it);
+    }
+    return { items: items.sort((a, b) => a.ts - b.ts), hasMore: !!conn?.page_info?.has_next_page, endCursor: conn?.page_info?.end_cursor || '' };
+  };
+  const hG = igHeaders(pickSession());
+  const base = {
+    'User-Agent': UA, 'X-Requested-With': 'XMLHttpRequest', Accept: '*/*',
+    Referer: `https://www.instagram.com/${u}/`,
+    ...(hG.Cookie ? { Cookie: hG.Cookie } : {}),
+    ...(hG['X-IG-App-ID'] ? { 'X-IG-App-ID': hG['X-IG-App-ID'] } : {}),
+  };
+  // 1) GET — canal documentado (scrapfly Set/2026)
+  try {
+    const q = `https://www.instagram.com/graphql/query/?doc_id=9310670392322965&variables=${encodeURIComponent(JSON.stringify(vars))}`;
+    const r = await httpGet(q, { headers: base, timeout: 20000 });
+    if (r.status === 200 && r.body && String(r.body.slice(0, 1)) !== '<') return _parse(r.body);
+  } catch {}
+  // 2) POST /api/graphql — EXACTAMENTE como o XHR do navegador: LSD da página + csrftoken do jar
+  try {
+    await new Promise(r2 => setTimeout(r2, _rand(700, 1600)));
+    const hp = await htmlPayload(u);
+    const csrf = (String(hG.Cookie || '').match(/csrftoken=([^;]+)/) || [])[1] || '';
+    const lsd = hp.lsd || csrf;
+    if (!lsd) throw new Error('sem LSD');
+    const body = new URLSearchParams({
+      lsd, fb_api_caller_class: 'RelayModern',
+      fb_api_req_friendly_name: 'PolarisProfilePostsTabContentQuery_connection',
+      variables: JSON.stringify(vars), doc_id: '9310670392322965', server_timestamps: 'true',
+    }).toString();
+    const r2 = await httpReq('POST', 'https://www.instagram.com/api/graphql', {
+      headers: { ...base, 'X-FB-LSD': lsd, 'X-FB-Friendly-Name': 'PolarisProfilePostsTabContentQuery_connection', ...(csrf ? { 'X-CSRFToken': csrf } : {}) },
+      timeout: 20000, body,
+    });
+    if (r2.status === 200 && r2.body && String(r2.body.slice(0, 1)) !== '<') return _parse(r2.body);
+  } catch {}
+  throw new Error('graphql GET+POST falharam');
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -717,6 +748,82 @@ function _parseOgFollowers(html) {
   return { followers, following, posts, nome, user };
 }
 
+// ─────────────────────────────────────────────────────────────
+// v12.9.14 — FONTE FUNDAMENTAL: a PRÓPRIA PÁGINA do perfil 📄
+// O IG embute o utilizador completo no HTML (xig_user_by_username)
+// e os contadores no og:description — é o que um navegador vê.
+// Devolve { user, og, lsd, posts, status } — cache 5 min por username.
+// payload real do IG anda a 15-25 níveis de nesting → profundidade 60 + orçamento de nós
+function _digUser(obj, st) {
+  if (!obj || typeof obj !== 'object') return null;
+  st = st || { d: 0, n: 0 };
+  if (++st.n > 400000 || ++st.d > 5000) { st.d--; return null; }
+  if ((obj.username && (obj.follower_count != null || obj.edge_followed_by || obj.media_count != null)) || (obj.pk && obj.username && obj.full_name != null)) { st.d--; return obj; }
+  for (const k of Object.keys(obj)) {
+    try { const r = _digUser(obj[k], st); if (r) { st.d--; return r; } } catch {}
+  }
+  st.d--;
+  return null;
+}
+function _digTimeline(obj, st) {
+  if (!obj || typeof obj !== 'object') return null;
+  st = st || { d: 0, n: 0 };
+  if (++st.n > 400000 || ++st.d > 5000) { st.d--; return null; }
+  if (obj.edges?.length) {
+    const n0 = obj.edges[0]?.node || {};
+    if (n0.shortcode || n0.code || (n0.id && n0.media_type)) { st.d--; return obj; }
+  }
+  for (const k of Object.keys(obj)) {
+    try { const r = _digTimeline(obj[k], st); if (r) { st.d--; return r; } } catch {}
+  }
+  st.d--;
+  return null;
+}
+const _htmlCache = new Map();
+async function htmlPayload(username) {
+  const u = normUser(username);
+  const ck = 'h:' + u;
+  const hit = _htmlCache.get(ck);
+  if (hit && Date.now() - hit.at < 300e3) return hit.v;
+  const out = { user: null, og: null, lsd: '', posts: [], status: 0 };
+  try {
+    const sess = pickSession();
+    const h = igHeaders(sess);
+    const r = await httpGet(`https://www.instagram.com/${u}/`, {
+      headers: {
+        'User-Agent': UA, 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8', 'Upgrade-Insecure-Requests': '1',
+        ...(h.Cookie ? { Cookie: h.Cookie } : {}), ...(h['X-IG-App-ID'] ? { 'X-IG-App-ID': h['X-IG-App-ID'] } : {}),
+      }, timeout: 20000,
+    });
+    out.status = r.status;
+    if (r.status === 200 && r.body) {
+      const html = r.body.toString('utf8');
+      const scripts = html.match(/<script[^>]*type="application\/json"[^>]*>[\s\S]*?<\/script>/g) || [];
+      for (const s of scripts.slice(0, 40)) {
+        if (!/xig_user_by_username|followed_by|media_count/.test(s)) continue;
+        try {
+          const j = JSON.parse(s.replace(/^<script[^>]*>/, '').replace(/<\/script>$/, ''));
+          if (!out.user) { const us = _digUser(j); if (us) out.user = us; }
+        } catch {}
+      }
+      const og = _parseOgFollowers(html);
+      if (og.followers || og.posts || og.nome) out.og = og;
+      out.lsd = (html.match(/"LSD",\[\],\{"token":"([^"]+)"/) || [])[1] || '';
+      for (const s of scripts.slice(0, 40)) {
+        if (!/user_timeline_graphql_connection|shortcode/.test(s)) continue;
+        try {
+          const j = JSON.parse(s.replace(/^<script[^>]*>/, '').replace(/<\/script>$/, ''));
+          const tl = _digTimeline(j);
+          if (tl?.edges?.length) { out.posts = tl.edges.map(e => e?.node).filter(Boolean); break; }
+        } catch {}
+      }
+    }
+  } catch {}
+  _htmlCache.set(ck, { at: Date.now(), v: out });
+  return out;
+}
+
 async function perfilStats(username) {
   const u = normUser(username);
   const ck = 'p:' + u;
@@ -738,14 +845,24 @@ async function perfilStats(username) {
       }
     }
   } catch {}
-  // FONTE 2: HTML og:description (SEMPRE atravessa — é o canal do navegador)
+  // FONTE 2: A PRÓPRIA PÁGINA (payload embutido xig_user_by_username + og:description)
   try {
-    const r2 = await httpGet(`https://www.instagram.com/${u}/`, {
-      headers: { 'User-Agent': UA, 'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8', ...(igHeaders(pickSession()).Cookie ? { Cookie: igHeaders(pickSession()).Cookie } : {}) },
-      timeout: 15000,
-    });
-    if (r2.status === 200) {
-      const og = _parseOgFollowers(r2.body.toString('utf8'));
+    const hp = await htmlPayload(u);
+    if (hp.user) {
+      const ju = hp.user;
+      out.id = out.id || String(ju.pk || ju.id || '');
+      out.nome = out.nome || ju.full_name || '';
+      out.bio = out.bio || ju.biography || '';
+      out.seguidores = out.seguidores || ju.follower_count || ju.edge_followed_by?.count || 0;
+      out.seguindo = out.seguindo || ju.following_count || ju.edge_follow?.count || 0;
+      out.posts = out.posts || ju.media_count || ju.edge_owner_to_timeline_media?.count || 0;
+      out.privado = out.privado || !!ju.is_private;
+      out.verificado = out.verificado || !!ju.is_verified;
+      out.foto = out.foto || ju.profile_pic_url_hd || ju.profile_pic_url || '';
+      out.fontes.push('html-payload');
+    }
+    if (hp.og) {
+      const og = hp.og;
       if (og.followers) { out.seguidores = out.seguidores || og.followers; out.fontes.push('og-html'); }
       if (og.following) out.seguindo = out.seguindo || og.following;
       if (og.posts) out.posts = out.posts || og.posts;
@@ -822,6 +939,14 @@ async function igProfile(username) {
           const g = await feedViaGraphql(u, 12);
           if (g.items?.length) { items.push(...g.items); items.sort((a, b) => a.ts - b.ts); }
         } catch {}
+        // v12.9.14: posts EMBUTIDOS na própria página do perfil (SSR)
+        if (!items.length) {
+          try {
+            const hp = await htmlPayload(u);
+            const its = (hp.posts || []).map(n => { try { return nodeToItem(n, u); } catch { return null; } }).filter(x => x?.medias?.length && x.medias[0].url);
+            if (its.length) { items.push(...its); items.sort((a, b) => a.ts - b.ts); }
+          } catch {}
+        }
       }
       // v12.9.13: ESTATÍSTICAS VERDADEIRAS via perfilStats (og-html + usernameinfo + search)
       let _stats = {};
@@ -1283,7 +1408,7 @@ module.exports = {
   PROVIDERS, DATA_DIR, DEFAULT_INTERVAL_MIN,
   load, save, arrancar, _reset, state,
   parseTargetArg, keyOf, addTarget, delTarget, getTarget, listTargets, setTargetOpt, setSession, hasSession,
-  validarSessao, validarSessaoDuplo, addSessao, delSessao, listSessoes, sessionsAtivas, marcarSessaoInvalida, igGet, carregarEnv, sincronizar, inferirUsername, feedViaGraphql, perfilStats,
+  validarSessao, validarSessaoDuplo, addSessao, delSessao, listSessoes, sessionsAtivas, marcarSessaoInvalida, igGet, carregarEnv, sincronizar, inferirUsername, feedViaGraphql, perfilStats, htmlPayload,
   igProfile, igFeedAll, igStories, igHighlights, nodeToItem, ytdlpItem, ytdlpProfile, ytdlpUrl, embedItem, resolverLink, itemDeLink, normalizarCookies, sniffMime, baixarMedia,
   processarItem, verificarAlvo, capturarTudo, listarGaleria, legenda,
   registar, jaVisto, marcarVisto,

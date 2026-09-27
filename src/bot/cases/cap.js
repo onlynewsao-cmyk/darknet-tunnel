@@ -310,6 +310,10 @@ module.exports = function registerCap(registerCase) {
       if (!cap.PROVIDERS[platform]) return tReply(sock, msg, ctx, '📡 C∆P', ['❌ Plataforma não suportada (fase 1: Instagram).']);
       try {
         const perfil = await cap.PROVIDERS[platform].profile(username);
+        // v12.9.14: se o caminho veio sem números, pede AGORA à cascata de stats
+        if (!perfil.seguidores && !perfil.seguindo) {
+          try { const st = await cap.perfilStats(username); perfil.seguidores = perfil.seguidores || st.seguidores; perfil.seguindo = perfil.seguindo || st.seguindo; perfil.posts = perfil.posts || st.posts; perfil.bio = perfil.bio || st.bio; perfil.verificado = perfil.verificado || st.verificado; } catch {}
+        }
         const ult = perfil.items.slice(-6).reverse();
         const reels = perfil.items.filter(i => i.tipo === 'reel');
         const posts = perfil.items.filter(i => i.tipo !== 'reel');
