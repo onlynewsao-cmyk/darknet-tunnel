@@ -953,6 +953,33 @@ async function perfilStats(username) {
   return out;
 }
 
+// v12.9.17 — RESGATE TOTAL: se TODA a API falhar (web_profile 429, search 401,
+// feed/user bloqueado), monta o perfil pelos canais web por USERNAME:
+// graphql (GET→POST) + página embutida (visitante) + stats (og/search).
+// O bot funciona DE QUALQUER FORMA ou falha com a verdade.
+async function rescueProfile(u) {
+  const un = normUser(u);
+  let items = [];
+  try { const g = await feedViaGraphql(un, 12); if (g.items?.length) { items.push(...g.items); items.sort((a, b) => a.ts - b.ts); } } catch {}
+  if (!items.length) {
+    try {
+      const hp = await htmlPayload(un);
+      const its = (hp.posts || []).map(n => { try { return nodeToItem(n, un); } catch { return null; } }).filter(x => x?.medias?.length && x.medias[0].url);
+      if (its.length) { items.push(...its); items.sort((a, b) => a.ts - b.ts); }
+    } catch {}
+  }
+  let st = {}; try { st = await perfilStats(un); } catch {}
+  if (!items.length && !st.seguidores && !st.posts) return null;
+  return {
+    id: st.id || '', username: un, nome: st.nome || '@' + un, bio: st.bio || '',
+    privado: !!st.privado, verificado: !!st.verificado,
+    seguidores: st.seguidores || 0, seguindo: st.seguindo || 0, posts: st.posts || items.length,
+    highlights: 0, temReels: items.some(i => i.tipo === 'reel'),
+    foto: st.foto || '',
+    items, hasMore: false, endCursor: '', via: items.length ? 'web-rescue' : 'stats-only',
+  };
+}
+
 async function igProfile(username) {
   const u = normUser(username);
   const _ck = 'p:' + u;
@@ -1024,19 +1051,26 @@ async function igProfile(username) {
   }
   if (r.status === 404) throw new Error(`Perfil @${u} não existe`);
   if (r.status !== 200) {
+    // v12.9.17: RESGATE pelos canais web ANTES de desistir
+    const res = await rescueProfile(u).catch(() => null);
+    if (res) { _profCache.set(_ck, { at: Date.now(), v: res }); return res; }
     // v12.9.8: API limitada → yt-dlp (mesmo caminho do .cap link, comprovado no servidor)
     const alt = await ytdlpProfile(u, 12).catch(() => null);
     if (alt) { _profCache.set(_ck, { at: Date.now(), v: alt }); return alt; }
-    if (r.status === 429) throw new Error(`Instagram respondeu HTTP 429 — IP limitado e yt-dlp também falhou (define CAP_PROXY no .env ou espera 30-60 min)`);
-    throw new Error(`Instagram respondeu HTTP ${r.status}${r.status === 401 || r.status === 403 ? ' (rate-limit/login)' : ''} e yt-dlp também falhou`);
+    if (r.status === 429) throw new Error(`Instagram respondeu HTTP 429 — IP limitado, canais web e yt-dlp falharam (define CAP_PROXY no .env ou espera 30-60 min)`);
+    throw new Error(`Instagram respondeu HTTP ${r.status}${r.status === 401 || r.status === 403 ? ' (rate-limit/login)' : ''} — todos os canais falharam`);
   }
   let j; try { j = JSON.parse(r.body.toString('utf8')); } catch {
+    const res = await rescueProfile(u).catch(() => null);
+    if (res) { _profCache.set(_ck, { at: Date.now(), v: res }); return res; }
     const alt = await ytdlpProfile(u, 12).catch(() => null);
     if (alt) { _profCache.set(_ck, { at: Date.now(), v: alt }); return alt; }
-    throw new Error('Resposta do Instagram não é JSON (bloqueio temporário?) e yt-dlp também falhou');
+    throw new Error('Resposta do Instagram não é JSON (bloqueio temporário?) — todos os canais falharam');
   }
   const d = j?.data?.user;
   if (!d) {
+    const res = await rescueProfile(u).catch(() => null);
+    if (res) { _profCache.set(_ck, { at: Date.now(), v: res }); return res; }
     const alt = await ytdlpProfile(u, 12).catch(() => null);
     if (alt) { _profCache.set(_ck, { at: Date.now(), v: alt }); return alt; }
     throw new Error(`Perfil @${u} indisponível`);
@@ -1471,7 +1505,7 @@ module.exports = {
   PROVIDERS, DATA_DIR, DEFAULT_INTERVAL_MIN,
   load, save, arrancar, _reset, state,
   parseTargetArg, keyOf, addTarget, delTarget, getTarget, listTargets, setTargetOpt, setSession, hasSession,
-  validarSessao, validarSessaoDuplo, addSessao, delSessao, listSessoes, sessionsAtivas, marcarSessaoInvalida, igGet, carregarEnv, sincronizar, inferirUsername, feedViaGraphql, feedViaApp, perfilStats, htmlPayload, fotoHD, igGetApp,
+  validarSessao, validarSessaoDuplo, addSessao, delSessao, listSessoes, sessionsAtivas, marcarSessaoInvalida, igGet, carregarEnv, sincronizar, inferirUsername, feedViaGraphql, feedViaApp, perfilStats, rescueProfile, htmlPayload, fotoHD, igGetApp,
   igProfile, igFeedAll, igStories, igHighlights, nodeToItem, ytdlpItem, ytdlpProfile, ytdlpUrl, embedItem, resolverLink, itemDeLink, normalizarCookies, sniffMime, baixarMedia,
   processarItem, verificarAlvo, capturarTudo, listarGaleria, legenda,
   registar, jaVisto, marcarVisto,
