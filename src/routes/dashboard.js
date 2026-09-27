@@ -118,6 +118,10 @@ router.get('/cap', requireOwner, async (req, res) => {
   res.render('dashboard/cap', { title: 'C∆P Capture', sessoes: cap.listSessoes(), alvos: cap.listTargets(), log: cap.state.log.slice(0, 30) });
 });
 
+router.get('/igapi', requireOwner, (req, res) => {
+  res.render('dashboard/igapi', { title: 'IG APIs' });
+});
+
 router.get('/settings', requireOwner, async (req, res) => {
   const all = await BotConfig.find().catch(() => []);
   const settings = {};

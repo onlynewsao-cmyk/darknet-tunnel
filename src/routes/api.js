@@ -1155,5 +1155,118 @@ module.exports = function (io) {
     res.json(r);
   });
 
+
+  // ═══ 🛠️ IG APIs — as NOSSAS APIs verdadeiras (dados REAIS do Instagram por todas as vias) ═══
+  // Autenticação: sessão owner do painel (cookie). Todas honestas: {ok:false,erro} quando o IG fecha.
+  const igE = () => { const c = require('../cap/capEngine'); c.load(); return c; };
+  const _hd = (u) => String(u || '').replace(/\/s\d{2,4}x\d{2,4}\//g, '/s1080x1080/');
+  const _pFmt = (p) => ({
+    username: p.username, id: p.id || '', nome: p.nome || '', bio: p.bio || '',
+    verificado: !!p.verificado, privado: !!p.privado,
+    seguidores: p.seguidores || 0, seguindo: p.seguindo || 0, posts: p.posts || 0,
+    foto_hd: _hd(p.foto), via: p.via || '',
+  });
+  const _iFmt = (i) => ({ tipo: i.tipo, shortcode: i.shortcode, legenda: String(i.caption || '').slice(0, 140), data: i.ts ? new Date(i.ts).toISOString() : null, link: i.link, midias: (i.medias || []).map(m => ({ url: m.url, video: !!m.isVideo, largura: m.width || null, altura: m.height || null })) });
+
+  router.get('/ig/perfil/:username', requireApiOwner, async (req, res) => {
+    try {
+      const c = igE(); const p = await c.PROVIDERS.ig.profile(req.params.username);
+      const lim = parseInt(req.query.limit) || 6;
+      res.json({ ok: true, fonte: p.via, perfil: _pFmt(p), ultimos_posts: (p.items || []).slice(-lim).reverse().map(_iFmt) });
+    } catch (e) { res.json({ ok: false, erro: e.message, dica: 'A cache refresca a cada 3-5 min — tenta de novo' }); }
+  });
+
+  router.get('/ig/stats/:username', requireApiOwner, async (req, res) => {
+    try {
+      const c = igE(); const s = await c.perfilStats(req.params.username);
+      const ok = !!(s.seguidores || s.posts || s.seguindo);
+      res.json({ ok, fontes: s.fontes, stats: { username: s.username, nome: s.nome, verificado: !!s.verificado, privado: !!s.privado, seguidores: s.seguidores, seguindo: s.seguindo, posts: s.posts, foto_hd: _hd(s.foto) }, nota: ok ? undefined : 'IG não libertou números agora — tenta em 5-15 min' });
+    } catch (e) { res.json({ ok: false, erro: e.message }); }
+  });
+
+  router.get('/ig/posts/:username', requireApiOwner, async (req, res) => {
+    try {
+      const c = igE(); const p = await c.PROVIDERS.ig.profile(req.params.username);
+      const lim = Math.min(parseInt(req.query.limit) || 12, 50);
+      const items = (p.items || []).filter(i => i.tipo !== 'reel').slice(-lim).reverse();
+      res.json({ ok: items.length > 0, fonte: p.via, total: items.length, posts: items.map(_iFmt), erro: items.length ? undefined : 'Sem posts acessíveis agora' });
+    } catch (e) { res.json({ ok: false, erro: e.message }); }
+  });
+
+  router.get('/ig/reels/:username', requireApiOwner, async (req, res) => {
+    try {
+      const c = igE(); const p = await c.PROVIDERS.ig.profile(req.params.username);
+      const lim = Math.min(parseInt(req.query.limit) || 12, 50);
+      const items = (p.items || []).filter(i => i.tipo === 'reel').slice(-lim).reverse();
+      res.json({ ok: items.length > 0, fonte: p.via, total: items.length, reels: items.map(_iFmt), erro: items.length ? undefined : 'Sem reels acessíveis agora' });
+    } catch (e) { res.json({ ok: false, erro: e.message }); }
+  });
+
+  router.get('/ig/stories/:username', requireApiOwner, async (req, res) => {
+    try {
+      const c = igE(); const p = await c.PROVIDERS.ig.profile(req.params.username);
+      const st = await c.PROVIDERS.ig.stories(p.id, req.params.username);
+      res.json({ ok: st.items.length > 0, total: st.items.length, stories: st.items.map(_iFmt), exige_login: !!st.needsLogin, erro: st.items.length ? undefined : 'Sem stories activos agora' });
+    } catch (e) { res.json({ ok: false, erro: e.message }); }
+  });
+
+  router.get('/ig/highlights/:username', requireApiOwner, async (req, res) => {
+    try {
+      const c = igE(); const p = await c.PROVIDERS.ig.profile(req.params.username);
+      const h = await c.PROVIDERS.ig.highlights(p.id, req.params.username);
+      res.json({ ok: h.items.length > 0, total: h.items.length, albuns: h.albuns || [], highlights: h.items.map(_iFmt), exige_login: !!h.needsLogin });
+    } catch (e) { res.json({ ok: false, erro: e.message }); }
+  });
+
+  router.get('/ig/tudo/:username', requireApiOwner, async (req, res) => {
+    try {
+      const c = igE();
+      const p = await c.PROVIDERS.ig.profile(req.params.username);
+      const [st, h] = await Promise.all([
+        c.PROVIDERS.ig.stories(p.id, req.params.username).catch(() => ({ items: [] })),
+        c.PROVIDERS.ig.highlights(p.id, req.params.username).catch(() => ({ items: [] })),
+      ]);
+      res.json({
+        ok: true, fonte: p.via,
+        perfil: _pFmt(p),
+        posts: (p.items || []).filter(i => i.tipo !== 'reel').slice(-12).reverse().map(_iFmt),
+        reels: (p.items || []).filter(i => i.tipo === 'reel').slice(-12).reverse().map(_iFmt),
+        stories: st.items.map(_iFmt),
+        highlights: (h.items || []).map(_iFmt),
+      });
+    } catch (e) { res.json({ ok: false, erro: e.message }); }
+  });
+
+  router.get('/ig/buscar/:q', requireApiOwner, async (req, res) => {
+    try {
+      const c = igE();
+      const r = await c.igGetApp(`/api/v1/users/search/?q=${encodeURIComponent(req.params.q)}`);
+      let jj = {}; try { jj = JSON.parse(r.body.toString('utf8')); } catch {}
+      const us = (jj?.users || []).slice(0, 10).map(u => ({
+        username: u.username, pk: String(u.pk), nome: u.full_name, verificado: !!u.is_verified, privado: !!u.is_private,
+        seguidores: u.follower_count || 0, foto_hd: _hd(u.profile_pic_url),
+      }));
+      res.json({ ok: us.length > 0, total: us.length, resultados: us, erro: us.length ? undefined : `IG HTTP ${r.status} — busca indisponível agora` });
+    } catch (e) { res.json({ ok: false, erro: e.message }); }
+  });
+
+  router.get('/ig/sessoes', requireApiOwner, (req, res) => {
+    const c = igE();
+    res.json({ ok: true, total: c.sessionsAtivas().length, sessoes: c.listSessoes() });
+  });
+
+  router.get('/ig/media', requireApiOwner, async (req, res) => {
+    try {
+      const url = String(req.query.url || '');
+      let h; try { h = new URL(url).hostname; } catch { return res.status(400).json({ ok: false, erro: 'URL inválida' }); }
+      if (!/(cdninstagram\.com|fbcdn\.net|instagram\.com)$/.test(h)) return res.status(403).json({ ok: false, erro: 'Só mídia do Instagram (cdninstagram/fbcdn)' });
+      const c = igE();
+      const f = await c.baixarMedia({ url, isVideo: req.query.video === '1' });
+      res.set('Content-Type', f.mime || 'application/octet-stream');
+      res.set('Cache-Control', 'public, max-age=3600');
+      res.send(f.buffer);
+    } catch (e) { res.status(502).json({ ok: false, erro: e.message }); }
+  });
+
   return router;
 };
