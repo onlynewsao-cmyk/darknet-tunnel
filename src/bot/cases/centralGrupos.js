@@ -10,7 +10,8 @@
  */
 'use strict';
 
-const ui = require('../uiInteractive');
+const buttonHandler = require('../buttonHandler');
+const ui = require('../centralUI');
 const base = require('../centralBase');
 
 // RAM por chat: última listagem de grupos + convites pendentes
@@ -56,16 +57,15 @@ module.exports = function registerCentralGrupos(registerCase) {
   registerCase(['central', 'centralgrupos'], async ({ sock, msg, ctx, prefix, isOwner, reply }) => {
     if (!only(isOwner, reply)) return;
     const s = base.stats();
-    await ui.botoes(sock, ctx.remoteJid,
-      `🕸️ *CENTRAL AVANÇADA DE GRUPOS* — SÓ DONO\n\n` +
-      `👥 ${s.nGrupos} grupos conhecidos · 📇 ${fmtN(s.total)} contactos únicos\n` +
-      `🕒 base: ${s.updatedAt ? new Date(s.updatedAt).toLocaleString('pt-PT') : 'vazia'}`,
+    await buttonHandler.sendButtons(sock, ctx.remoteJid,
+      `🕸️ *CENTRAL AVANÇADA DE GRUPOS* — SÓ DONO\n\n👥 ${s.nGrupos} grupos conhecidos\n📇 ${fmtN(s.total)} contactos únicos\n🕒 base: ${s.updatedAt ? new Date(s.updatedAt).toLocaleString('pt-PT') : 'vazia'}`,
+      'Central v12.9.11 · captura → dashboard',
       [
-        { texto: '📋 Ver grupos do bot', id: `${prefix}gruposbot` },
-        { texto: '📥 Capturar TODOS os grupos', id: `${prefix}capturartodos` },
-        { texto: '📊 Estatísticas da base', id: `${prefix}contactos` },
-      ],
-      { footer: 'Central v12.9.11 · captura → dashboard', quoted: msg });
+        { id: `${prefix}gruposbot`, text: '📋 Grupos do bot' },
+        { id: `${prefix}capturartodos`, text: '📥 Capturar TODOS' },
+        { id: `${prefix}contactos`, text: '📊 Estatísticas' },
+        { id: `${prefix}comunidade`, text: '🏘️ Comunidades' },
+      ], msg);
   }, owner);
 
   // ═══════════ LISTA DE GRUPOS (carrossel se ≤8) ═══════════
@@ -74,29 +74,30 @@ module.exports = function registerCentralGrupos(registerCase) {
     const { arr } = await listarGrupos(sock);
     if (!arr.length) return reply('O bot não está em nenhum grupo.');
     registrarListagem(ctx.remoteJid, arr);
-    if (arr.length <= 8) {
-      await ui.carrossel(sock, ctx.remoteJid,
-        `📋 *GRUPOS DO BOT (${arr.length})* — toca no cartão para agir`,
-        arr.map((g, i) => ({
-          titulo: `${i + 1}. ${g.nome.slice(0, 40)}`,
-          descricao: `👥 ${g.size} membros${g.comunidade ? '\n🏘️ comunidade' : ''}${g.pai ? '\n↳ filho de comunidade' : ''}\n\`${g.jid}\``,
-          botoes: [
-            { texto: '📥 Capturar', id: `${prefix}capturar ${i + 1}` },
-            { texto: '➕ Addcentral p/ este', id: `${prefix}addcentral ${g.jid}` },
-          ],
-        })),
-        { footer: 'Central · só dono', quoted: msg });
-    } else {
-      const pgs = [];
-      for (let i = 0; i < arr.length; i += 12) {
-        pgs.push(`— página ${Math.floor(i / 12) + 1}/${Math.ceil(arr.length / 12)} —`,
-          ...arr.slice(i, i + 12).map((g, k) => `${i + k + 1}. ${g.nome.slice(0, 45)} · 👥 ${g.size}${g.comunidade ? ' 🏘️' : ''}`));
-      }
-      await sock.sendMessage(ctx.remoteJid, { text: `📋 *GRUPOS DO BOT (${arr.length})*\n\n${pgs.join('\n')}\n\n> Usa \`capturar <nº>\` · \`addcentral <jid>\`` }, { quoted: msg });
+    // carrossel em páginas de 6 cards — MESMO formato do menu/pesquisa (cascata: carrossel→lista→botões→texto)
+    const PG = 6, pags = Math.ceil(arr.length / PG);
+    for (let pg = 0; pg < Math.min(pags, 3); pg++) {
+      const fatia = arr.slice(pg * PG, pg * PG + PG);
+      if (!fatia.length) break;
+      await ui.carrosselSeguro(sock, ctx.remoteJid,
+        `📋 *GRUPOS DO BOT (${arr.length})* — página ${pg + 1}/${pags}`,
+        fatia.map((g, k) => {
+          const i = pg * PG + k;
+          return {
+            title: `${i + 1}. ${g.nome.slice(0, 40)}`,
+            body: `👥 ${g.size} membros${g.comunidade ? '\n🏘️ COMUNIDADE' : ''}${g.pai ? '\n↳ filho de comunidade' : ''}`,
+            footer: g.jid,
+            buttons: [
+              { text: '📥 Capturar', id: `${prefix}capturar ${i + 1}` },
+              { text: '➕ Addcentral', id: `${prefix}addcentral ${i + 1}` },
+            ],
+          };
+        }),
+        { footer: 'Central · só dono', quoted: msg, listaTitle: 'Grupos do bot' });
     }
-    await ui.botoes(sock, ctx.remoteJid, '⚡ Acções rápidas:',
-      [{ texto: '📥 Capturar TODOS', id: `${prefix}capturartodos` },
-       { texto: '📊 Base de contactos', id: `${prefix}contactos` }], { quoted: msg });
+    if (pags > 3) await sock.sendMessage(ctx.remoteJid, { text: `📋 Mostrando ${Math.min(pags, 3)} de ${pags} páginas (${arr.length} grupos).\n> Usa \`capturar <nº>\` · \`addcentral <dest> [de <nº|todos>]\`` }, { quoted: msg });
+    await buttonHandler.sendButtons(sock, ctx.remoteJid, '⚡ *Acções rápidas da Central*', 'Central · só dono',
+      [{ id: `${prefix}capturartodos`, text: '📥 Capturar TODOS' }, { id: `${prefix}contactos`, text: '📊 Base de contactos' }], msg);
   }, owner);
 
   // ═══════════ CAPTURAR 1 GRUPO (ou comunidade inteira) ═══════════
@@ -125,10 +126,10 @@ module.exports = function registerCentralGrupos(registerCase) {
       } catch (e) { return reply(`❌ ${jid}: ${e.message?.slice(0, 80)}`); }
     }
     const s = base.stats();
-    await ui.botoes(sock, ctx.remoteJid,
-      `📥 *CAPTURA CONCLUÍDA*\n\n👥 ${gruposN} grupo(s) · ✅ ${novos} novos · ♻️ ${duplicados} duplicados (ignorados)\n📇 Base total: *${fmtN(s.total)}* contactos únicos — já visíveis no *dashboard → Central*`,
-      [{ texto: '📥 Capturar TODOS os grupos', id: '.capturartodos' }, { texto: '📊 Ver estatísticas', id: '.contactos' }],
-      { footer: 'sem duplicados · dados no dashboard', quoted: msg });
+    await buttonHandler.sendButtons(sock, ctx.remoteJid,
+      `📥 *CAPTURA CONCLUÍDA*\n\n👥 ${gruposN} grupo(s) · ✅ ${novos} novos\n♻️ ${duplicados} duplicados ignorados\n📇 Base: *${fmtN(s.total)}* contactos únicos`,
+      'sem duplicados · visível no dashboard → Central',
+      [{ id: '.capturartodos', text: '📥 Capturar TODOS' }, { id: '.contactos', text: '📊 Estatísticas' }], msg);
   }, owner);
 
   // ═══════════ CAPTURAR TODOS OS GRUPOS ═══════════
@@ -156,10 +157,10 @@ module.exports = function registerCentralGrupos(registerCase) {
     const s = base.stats();
     if (!s.total) return reply(`📇 Base vazia. Começa com *capturartodos* (ou *gruposbot* → capturar 1).`);
     const top = s.porGrupo.slice(0, 8).map((g, i) => `${i + 1}. ${g.nome.slice(0, 38)} — ${g.capturados} contactos`);
-    await ui.botoes(sock, ctx.remoteJid,
-      `📊 *BASE CENTRAL DE CONTACTOS*\n\n📇 ${fmtN(s.total)} contactos únicos · 📋 ${s.nGrupos} grupos\n🕒 ${new Date(s.updatedAt).toLocaleString('pt-PT')}\n\n🏆 *Top grupos capturados:*\n${top.join('\n')}\n\n🌐 O dashboard tem a lista completa (Central de Contactos).`,
-      [{ texto: '📥 Capturar TODOS', id: `${prefix}capturartodos` }, { texto: '🕸️ Menu da Central', id: `${prefix}central` }],
-      { footer: 'contactos sem duplicados', quoted: msg });
+    await buttonHandler.sendButtons(sock, ctx.remoteJid,
+      `📊 *BASE CENTRAL DE CONTACTOS*\n\n📇 ${fmtN(s.total)} contactos únicos · 📋 ${s.nGrupos} grupos\n🕒 ${new Date(s.updatedAt).toLocaleString('pt-PT')}\n\n🏆 *Top grupos:*\n${top.join('\n')}`,
+      'lista completa no dashboard → Central',
+      [{ id: `${prefix}capturartodos`, text: '📥 Capturar TODOS' }, { id: `${prefix}gruposbot`, text: '📋 Grupos' }, { id: `${prefix}central`, text: '🕸️ Menu' }], msg);
   }, owner);
 
   // ═══════════ LIMPAR BASE ═══════════
@@ -167,9 +168,8 @@ module.exports = function registerCentralGrupos(registerCase) {
     if (!only(isOwner, reply)) return;
     if (String(args[0] || '').toLowerCase() !== 'confirmar') {
       const s = base.stats();
-      return ui.botoes(sock, ctx.remoteJid, `⚠️ Apagar a base TODA (${fmtN(s.total)} contactos, ${s.nGrupos} grupos)?`,
-        [{ texto: '🗑️ Sim, apagar', id: `${ctx.prefix}limparbase confirmar` }, { texto: '❌ Cancelar', id: `${ctx.prefix}contactos` }],
-        { quoted: msg });
+      return buttonHandler.sendButtons(sock, ctx.remoteJid, `⚠️ Apagar a base TODA (${fmtN(s.total)} contactos, ${s.nGrupos} grupos)?`, 'acção irreversível',
+        [{ id: `${ctx.prefix}limparbase confirmar`, text: '🗑️ Sim, apagar' }, { id: `${ctx.prefix}contactos`, text: '❌ Cancelar' }], msg);
     }
     base.limpar();
     return reply('🗑️ Base limpa. (Os grupos no WhatsApp não são tocados — só os dados capturados.)');
@@ -201,9 +201,9 @@ module.exports = function registerCentralGrupos(registerCase) {
         const num = String(p.id || '').split('@')[0].replace(/\D/g, '');
         return num === meuNum && (p.admin === 'admin' || p.admin === 'superadmin');
       });
-      if (!souAdm) return ui.botoes(sock, ctx.remoteJid,
-        `⚠️ Preciso ser *admin* de *${gDest.nome.slice(0, 40)}* para adicionar pessoas.`,
-        [{ texto: '📋 Ver grupos', id: ctx.prefix + 'gruposbot' }], { quoted: msg });
+      if (!souAdm) return buttonHandler.sendButtons(sock, ctx.remoteJid,
+        `⚠️ Preciso ser *admin* de *${gDest.nome.slice(0, 40)}* para adicionar pessoas.`, 'Central',
+        [{ id: ctx.prefix + 'gruposbot', text: '📋 Ver grupos' }], msg);
     } catch (e) { return reply(`❌ Não consegui ler o grupo destino: ${e.message?.slice(0, 80)}`); }
     // lote
     const okN = [], falharam = [];
@@ -229,9 +229,9 @@ module.exports = function registerCentralGrupos(registerCase) {
     let texto = `✅ *ADD CENTRAL CONCLUÍDO*\n\n🎯 ${gDest.nome.slice(0, 40)}\n✅ adicionados: *${okN.length}*\n❌ não deixaram (privacidade/erro): *${falharam.length}*`;
     if (falharam.length) texto += `\n\n📨 Queres que eu mande o *convite no PV* dos ${falharam.length}?`;
     const bts = falharam.length
-      ? [{ texto: `📨 Enviar convite no PV (${falharam.length})`, id: `${ctx.prefix}addconvite sim` }, { texto: '❌ Não enviar', id: `${ctx.prefix}addconvite nao` }]
-      : [{ texto: '📊 Ver base', id: `${ctx.prefix}contactos` }];
-    return ui.botoes(sock, ctx.remoteJid, texto, bts, { footer: 'addcentral · convite SÓ com a tua confirmação', quoted: msg });
+      ? [{ id: `${ctx.prefix}addconvite sim`, text: `📨 Convite PV (${falharam.length})` }, { id: `${ctx.prefix}addconvite nao`, text: '❌ Não enviar' }]
+      : [{ id: `${ctx.prefix}contactos`, text: '📊 Ver base' }];
+    return buttonHandler.sendButtons(sock, ctx.remoteJid, texto, 'convite SÓ com a tua confirmação', bts, msg);
   }, owner);
 
   // ═══════════ CONFIRMAÇÃO DO CONVITE ═══════════
@@ -284,10 +284,14 @@ module.exports = function registerCentralGrupos(registerCase) {
       const filhosDele = arr.filter(x => x.pai === g.jid);
       let txt = `🏘️ *${g.nome.slice(0, 50)}*\n👥 ${g.size} membros\n${g.comunidade ? '🏘️ É COMUNIDADE (pai)' : g.pai ? `↳ filho da comunidade \`${g.pai}\`` : 'grupo simples'}`;
       if (g.comunidade) txt += filhosDele.length ? `\n\n↳ *${filhosDele.length} subgrupo(s):*\n${filhosDele.map((f, i) => `  ${i + 1}. ${f.nome.slice(0, 38)} · 👥 ${f.size}`).join('\n')}` : '\n(sem subgrupos com o bot dentro)';
-      return ui.botoes(sock, ctx.remoteJid, txt,
-        [{ texto: `📥 Capturar${g.comunidade ? ' COMUNIDADE INTEIRA' : ''}`, id: `${prefix}capturar ${arr.indexOf(g) + 1}` },
-         { texto: '📋 Todos os grupos', id: `${prefix}gruposbot` }], { quoted: msg });
+      return buttonHandler.sendButtons(sock, ctx.remoteJid, txt, 'Central · comunidades',
+        [{ id: `${prefix}capturar ${arr.indexOf(g) + 1}`, text: g.comunidade ? '📥 Capturar TUDO' : '📥 Capturar' }, { id: `${prefix}gruposbot`, text: '📋 Grupos' }], msg);
     }
-    return ui.lista(sock, ctx.remoteJid, `🏘️ *COMUNIDADES* — ${pais.length} pai(s) · ${filhos.length} filho(s)\n\nEscolhe para ver a hierarquia:`, 'Abrir comunidades', secoes, { quoted: msg });
+    return ui.lista(sock, ctx.remoteJid,
+      '🕸️ Central · Comunidades',
+      `🏘️ *COMUNIDADES* — ${pais.length} pai(s) · ${filhos.length} filho(s)\n\nEscolhe para ver a hierarquia completa:`,
+      '🕸️ Abrir comunidades',
+      secoes.map(s => ({ title: s.titulo, rows: s.linhas.map(l => ({ header: l.titulo, title: l.descricao || 'ver', id: l.id })) })),
+      { quoted: msg });
   }, owner);
 };
