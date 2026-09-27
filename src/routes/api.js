@@ -1159,6 +1159,29 @@ module.exports = function (io) {
   // ═══ 🛠️ IG APIs — as NOSSAS APIs verdadeiras (dados REAIS do Instagram por todas as vias) ═══
   // Autenticação: sessão owner do painel (cookie). Todas honestas: {ok:false,erro} quando o IG fecha.
   const igE = () => { const c = require('../cap/capEngine'); c.load(); return c; };
+  // ═══ 🔑 CHAVES DE API — consumo externo (X-API-Key ou ?key=) ═══
+  const apiKeys = require('../cap/apiKeys');
+  const _chaveDoPedido = (req) => req.get('X-API-Key') || req.query.key || (String(req.get('authorization') || '').match(/^Bearer\s+(dk_.+)$/i) || [])[1] || '';
+  const requireApiKeyOrOwner = (escopo) => (req, res, next) => {
+    if (req.session?.user?.role === 'owner') return next(); // painel: tudo
+    const doc = apiKeys.verificar(_chaveDoPedido(req));
+    if (!doc) return res.status(401).json({ ok: false, erro: 'Chave de API inválida ou ausente (X-API-Key)' });
+    if (!apiKeys.temEscopo(doc, escopo)) return res.status(403).json({ ok: false, erro: `Chave sem escopo "${escopo}" (tem: ${doc.scopes.join(', ')})` });
+    req.apiKey = doc;
+    return next();
+  };
+
+  router.get('/chaves', requireApiOwner, (req, res) => res.json({ ok: true, total: apiKeys.listar().length, chaves: apiKeys.listar() }));
+  router.post('/chaves', requireApiOwner, (req, res) => {
+    const r = apiKeys.gerar(req.body.nome, req.body.scopes);
+    res.json({ ok: true, nota: 'GUARDA A CHAVE AGORA — só se mostra esta vez', chave: r.chave, ...(() => { const { hash, ...doc } = r.doc; return { doc }; })() });
+  });
+  router.post('/chaves/revogar', requireApiOwner, (req, res) => res.json({ ok: apiKeys.revogar(String(req.body.id || '')) }));
+
+  // proteger as famílias novas: sessão owner OU chave com escopo
+  const _ig = requireApiKeyOrOwner('ig'), _wa = requireApiKeyOrOwner('wa'), _sys = requireApiKeyOrOwner('sistema'), _ia = requireApiKeyOrOwner('ia');
+  const _prot = (router, metod, caminho, escopoMid, handler) => { /* no-op helper */ };
+
   const _hd = (u) => String(u || '').replace(/\/s\d{2,4}x\d{2,4}\//g, '/s1080x1080/');
   const _pFmt = (p) => ({
     username: p.username, id: p.id || '', nome: p.nome || '', bio: p.bio || '',
@@ -1168,7 +1191,7 @@ module.exports = function (io) {
   });
   const _iFmt = (i) => ({ tipo: i.tipo, shortcode: i.shortcode, legenda: String(i.caption || '').slice(0, 140), data: i.ts ? new Date(i.ts).toISOString() : null, link: i.link, midias: (i.medias || []).map(m => ({ url: m.url, video: !!m.isVideo, largura: m.width || null, altura: m.height || null })) });
 
-  router.get('/ig/perfil/:username', requireApiOwner, async (req, res) => {
+  router.get('/ig/perfil/:username', _ig, async (req, res) => {
     try {
       const c = igE(); const p = await c.PROVIDERS.ig.profile(req.params.username);
       const lim = parseInt(req.query.limit) || 6;
@@ -1176,7 +1199,7 @@ module.exports = function (io) {
     } catch (e) { res.json({ ok: false, erro: e.message, dica: 'A cache refresca a cada 3-5 min — tenta de novo' }); }
   });
 
-  router.get('/ig/stats/:username', requireApiOwner, async (req, res) => {
+  router.get('/ig/stats/:username', _ig, async (req, res) => {
     try {
       const c = igE(); const s = await c.perfilStats(req.params.username);
       const ok = !!(s.seguidores || s.posts || s.seguindo);
@@ -1184,7 +1207,7 @@ module.exports = function (io) {
     } catch (e) { res.json({ ok: false, erro: e.message }); }
   });
 
-  router.get('/ig/posts/:username', requireApiOwner, async (req, res) => {
+  router.get('/ig/posts/:username', _ig, async (req, res) => {
     try {
       const c = igE(); const p = await c.PROVIDERS.ig.profile(req.params.username);
       const lim = Math.min(parseInt(req.query.limit) || 12, 50);
@@ -1193,7 +1216,7 @@ module.exports = function (io) {
     } catch (e) { res.json({ ok: false, erro: e.message }); }
   });
 
-  router.get('/ig/reels/:username', requireApiOwner, async (req, res) => {
+  router.get('/ig/reels/:username', _ig, async (req, res) => {
     try {
       const c = igE(); const p = await c.PROVIDERS.ig.profile(req.params.username);
       const lim = Math.min(parseInt(req.query.limit) || 12, 50);
@@ -1202,7 +1225,7 @@ module.exports = function (io) {
     } catch (e) { res.json({ ok: false, erro: e.message }); }
   });
 
-  router.get('/ig/stories/:username', requireApiOwner, async (req, res) => {
+  router.get('/ig/stories/:username', _ig, async (req, res) => {
     try {
       const c = igE(); const p = await c.PROVIDERS.ig.profile(req.params.username);
       const st = await c.PROVIDERS.ig.stories(p.id, req.params.username);
@@ -1210,7 +1233,7 @@ module.exports = function (io) {
     } catch (e) { res.json({ ok: false, erro: e.message }); }
   });
 
-  router.get('/ig/highlights/:username', requireApiOwner, async (req, res) => {
+  router.get('/ig/highlights/:username', _ig, async (req, res) => {
     try {
       const c = igE(); const p = await c.PROVIDERS.ig.profile(req.params.username);
       const h = await c.PROVIDERS.ig.highlights(p.id, req.params.username);
@@ -1218,7 +1241,7 @@ module.exports = function (io) {
     } catch (e) { res.json({ ok: false, erro: e.message }); }
   });
 
-  router.get('/ig/tudo/:username', requireApiOwner, async (req, res) => {
+  router.get('/ig/tudo/:username', _ig, async (req, res) => {
     try {
       const c = igE();
       const p = await c.PROVIDERS.ig.profile(req.params.username);
@@ -1237,7 +1260,7 @@ module.exports = function (io) {
     } catch (e) { res.json({ ok: false, erro: e.message }); }
   });
 
-  router.get('/ig/buscar/:q', requireApiOwner, async (req, res) => {
+  router.get('/ig/buscar/:q', _ig, async (req, res) => {
     try {
       const c = igE();
       const r = await c.igGetApp(`/api/v1/users/search/?q=${encodeURIComponent(req.params.q)}`);
@@ -1250,12 +1273,12 @@ module.exports = function (io) {
     } catch (e) { res.json({ ok: false, erro: e.message }); }
   });
 
-  router.get('/ig/sessoes', requireApiOwner, (req, res) => {
+  router.get('/ig/sessoes', _ig, (req, res) => {
     const c = igE();
     res.json({ ok: true, total: c.sessionsAtivas().length, sessoes: c.listSessoes() });
   });
 
-  router.get('/ig/media', requireApiOwner, async (req, res) => {
+  router.get('/ig/media', _ig, async (req, res) => {
     try {
       const url = String(req.query.url || '');
       let h; try { h = new URL(url).hostname; } catch { return res.status(400).json({ ok: false, erro: 'URL inválida' }); }
@@ -1270,7 +1293,7 @@ module.exports = function (io) {
 
 
   // ═══ 📶 IG+ (lote, comparar, monitor, canal, webhooks, cache) ═══
-  router.get('/ig/lote/:users', requireApiOwner, async (req, res) => {
+  router.get('/ig/lote/:users', _ig, async (req, res) => {
     try {
       const c = igE();
       const users = String(req.params.users || '').split(',').map(u => u.trim().replace(/^@/, '')).filter(Boolean).slice(0, 10);
@@ -1287,7 +1310,7 @@ module.exports = function (io) {
     } catch (e) { res.json({ ok: false, erro: e.message }); }
   });
 
-  router.get('/ig/comparar/:a/:b', requireApiOwner, async (req, res) => {
+  router.get('/ig/comparar/:a/:b', _ig, async (req, res) => {
     try {
       const c = igE();
       const [A, B] = await Promise.all([c.perfilStats(req.params.a).catch(() => null), c.perfilStats(req.params.b).catch(() => null)]);
@@ -1299,12 +1322,12 @@ module.exports = function (io) {
     } catch (e) { res.json({ ok: false, erro: e.message }); }
   });
 
-  router.get('/ig/monitor', requireApiOwner, (req, res) => {
+  router.get('/ig/monitor', _ig, (req, res) => {
     const c = igE();
     res.json({ ok: true, total: c.listTargets().length, alvos: c.listTargets() });
   });
 
-  router.post('/ig/monitor/add', requireApiOwner, (req, res) => {
+  router.post('/ig/monitor/add', _ig, (req, res) => {
     try {
       const c = igE();
       const r = c.addTarget(String(req.body.user || ''), { destino: req.body.destino || '', addedBy: 'api' });
@@ -1312,12 +1335,12 @@ module.exports = function (io) {
     } catch (e) { res.json({ ok: false, erro: e.message }); }
   });
 
-  router.post('/ig/monitor/del', requireApiOwner, (req, res) => {
+  router.post('/ig/monitor/del', _ig, (req, res) => {
     const c = igE();
     res.json({ ok: c.delTarget(String(req.body.user || '')) });
   });
 
-  router.get('/ig/canal/:user', requireApiOwner, async (req, res) => {
+  router.get('/ig/canal/:user', _ig, async (req, res) => {
     try {
       const c = igE();
       const p = await c.PROVIDERS.ig.profile(req.params.user);
@@ -1331,17 +1354,20 @@ module.exports = function (io) {
     } catch (e) { res.json({ ok: false, erro: e.message }); }
   });
 
-  router.get('/ig/webhooks', requireApiOwner, (req, res) => { res.json({ ok: true, total: igE().listWebhooks().length, urls: igE().listWebhooks() }); });
-  router.post('/ig/webhook', requireApiOwner, (req, res) => {
-    try { const urls = igE().addWebhook(req.body.url); res.json({ ok: true, total: urls.length, urls }); }
+  router.get('/ig/webhooks', _ig, (req, res) => {
+    const c = igE(); c.load();
+    res.json({ ok: true, total: (c.state.webhooks || []).length, urls: c.state.webhooks || [], segredo_hmac: c.state.webhookSecret || null, dica: 'Valida o header X-Dark-Assinatura com HMAC-SHA256 deste segredo sobre o corpo' });
+  });
+  router.post('/ig/webhook', _ig, (req, res) => {
+    try { const r = igE().addWebhook(req.body.url); res.json({ ok: true, total: r.urls.length, urls: r.urls, segredo_hmac: r.segredo, nota: 'Valida X-Dark-Assinatura: HMAC-SHA256(segredo, corpo)' }); }
     catch (e) { res.json({ ok: false, erro: e.message }); }
   });
-  router.post('/ig/webhook/remover', requireApiOwner, (req, res) => {
+  router.post('/ig/webhook/remover', _ig, (req, res) => {
     const urls = igE().delWebhook(req.body.url);
     res.json({ ok: true, total: urls.length, urls });
   });
 
-  router.post('/ig/cache/limpar', requireApiOwner, (req, res) => {
+  router.post('/ig/cache/limpar', _ig, (req, res) => {
     res.json({ ok: true, entradas_limpas: igE().limparCache() });
   });
 
@@ -1355,12 +1381,12 @@ module.exports = function (io) {
     return digitos ? `${digitos}@s.whatsapp.net` : '';
   };
 
-  router.get('/wa/estado', requireApiOwner, (req, res) => {
+  router.get('/wa/estado', _wa, (req, res) => {
     const st = waBot().getStatus();
     res.json({ ok: st.status === 'connected', status: st.status, ligadoComo: st.user ? (st.user.name || st.user.id || '') : null, mensagens: st.messageCount, comandos: st.commandCount, uptime_seg: st.uptime, ultimo_erro: st.lastError || null });
   });
 
-  router.post('/wa/enviar', requireApiOwner, async (req, res) => {
+  router.post('/wa/enviar', _wa, async (req, res) => {
     try {
       const bot = waBot();
       if (bot.getStatus().status !== 'connected') return res.status(400).json({ ok: false, erro: 'Bot não conectado' });
@@ -1378,7 +1404,7 @@ module.exports = function (io) {
     } catch (e) { res.json({ ok: false, erro: e.message }); }
   });
 
-  router.get('/wa/grupos', requireApiOwner, async (req, res) => {
+  router.get('/wa/grupos', _wa, async (req, res) => {
     try {
       const bot = waBot();
       if (bot.getStatus().status !== 'connected') return res.status(400).json({ ok: false, erro: 'Bot não conectado' });
@@ -1388,14 +1414,14 @@ module.exports = function (io) {
     } catch (e) { res.json({ ok: false, erro: e.message }); }
   });
 
-  router.get('/wa/contactos', requireApiOwner, (req, res) => {
+  router.get('/wa/contactos', _wa, (req, res) => {
     const cb = require('../bot/centralBase'); cb.carregar();
     const s = cb.stats();
     res.json({ ok: true, total: s.total, nGrupos: s.nGrupos, grupos: s.porGrupo, actualizado: s.updatedAt });
   });
 
   // ═══ 🖥️ SISTEMA ═══
-  router.get('/sistema/estado', requireApiOwner, (req, res) => {
+  router.get('/sistema/estado', _sys, (req, res) => {
     const c = igE();
     const st = getBot().getStatus();
     res.json({
@@ -1408,10 +1434,84 @@ module.exports = function (io) {
     });
   });
 
-  router.get('/sistema/log', requireApiOwner, (req, res) => {
+  router.get('/sistema/log', _sys, (req, res) => {
     const c = igE();
     const n = Math.min(parseInt(req.query.n) || 50, 200);
     res.json({ ok: true, total: c.state.log.length, log: c.state.log.slice(-n).reverse() });
+  });
+
+
+  // ═══ 📈 CRESCIMENTO (série histórica automática) ═══
+  router.get('/ig/crescimento/:username', _ig, (req, res) => {
+    const c = igE();
+    const dias = Math.min(parseInt(req.query.dias) || 30, 180);
+    const r = c.crescimento(req.params.username, dias);
+    res.json({ ok: r.serie.length > 0, ...r, nota: r.serie.length ? undefined : 'Ainda sem histórico — os snapshots são criados a cada consulta de stats (1 ponto/dia)' });
+  });
+
+  // ═══ 🪝 entregas webhook + segredo HMAC ═══
+  router.get('/ig/webhook/entregas', _ig, (req, res) => {
+    const c = igE(); c.load();
+    res.json({ ok: true, segredo: c.state.webhookSecret || null, dica: 'Valida X-Dark-Assinatura: HMAC-SHA256(segredo, corpo) = "sha256="+hex', entregas: (c.state.webhookLog || []).slice(-50).reverse() });
+  });
+
+  // ═══ 🧠 IA — a inteligência do bot via API ═══
+  router.post('/ia/perguntar', _ia, async (req, res) => {
+    try {
+      const pergunta = String(req.body.pergunta || '').trim();
+      if (!pergunta) return res.status(400).json({ ok: false, erro: 'Passa "pergunta"' });
+      const ai = require('../bot/ai');
+      const r = await ai.chat(pergunta.slice(0, 2000), '', {}, true);
+      res.json({ ok: true, pergunta: pergunta.slice(0, 100), resposta: String(r || '').slice(0, 4000) });
+    } catch (e) { res.json({ ok: false, erro: 'IA indisponível: ' + e.message.slice(0, 80) }); }
+  });
+
+  router.get('/ia/estado', _ia, (req, res) => {
+    try { res.json({ ok: true, providers: require('../bot/ai').providerStatus() }); }
+    catch (e) { res.json({ ok: false, erro: e.message }); }
+  });
+
+  // ═══ 📚 OpenAPI — documentação legível por máquinas ═══
+  router.get('/openapi.json', _sys, (req, res) => {
+    const p = (sum, tag) => ({ summary: sum, tags: [tag] });
+    res.json({
+      openapi: '3.0.0', info: { title: 'DARK BOT — APIs verdadeiras', version: '12.9.20', description: 'Instagram (dados reais multi-canal + resgate), monitorização com webhooks assinados, WhatsApp, IA e sistema. Auth: cookie do painel (owner) OU X-API-Key com escopos.' },
+      servers: [{ url: '/' }],
+      components: { securitySchemes: { ApiKey: { type: 'apiKey', in: 'header', name: 'X-API-Key' }, Sessao: { type: 'apiKey', in: 'cookie', name: 'connect.sid' } } },
+      security: [{ ApiKey: [] }, { Sessao: [] }],
+      paths: {
+        '/api/ig/perfil/{username}': p('Perfil completo + últimos posts', 'Instagram'),
+        '/api/ig/stats/{username}': p('Números verdadeiros + fontes', 'Instagram'),
+        '/api/ig/posts/{username}': p('Posts com URLs directos', 'Instagram'),
+        '/api/ig/reels/{username}': p('Reels com URLs de vídeo', 'Instagram'),
+        '/api/ig/stories/{username}': p('Stories activos', 'Instagram'),
+        '/api/ig/highlights/{username}': p('Destaques', 'Instagram'),
+        '/api/ig/tudo/{username}': p('MEGA: tudo de uma vez', 'Instagram'),
+        '/api/ig/buscar/{q}': p('Pesquisar utilizadores', 'Instagram'),
+        '/api/ig/lote/{users}': p('Stats em lote (10)', 'Instagram'),
+        '/api/ig/comparar/{a}/{b}': p('Comparar 2 perfis', 'Instagram'),
+        '/api/ig/canal/{user}': p('Canal de difusão', 'Instagram'),
+        '/api/ig/crescimento/{username}': p('Série histórica de seguidores', 'Instagram'),
+        '/api/ig/media?url=': p('Proxy de mídia CDN', 'Instagram'),
+        '/api/ig/monitor': p('Alvos monitorizados', 'Monitorização'),
+        '/api/ig/monitor/add': p('Adicionar alvo', 'Monitorização'),
+        '/api/ig/monitor/del': p('Remover alvo', 'Monitorização'),
+        '/api/ig/webhooks': p('Webhooks registados', 'Webhooks'),
+        '/api/ig/webhook': p('Registar webhook (POST JSON por captura, assinado HMAC)', 'Webhooks'),
+        '/api/ig/webhook/entregas': p('Log de entregas + segredo HMAC', 'Webhooks'),
+        '/api/wa/estado': p('Estado do WhatsApp', 'WhatsApp'),
+        '/api/wa/enviar': p('Enviar texto/mídia', 'WhatsApp'),
+        '/api/wa/grupos': p('Grupos', 'WhatsApp'),
+        '/api/wa/contactos': p('Central de contactos', 'WhatsApp'),
+        '/api/ia/perguntar': p('Perguntar à IA do bot', 'IA'),
+        '/api/ia/estado': p('Providers da IA', 'IA'),
+        '/api/sistema/estado': p('Estado geral', 'Sistema'),
+        '/api/sistema/log': p('Log do CAP', 'Sistema'),
+        '/api/chaves': p('Listar chaves', 'Chaves'),
+        '/api/chaves (POST)': p('Gerar chave (mostra 1×)', 'Chaves'),
+        '/api/chaves/revogar': p('Revogar chave', 'Chaves'),
+      },
+    });
   });
 
   return router;

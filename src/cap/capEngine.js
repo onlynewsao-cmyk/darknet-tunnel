@@ -949,8 +949,33 @@ async function perfilStats(username) {
       }
     } catch {}
   }
+  // v12.9.20: SNAPSHOT de crescimento (série histórica p/ /api/ig/crescimento)
+  if (out.seguidores > 0) {
+    try {
+      const sk = 'ig:' + u;
+      if (!state.snapshots) state.snapshots = {};
+      const serie = state.snapshots[sk] || [];
+      const hoje = new Date().toISOString().slice(0, 10);
+      const ultimo = serie[serie.length - 1];
+      const ponto = { t: Date.now(), s: out.seguidores, p: out.posts || 0, f: out.seguindo || 0, d: hoje };
+      if (ultimo && ultimo.d === hoje) serie[serie.length - 1] = ponto; // 1 ponto por dia (refresh)
+      else { serie.push(ponto); if (serie.length > 180) state.snapshots[sk] = serie.slice(-180); }
+      save();
+    } catch {}
+  }
   _statsCache.set(ck, { at: Date.now(), v: out });
   return out;
+}
+
+// série de crescimento de um perfil (dos snapshots diários)
+function crescimento(username, dias = 30) {
+  load();
+  const serie = ((state.snapshots || {})['ig:' + normUser(username)] || []).slice(-Math.min(dias, 180));
+  if (!serie.length) return { username: normUser(username), serie: [], delta: 0, mediaDia: 0 };
+  const primeiro = serie[0], ultimo = serie[serie.length - 1];
+  const delta = (ultimo.s || 0) - (primeiro.s || 0);
+  const d1 = serie.length > 1 ? Math.max(1, Math.round((ultimo.t - primeiro.t) / 86400e3)) : 1;
+  return { username: normUser(username), serie, delta, mediaDia: Math.round(delta / d1), desde: primeiro.d, ate: ultimo.d };
 }
 
 // v12.9.17 — RESGATE TOTAL: se TODA a API falhar (web_profile 429, search 401,
@@ -1341,9 +1366,10 @@ function addWebhook(url) {
   const u = String(url || '').trim();
   if (!/^https?:\/\//.test(u)) throw new Error('URL do webhook inválida (http/https)');
   if (!state.webhooks) state.webhooks = [];
+  if (!state.webhookSecret) state.webhookSecret = require('crypto').randomBytes(24).toString('hex');
   if (!state.webhooks.includes(u)) state.webhooks.push(u);
   save();
-  return state.webhooks.slice();
+  return { urls: state.webhooks.slice(), segredo: state.webhookSecret };
 }
 function delWebhook(url) {
   load();
@@ -1353,12 +1379,28 @@ function delWebhook(url) {
   return state.webhooks.slice();
 }
 function listWebhooks() { load(); return (state.webhooks || []).slice(); }
+function _whLog(entrada) {
+  if (!state.webhookLog) state.webhookLog = [];
+  state.webhookLog.push(entrada);
+  if (state.webhookLog.length > 50) state.webhookLog = state.webhookLog.slice(-50);
+  save();
+}
 function fireWebhooks(evento, dados) {
   const urls = (state.webhooks || []);
   if (!urls.length) return;
+  const crypto = require('crypto');
   const corpo = JSON.stringify({ evento, dados, ts: new Date().toISOString() });
+  const assinatura = crypto.createHmac('sha256', state.webhookSecret || '').update(corpo).digest('hex');
   for (const u of urls) {
-    httpReq('POST', u, { headers: { 'Content-Type': 'application/json', 'X-Dark-Evento': String(evento || '').slice(0, 40) }, body: corpo, timeout: 5000, proxy: false }).catch(() => {});
+    const envio = (tentativa) => httpReq('POST', u, {
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Dark-Evento': String(evento || '').slice(0, 40),
+        'X-Dark-Assinatura': 'sha256=' + assinatura, // HMAC — o teu sistema valida que veio do bot
+      }, body: corpo, timeout: 5000, proxy: false,
+    }).then(r => { _whLog({ url: u.slice(0, 60), evento, status: r.status, tentativa, ts: Date.now() }); return r.status >= 200 && r.status < 300; })
+      .catch(() => { _whLog({ url: u.slice(0, 60), evento, status: 0, tentativa, ts: Date.now() }); return false; });
+    envio(1).then(ok => { if (!ok) setTimeout(() => envio(2), 20000 + Math.floor(Math.random() * 8000)); }); // retry 1×
   }
 }
 
@@ -1548,7 +1590,7 @@ module.exports = {
   PROVIDERS, DATA_DIR, DEFAULT_INTERVAL_MIN,
   load, save, arrancar, _reset, state,
   parseTargetArg, keyOf, addTarget, delTarget, getTarget, listTargets, setTargetOpt, setSession, hasSession,
-  validarSessao, validarSessaoDuplo, addSessao, delSessao, listSessoes, sessionsAtivas, marcarSessaoInvalida, igGet, carregarEnv, sincronizar, inferirUsername, feedViaGraphql, feedViaApp, perfilStats, rescueProfile, addWebhook, delWebhook, listWebhooks, limparCache, htmlPayload, fotoHD, igGetApp,
+  validarSessao, validarSessaoDuplo, addSessao, delSessao, listSessoes, sessionsAtivas, marcarSessaoInvalida, igGet, carregarEnv, sincronizar, inferirUsername, feedViaGraphql, feedViaApp, perfilStats, rescueProfile, addWebhook, delWebhook, listWebhooks, limparCache, crescimento, htmlPayload, fotoHD, igGetApp,
   igProfile, igFeedAll, igStories, igHighlights, nodeToItem, ytdlpItem, ytdlpProfile, ytdlpUrl, embedItem, resolverLink, itemDeLink, normalizarCookies, sniffMime, baixarMedia,
   processarItem, verificarAlvo, capturarTudo, listarGaleria, legenda,
   registar, jaVisto, marcarVisto,

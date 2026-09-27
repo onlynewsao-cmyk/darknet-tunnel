@@ -23,6 +23,22 @@
     </div>
 
     <div class="card">
+      <h2>🔑 Chaves de API <small class="muted">consumo externo — apps e scripts teus</small></h2>
+      <p class="muted">Sem painel: envia <code>X-API-Key: dk_…</code> (ou <code>?key=</code>). Escopos: <code>ig</code> · <code>wa</code> · <code>sistema</code> · <code>ia</code> · <code>admin</code>. A chave só se mostra UMA vez (guardamos só o hash).</p>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <input type="text" id="chaveNome" placeholder="nome da chave (ex: meu-site)" style="flex:1;min-width:180px;padding:8px;border-radius:8px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.15);color:inherit" />
+        <button class="btn btn-primary" onclick="gerarChave()">🔑 Gerar chave</button>
+        <button class="btn" onclick="listarChaves()">🔄 Actualizar</button>
+      </div>
+      <div id="chaveNova" style="display:none;margin-top:10px">
+        <code id="chaveValor" style="display:block;padding:10px;border-radius:8px;background:rgba(0,0,0,.4);word-break:break-all"></code>
+        <button class="btn" onclick="copiarChave()">📋 Copiar agora</button>
+        <small class="muted"> ⚠️ desaparece se recarregares sem copiar</small>
+      </div>
+      <div id="tabelaChaves" style="margin-top:10px"></div>
+    </div>
+
+    <div class="card">
       <h2>📡 Endpoints <small class="muted" id="resumo"></small></h2>
       <div id="lista" style="display:grid;gap:12px"></div>
     </div>
@@ -64,6 +80,12 @@
     { id: 'waenviar',  path: '/api/wa/enviar',       method: 'POST', body: (u) => ({ para: OWNER, texto: 'Teste das APIs DARK ✅ ' + new Date().toLocaleString() }), desc: 'ENVIA texto/mídia para qualquer número/grupo (midia+tipo opcionais)' },
     { id: 'wagrupos',  path: '/api/wa/grupos',               desc: 'Todos os grupos: id, nome, nº de participantes' },
     { id: 'waconts',   path: '/api/wa/contactos',            desc: 'Central de contactos: total, grupos, actualização' },
+    { sec: '🧠 IA + 📈 Histórico + 📚 Docs' },
+    { id: 'cresc',     path: '/api/ig/crescimento/USER?dias=30', desc: 'Série histórica de seguidores (snapshot 1×/dia automático)' },
+    { id: 'iaestado',  path: '/api/ia/estado',               desc: 'Providers da IA do bot (groq/cerebras/gemini…)' },
+    { id: 'iaperg',    path: '/api/ia/perguntar',    method: 'POST', body: (u) => ({ pergunta: 'Quem é ' + u + ' no Instagram? Responde em 1 frase.' }), desc: 'PERGUNTA à IA do bot e leva a resposta' },
+    { id: 'entregas',  path: '/api/ig/webhook/entregas',     desc: 'Log das entregas webhook (status/tentativas) + segredo HMAC' },
+    { id: 'openapi',   path: '/api/openapi.json',            desc: 'Documento OpenAPI 3 completo (importa no Postman/Insomnia/Swagger)' },
     { sec: '🖥️ Sistema' },
     { id: 'sestado',   path: '/api/sistema/estado',          desc: 'Versão, uptime, memória, WhatsApp, IG (sessões/alvos/webhooks)' },
     { id: 'slog',      path: '/api/sistema/log?n=30',        desc: 'Últimos N eventos do CAP' },
@@ -133,6 +155,33 @@
     }
   }
   function copiarBase() { navigator.clipboard.writeText(base() + '/api/ig'); }
+  let _chavePlana = '';
+  async function gerarChave() {
+    const nome = document.getElementById('chaveNome').value || 'minha-chave';
+    const r = await fetch('/api/chaves', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nome, scopes: ['ig', 'wa', 'sistema', 'ia'] }) }).then(x => x.json());
+    if (!r.ok) { alert(r.erro || 'falhou'); return; }
+    _chavePlana = r.chave;
+    document.getElementById('chaveNova').style.display = 'block';
+    document.getElementById('chaveValor').textContent = r.chave;
+    listarChaves();
+  }
+  function copiarChave() { navigator.clipboard.writeText(_chavePlana || ''); }
+  async function listarChaves() {
+    const r = await fetch('/api/chaves').then(x => x.json());
+    const t = document.getElementById('tabelaChaves');
+    if (!r.ok || !r.total) { t.innerHTML = '<small class="muted">Sem chaves ainda.</small>'; return; }
+    t.innerHTML = r.chaves.map(k => `
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:6px 0;border-top:1px solid rgba(255,255,255,.08)">
+        <code>${k.prefixo}</code>
+        <span class="muted">${k.nome} · ${k.scopes.join('/')} · ${k.usos} usos ${k.revogada ? '· ❌ revogada' : ''}</span>
+        ${k.revogada ? '' : `<button class="btn" onclick="revogarChave('${k.id}')">Revogar</button>`}
+      </div>`).join('');
+  }
+  async function revogarChave(id) {
+    await fetch('/api/chaves/revogar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
+    listarChaves();
+  }
+  listarChaves();
   function copiarResp() { navigator.clipboard.writeText(ultima || ''); }
   function copiarCurl(id) {
     const e = ENDPOINTS.find(x => x.id === id);
