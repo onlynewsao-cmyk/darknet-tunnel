@@ -147,6 +147,34 @@ function httpGet(url, opts = {}) { return httpReq('GET', url, opts); }
 
 // ── Sessões IG: pool (state.session.igPool = [{sid, user, ok, addedAt, lastErr}]) + compat state.session.ig ──
 const UA_APP = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Instagram 311.0.0.109.115';
+
+// v12.9.16 — CANAL DA APP: UA + headers da aplicação oficial (iPhone).
+// PROVADO: reels_media e users/search passam SEMPRE; feed/user deu 200 mesmo
+// com IP queimado quando usa estes headers (com UA web → 401 "wait a few minutes").
+function igGetApp(pathAndQuery, sess) {
+  const s = sess === undefined ? pickSession() : sess;
+  const sid = String(s?.sid || '').trim();
+  let cookie = String(s?.cookies || '').trim();
+  if (cookie && !/sessionid=/i.test(cookie)) cookie = `sessionid=${sid}; ` + cookie;
+  const h = {
+    'User-Agent': UA_APP, 'Accept': '*/*', 'Accept-Language': 'pt-BR, pt;q=0.9',
+    'X-IG-Capabilities': '3w==', 'X-IG-App-ID': '1217981644879628',
+    'X-Requested-With': 'XMLHttpRequest',
+  };
+  if (sid) h.Cookie = cookie || `sessionid=${sid}; ds_user_id=${sid.split('%3A')[0].split(':')[0]}`;
+  return httpGet(`https://i.instagram.com${pathAndQuery}`, { headers: h, timeout: 20000 });
+}
+
+// feed de posts via CANAL DA APP (o mesmo endpoint da app oficial com a tua sessão)
+// → devolve { items, hasMore, nextMaxId }
+async function feedViaApp(userId, username, count = 33, maxId = '') {
+  const r = await igGetApp(`/api/v1/feed/user/${userId}/?count=${count}${maxId ? `&max_id=${encodeURIComponent(maxId)}` : ''}`);
+  if (r.status !== 200) throw new Error('app HTTP ' + r.status);
+  const j = JSON.parse(r.body.toString('utf8'));
+  const raw = (j.items || []).length ? j.items : (j.profile_grid_items || []).map(g => g.media || g).filter(Boolean);
+  const items = raw.map(it => { try { return nodeToItem(it, username); } catch { return null; } }).filter(x => x?.medias?.length && x.medias[0].url);
+  return { items, hasMore: !!j.more_available, nextMaxId: j.next_max_id || '' };
+}
 const UAS = [
   UA_APP,  // v12.9.9: UA de app primeiro — endpoints /api/v1 tratam app-UA melhor
   UA,
@@ -955,6 +983,13 @@ async function igProfile(username) {
       const itensFeed = (() => { try { return JSON.parse(rf?.body?.toString('utf8') || '{}')?.items || []; } catch { return []; } })();
       const items = itensFeed.map(it => nodeToItem(it, u)).filter(x => x.medias?.length).sort((a, b) => a.ts - b.ts);
       if (!items.length) {
+        // v12.9.16: CANAL DA APP — o mesmo request da app oficial c/ a tua sessão
+        try {
+          const a = await feedViaApp(String(us.pk), u, 12);
+          if (a.items?.length) { items.push(...a.items); items.sort((x, y) => x.ts - y.ts); }
+        } catch {}
+      }
+      if (!items.length) {
         // v12.9.12: graphql web (canal vivo) → posts reais
         try {
           const g = await feedViaGraphql(u, 12);
@@ -1027,7 +1062,14 @@ async function igFeedAll(userId, username, maxPages = 15) {
   for (let i = 0; i < maxPages; i++) {
     const r = await igGet(`/api/v1/feed/user/${userId}/?count=33${maxId ? `&max_id=${encodeURIComponent(maxId)}` : ''}`);
     if (r.status !== 200 && i === 0) {
-      // v12.9.12: API limitada → graphql web → yt-dlp
+      // v12.9.16: CANAL DA APP (o que o IG não bloqueia) → graphql web → yt-dlp
+      try {
+        let a = await feedViaApp(userId, username, 33);
+        const all = [...a.items];
+        let pgs = 0;
+        while (a.hasMore && a.nextMaxId && pgs < 4) { await new Promise(r2 => setTimeout(r2, _rand(1200, 2600))); a = await feedViaApp(userId, username, 33, a.nextMaxId); all.push(...a.items); pgs++; }
+        if (all.length) return { items: all.sort((x, y) => x.ts - y.ts), needsLogin: false };
+      } catch {}
       try {
         let g = await feedViaGraphql(username, 33);
         const all = [...g.items];
@@ -1429,7 +1471,7 @@ module.exports = {
   PROVIDERS, DATA_DIR, DEFAULT_INTERVAL_MIN,
   load, save, arrancar, _reset, state,
   parseTargetArg, keyOf, addTarget, delTarget, getTarget, listTargets, setTargetOpt, setSession, hasSession,
-  validarSessao, validarSessaoDuplo, addSessao, delSessao, listSessoes, sessionsAtivas, marcarSessaoInvalida, igGet, carregarEnv, sincronizar, inferirUsername, feedViaGraphql, perfilStats, htmlPayload, fotoHD,
+  validarSessao, validarSessaoDuplo, addSessao, delSessao, listSessoes, sessionsAtivas, marcarSessaoInvalida, igGet, carregarEnv, sincronizar, inferirUsername, feedViaGraphql, feedViaApp, perfilStats, htmlPayload, fotoHD, igGetApp,
   igProfile, igFeedAll, igStories, igHighlights, nodeToItem, ytdlpItem, ytdlpProfile, ytdlpUrl, embedItem, resolverLink, itemDeLink, normalizarCookies, sniffMime, baixarMedia,
   processarItem, verificarAlvo, capturarTudo, listarGaleria, legenda,
   registar, jaVisto, marcarVisto,
