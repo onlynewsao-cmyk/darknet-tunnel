@@ -55,7 +55,14 @@ async function _fabricaPadrao(prefixo) {
 async function _novoSock(prefixo) { return (_fabrica || _fabricaPadrao)(prefixo); }
 
 // ── helpers ────────────────────────────────────────────────
+// v12.9.22 SLOTS ENUMERADOS FIXOS: cada slot GUARDA o seu número para
+// sempre — os creds é que viajam entre prefixos na promoção; o doc sabe
+// sempre onde estão os seus (campo prefixo). Nunca se renumera nada.
 const _prefixo = (n) => (n === 1 ? '' : `slot${n}`);
+async function _prefDe(n) {
+  const d = await _slotDoc(n).catch(() => null);
+  return d?.prefixo != null ? d.prefixo : _prefixo(n);
+}
 const _agora = () => new Date();
 
 /** Garante os 4 docs de slot (idempotente). */
@@ -72,18 +79,23 @@ async function _mapa() {
 }
 const _slotDoc = async (n) => (await _mapa()).find((d) => d.slot === n) || null;
 
-/** A sessão ACTIVA está no slot 1? */
+/** A sessão EM USO (creds no prefixo principal '') — pode ser qualquer slot. */
 async function slotAtual() {
-  const d = await _slotDoc(1).catch(() => null);
-  return d && d.estado === 'ativa' ? { slot: 1, numero: d.numero } : null;
+  const mapa = await _mapa();
+  const d = mapa.find((x) => x.prefixo === '' && x.estado === 'ativa');
+  return d ? { slot: d.slot, numero: d.numero } : null;
 }
 
-/** Visão do dashboard: os 4 slots + síntese. */
+/** Visão do dashboard: 4 slots FIXOS + quem está EM USO + próximo da fila. */
 async function estadoDetalhado() {
   const mapa = await _mapa();
+  const fila = await _filaEquilibrada();
+  const proximoSlot = fila[0]?.slot ?? null;
   return mapa.map((d) => ({
     slot: d.slot,
     estado: d.estado,
+    emUso: d.estado === 'ativa',
+    proxima: d.estado === 'guardada' && d.slot === proximoSlot,
     numero: d.numero || '(sem número)',
     motivo: d.motivo || '',
     tentativas: d.tentativas || 0,
@@ -95,11 +107,15 @@ async function estadoDetalhado() {
 }
 
 // ── hooks do socket principal (whatsapp.js chama estes) ────
-/** Chamado quando o bot liga com sucesso: a viva está no slot 1. */
+/** Chamado quando o bot liga com sucesso: marca a EM USO (prefixo ''). */
 async function registarSucesso(numero) {
   try {
-    const d = await _slotDoc(1);
+    const mapa = await _mapa();
+    const d = mapa.find((x) => x.prefixo === '');
     if (!d) return;
+    for (const x of mapa) {
+      if (x.slot !== d.slot && x.estado === 'ativa') { x.estado = 'guardada'; await x.save().catch(() => {}); }
+    }
     d.estado = 'ativa';
     d.numero = String(numero || '').replace(/@.*$/, '') || d.numero;
     d.motivo = '';
@@ -114,7 +130,8 @@ async function registarSucesso(numero) {
 /** A sessão activa morreu (logout/403/ban): comatosa por 2 dias + failover. */
 async function falhou(motivo) {
   try {
-    const d = await _slotDoc(1);
+    const mapa = await _mapa();
+    const d = mapa.find((x) => x.prefixo === '') || (await _slotDoc(1));
     if (d) {
       d.estado = 'morta';
       d.motivo = String(motivo || '').slice(0, 120);
@@ -149,7 +166,7 @@ async function _provar(prefixo) {
     const ok = await _esperaAbertura(sock, PROBE_TIMEOUT_MS);
     const numero = ok ? String(sock?.user?.id || '').replace(/@.*$/, '') : '';
     return { ok, numero };
-  } catch { return { ok: false }; }
+  } catch (e) { if (process.env.DEBUG_PROBE) console.error('[probe ERRO]', e.message); return { ok: false }; }
   finally { try { sock?.end?.(); } catch {} try { sock?.ev?.removeAllListeners?.(); } catch {} }
 }
 
@@ -183,45 +200,58 @@ async function promover(slotN, { apagarAtual = true } = {}) {
   if (slotN === 1) return { ok: false, motivo: 'ja-e-ativa' };
   const dN = await _slotDoc(slotN);
   if (!dN || (dN.estado !== 'guardada' && dN.estado !== 'ativa')) return { ok: false, motivo: 'sem-sessao-guardada' };
-  const pref = _prefixo(slotN);
-  const d1 = await _slotDoc(1);
+  const pref = dN.prefixo != null ? dN.prefixo : _prefixo(slotN);
+  // v12.9.22: quem sai de EM USO é quem TEM os creds no principal (prefixo '')
+  // — pode ser qualquer slot, não é sempre o slot 1
+  const mapaProm = await _mapa();
+  const d1 = mapaProm.find((x) => x.prefixo === '' && x.slot !== slotN) || (await _slotDoc(1));
 
   if (apagarAtual) {
-    // docs do slot 1 são lixo (ban/logout) — primeiro afasta o slot
-    // promovido para rascunho, ANTES de limpar a casa
+    // creds do slot 1 são lixo (ban/logout) — afasta o promovido p/ rascunho
+    // ANTES de limpar a casa; os números dos slots NUNCA mudam
     await _renomearTodos(pref, TMP);
     for (const f of await _docsDe('')) await Session.deleteOne({ fileName: f }).catch(() => {});
     await _renomearTodos(TMP, '');
   } else {
-    await _renomearTodos('', TMP);                      // slot1 → rascunho
-    await _renomearTodos(pref, '');                     // slotN → slot 1
-    await _renomearTodos(TMP, pref);                    // rascunho → slot N (guardada)
+    await _renomearTodos('', TMP);                      // creds EM USO → rascunho
+    await _renomearTodos(pref, '');                     // creds do slot N → PRINCIPAL
+    await _renomearTodos(TMP, pref);                    // as antigas → guardadas no prefixo do slot 1
   }
-  // registos: o antigo slot 1 muda PRIMEIRO para o N (únicos não colidem)
+  // v12.9.22: os docs MANTÊM slot e numero — só prefixo (onde estão os creds) e estado andam
   if (d1) {
-    d1.slot = slotN; d1.prefixo = pref;
+    d1.prefixo = pref;
     if (apagarAtual) { d1.estado = 'vazia'; d1.numero = ''; d1.motivo = ''; }
     else { d1.estado = 'guardada'; d1.ultimaProva = _agora(); }
     await d1.save();
   }
-  dN.slot = 1; dN.prefixo = ''; dN.estado = 'ativa'; dN.ultimaViva = _agora(); dN.motivo = '';
+  dN.prefixo = ''; dN.estado = 'ativa'; dN.ultimaViva = _agora(); dN.motivo = '';
   await dN.save();
   eventos.emit('promover', { slot: slotN, numero: dN.numero });
   return { ok: true, slot: slotN, numero: dN.numero };
 }
 
-/** Percurso clássico: a viva morreu → sonda os slots 2..4 e promove a 1ª viva. */
+/**
+ * v12.9.22 FAILOVER EQUILIBRADO: em vez de sonda sempre 2→3→4 (a slot 2
+ * levava todo o desgaste), a fila ordena por antiguidade de prova — quem
+ * espera há mais tempo assume primeiro. Desgaste repartido, sistema justo.
+ */
+async function _filaEquilibrada() {
+  const mapa = await _mapa();
+  return mapa
+    .filter((d) => d.estado === 'guardada')
+    .sort((a, b) => ((a.ultimaProva?.getTime?.() || 0) - (b.ultimaProva?.getTime?.() || 0)));
+}
+
+/** Percurso: a EM USO morreu → sonda a fila equilibrada e promove a 1ª viva. */
 async function tentarFailover() {
-  for (let n = 2; n <= SLOTS; n++) {
-    const d = await _slotDoc(n).catch(() => null);
-    if (!d || d.estado !== 'guardada') continue;
-    const p = await _provar(_prefixo(n));
+  for (const d of await _filaEquilibrada()) {
+    const p = await _provar(d.prefixo != null ? d.prefixo : _prefixo(d.slot));
     d.ultimaProva = _agora();
     if (p.ok) {
       d.numero = d.numero || p.numero;
       await d.save();
-      const r = await promover(n, { apagarAtual: true });
-      if (r.ok) return { ok: true, promovida: n, numero: r.numero };
+      const r = await promover(d.slot, { apagarAtual: true });
+      if (r.ok) return { ok: true, promovida: d.slot, numero: r.numero };
     } else {
       d.tentativas = (d.tentativas || 0) + 1;
       // 2 dias de insistência: dentro da janela segue comatosa, fora morre
@@ -232,17 +262,15 @@ async function tentarFailover() {
   return { ok: false, motivo: 'sem-suplente' };
 }
 
-/** BOTÃO do dashboard: rodar manualmente (a viva actual fica guardada). */
+/** BOTÃO: rodar manualmente (equilibrado — a fila decide quem assume). */
 async function rodarAgora() {
-  for (let n = 2; n <= SLOTS; n++) {
-    const d = await _slotDoc(n).catch(() => null);
-    if (!d || d.estado !== 'guardada') continue;
-    const p = await _provar(_prefixo(n));
+  for (const d of await _filaEquilibrada()) {
+    const p = await _provar(d.prefixo != null ? d.prefixo : _prefixo(d.slot));
     d.ultimaProva = _agora();
     await d.save();
     if (p.ok) {
-      const r = await promover(n, { apagarAtual: false });
-      if (r.ok) return { ok: true, promovida: n, numero: r.numero };
+      const r = await promover(d.slot, { apagarAtual: false });
+      if (r.ok) return { ok: true, promovida: d.slot, numero: r.numero };
     }
   }
   return { ok: false, motivo: 'sem-suplente-viva' };
@@ -258,7 +286,7 @@ async function novaSessao(numeroRaw) {
     if (d && d.estado === 'vazia') { slotLivre = n; break; }
   }
   if (!slotLivre) return { ok: false, motivo: 'sem-slot-livre' };
-  const pref = _prefixo(slotLivre);
+  const pref = await _prefDe(slotLivre);
   const dN = await _slotDoc(slotLivre);
   dN.estado = 'ligacao'; dN.numero = numero; dN.motivo = '';
   dN.retryAte = new Date(Date.now() + RETRY_MS);      // 2 dias de insistência
@@ -273,16 +301,32 @@ async function novaSessao(numeroRaw) {
     try { sock?.end?.(); } catch {}
     return { ok: false, motivo: e.message };
   }
-  // vigia do pairing: se abrir, guarda e PROMOVE (a que funciona vai pro 1)
-  _vigiarPair(slotLivre, sock).catch(() => {});
-  return { ok: true, slot: slotLivre, codigo, timeoutMs: PAIR_TIMEOUT_MS };
+  // v12.9.22: MESMO formato E MESMO VALOR do Connect — XXXX-XXXX-XXXX-XXXX
+  // e publicado no estado do bot: a página Connect passa a mostrar O MESMO
+  // código em tempo real (uma só verdade, zero códigos desencontrados).
+  const codigoFmt = String(codigo || '').match(/.{1,4}/g)?.join('-') || codigo;
+  try {
+    const { getBot } = require('./whatsapp');
+    const b = getBot();
+    b.pairingCode = codigoFmt;
+    b.emit('bot:status', { status: b.status, pairingCode: codigoFmt, phoneNumber: numero });
+  } catch {}
+  // vigia do pairing: se abrir, guarda e PROMOVE (a que funciona fica EM USO)
+  _vigiarPair(slotLivre, sock, codigoFmt).catch(() => {});
+  return { ok: true, slot: slotLivre, codigo: codigoFmt, timeoutMs: PAIR_TIMEOUT_MS };
 }
 
-async function _vigiarPair(slotN, sock) {
+async function _vigiarPair(slotN, sock, codigoFmt) {
   const ok = await _esperaAbertura(sock, PAIR_TIMEOUT_MS);
   const dN = await _slotDoc(slotN).catch(() => null);
   try { sock?.end?.(); } catch {}
   try { sock?.ev?.removeAllListeners?.(); } catch {}
+  // limpa o código partilhado com o Connect (só se ainda for o deste pairing)
+  try {
+    const { getBot } = require('./whatsapp');
+    const b = getBot();
+    if (b && b.pairingCode === codigoFmt) { b.pairingCode = null; b.emit('bot:status', { status: b.status, pairingCode: null }); }
+  } catch {}
   if (!dN) return;
   if (ok) {
     dN.estado = 'guardada'; dN.ultimaViva = _agora(); dN.motivo = '';
@@ -300,8 +344,9 @@ async function remover(slotN) {
   if (slotN === 1) return { ok: false, motivo: 'ativa-nao-se-remove' };
   const d = await _slotDoc(slotN);
   if (!d) return { ok: false, motivo: 'slot-inexistente' };
-  for (const f of await _docsDe(_prefixo(slotN))) await Session.deleteOne({ fileName: f }).catch(() => {});
+  for (const f of await _docsDe(d.prefixo != null ? d.prefixo : _prefixo(slotN))) await Session.deleteOne({ fileName: f }).catch(() => {});
   d.estado = 'vazia'; d.numero = ''; d.motivo = ''; d.tentativas = 0;
+  d.prefixo = _prefixo(slotN);
   d.retryAte = null; d.ultimaViva = null; await d.save();
   return { ok: true, slot: slotN };
 }

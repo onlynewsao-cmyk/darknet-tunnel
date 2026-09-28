@@ -5,7 +5,7 @@
     <header class="page-header">
       <div>
         <h1>🕸️ Central de Sessões</h1>
-        <p class="muted">4 slots de contas do bot — a que estiver a funcionar fica sempre no <strong>slot 1</strong>. As outras ficam guardadas: o bot só «faz o contacto» para manter a ligação viva (ronda a cada 30 min) e insiste ~2 dias nas sessões novas antes de as dar como mortas.</p>
+        <p class="muted">4 slots <strong>numerados para sempre</strong> — a conta nunca muda de slot; o marcador <strong>🟢 EM USO</strong> é que anda. As guardadas entram numa <strong>fila equilibrada</strong> (quem espera há mais tempo assume primeiro — desgaste repartido). O bot só «faz o contacto» às guardadas para manter a ligação viva (ronda a cada 30 min) e insiste ~2 dias nas sessões novas antes de as dar como mortas.</p>
       </div>
     </header>
 
@@ -29,6 +29,7 @@
       </form>
       <div id="codigoBox" style="display:none;margin-top:1rem;text-align:center">
         <p class="muted">Abre o WhatsApp no número novo → <em>Aparelhos ligados</em> → <em>Ligar com código</em> e introduz:</p>
+        <p class="muted" style="font-size:0.8rem">🔗 Este é <strong>O MESMO par code</strong> da página <em>Connect</em> — aparece nas duas em tempo real.</p>
         <div id="codigo" style="font-size:2rem;letter-spacing:0.3rem;font-weight:700;color:#0f0;background:#000;border:2px solid #0f0;border-radius:12px;padding:0.6rem 1rem;display:inline-block;font-family:monospace"></div>
         <p class="muted" id="codigoTimer">à espera do scan… (90s)</p>
       </div>
@@ -36,12 +37,12 @@
     </div>
 
     <div class="grid" id="slotsGrid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:1rem">
-      <% const badge = (e) => e === 'ativa' ? '🟢 ATIVA' : e === 'guardada' ? '🟦 GUARDADA' : e === 'ligacao' ? '⏳ A LIGAR' : e === 'morta' ? '⛔ MORTA (2d retry…)' : '⬜ VAZIA'; %>
+      <% const badge = (e) => e === 'ativa' ? '🟢 EM USO' : e === 'guardada' ? '🟦 NA FILA' : e === 'ligacao' ? '⏳ A LIGAR' : e === 'morta' ? '⛔ MORTA (2d retry…)' : '⬜ VAZIA'; %>
       <% slots.forEach(s => { %>
       <div class="card" style="border:1px solid <%= s.estado === 'ativa' ? '#00ff9d' : s.estado === 'guardada' ? '#00f0ff' : '#444' %>">
         <div style="display:flex;justify-content:space-between;align-items:center">
           <h3 style="margin:0">SLOT <%= s.slot %></h3>
-          <span class="badge"><%= badge(s.estado) %></span>
+          <span class="badge"><%= badge(s.estado) %><%= s.proxima ? ' · ⏭️ PRÓXIMA' : '' %></span>
         </div>
         <p style="margin:0.6rem 0 0.2rem"><strong><%= s.numero %></strong></p>
         <p class="muted" style="font-size:0.82rem;margin:0">
@@ -62,7 +63,7 @@
     <div class="card">
       <h3>⚙️ Operações</h3>
       <div class="button-row">
-        <button class="btn btn-secondary" onclick="rodar()">🔁 Rodar agora <span class="muted">(a próxima guardada viva assume o slot 1)</span></button>
+        <button class="btn btn-secondary" onclick="rodar()">🔁 Rodar agora <span class="muted">(a 1ª da fila equilibrada que responda fica EM USO)</span></button>
         <button class="btn btn-secondary" onclick="recarregar()">🔄 Actualizar</button>
       </div>
       <p class="muted" id="opStatus"></p>
@@ -101,13 +102,13 @@
     document.getElementById('opStatus').textContent = '⏳ a sondar slots guardadas…';
     const r = await post('/dashboard/sessoes/rodar');
     document.getElementById('opStatus').textContent = r.ok
-      ? '🔁 slot ' + r.promovida + ' (' + (r.numero || '?') + ') assumiu o slot 1 — o bot reinicia em 3s'
+      ? '🔁 SLOT ' + r.promovida + ' (' + (r.numero || '?') + ') ficou EM USO — o bot reinicia em 3s'
       : '❌ ' + (r.motivo === 'sem-suplente-viva' ? 'nenhuma slot guardada está viva' : r.motivo);
     if (r.ok) setTimeout(recarregar, 7000);
   }
 
   // ── v12.6: AUTO-REFRESH — a grelha actualiza-se sozinha a cada 15s ──
-  const BADGE = { ativa: '🟢 ATIVA', guardada: '🟦 GUARDADA', ligacao: '⏳ A LIGAR', morta: '⛔ MORTA (2d retry…)', vazia: '⬜ VAZIA' };
+  const BADGE = { ativa: '🟢 EM USO', guardada: '🟦 NA FILA', ligacao: '⏳ A LIGAR', morta: '⛔ MORTA (2d retry…)', vazia: '⬜ VAZIA' };
   const COR = { ativa: '#00ff9d', guardada: '#00f0ff', ligacao: '#ffd166', morta: '#ff4d6d', vazia: '#444' };
   const fmtData = (iso) => iso ? new Date(iso).toLocaleString('pt-PT') : null;
 
@@ -116,7 +117,7 @@
     return '<div class="card" style="border:1px solid ' + (COR[s.estado] || '#444') + '">' +
       '<div style="display:flex;justify-content:space-between;align-items:center">' +
         '<h3 style="margin:0">SLOT ' + s.slot + '</h3>' +
-        '<span class="badge">' + (BADGE[s.estado] || s.estado) + '</span>' +
+        '<span class="badge">' + (BADGE[s.estado] || s.estado) + (s.proxima ? ' · ⏭️ PRÓXIMA' : '') + '</span>' +
       '</div>' +
       '<p style="margin:0.6rem 0 0.2rem"><strong>' + (s.numero || '(sem número)') + '</strong></p>' +
       '<p class="muted" style="font-size:0.82rem;margin:0">' +
