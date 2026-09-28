@@ -263,6 +263,44 @@ async function tentarFailover() {
 }
 
 /**
+ * v12.9.25 — AS ESPERAS DO PAR CODE (a mesma ciência do Connect):
+ *  1. WS aberto — requestPairingCode → sendNode dá "Connection Closed" se ws não estiver open;
+ *  2. servidor pronto — o companion_hello só é processado depois do servidor
+ *     pedir o emparelhamento (sinalizado pelo evento `qr` / pair-device).
+ * Sem estas esperas o código não gera (o problema relatado na Central).
+ */
+function _esperarWsAberto(sock, timeoutMs = 30000) {
+  if (sock?.ws?.isOpen) return Promise.resolve(true);
+  if (typeof sock?.waitForSocketOpen === 'function') {
+    return Promise.race([
+      sock.waitForSocketOpen().then(() => true),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('Timeout a abrir ligação ao WhatsApp')), timeoutMs)),
+    ]);
+  }
+  return new Promise((resolve, reject) => {
+    const t0 = Date.now();
+    const timer = setInterval(() => {
+      const ws = sock?.ws;
+      if (ws?.isOpen) { clearInterval(timer); resolve(true); }
+      else if (ws?.isClosed || Date.now() - t0 > timeoutMs) { clearInterval(timer); reject(new Error('Timeout a abrir ligação ao WhatsApp')); }
+    }, 400);
+  });
+}
+function _esperarProntoParaPair(sock, timeoutMs = 30000) {
+  return new Promise((resolve, reject) => {
+    let done = false;
+    const fim = (err) => { if (done) return; done = true; clearTimeout(t); try { sock?.ev?.off?.('connection.update', onUpd); } catch {}; err ? reject(err) : resolve(true); };
+    const t = setTimeout(() => fim(new Error('Timeout: WhatsApp não respondeu')), timeoutMs);
+    const onUpd = (u) => {
+      if (u?.qr) return fim(null);
+      if (u?.connection === 'open') return fim(null);
+      if (u?.connection === 'close') return fim(new Error(`Ligação fechada antes de emparelhar (${u?.lastDisconnect?.error?.output?.statusCode || '?'})`));
+    };
+    try { sock.ev.on('connection.update', onUpd); } catch (e) { return fim(e); }
+  });
+}
+
+/**
  * v12.9.23 — CAPTURA COM TODOS OS SLOTS 🕸️
  * Liga UM socket temporário a cada número (EM USO + guardadas vivas) e
  * captura os membros dos grupos DE CADA NÚMERO para a base central.
@@ -339,9 +377,18 @@ async function novaSessao(numeroRaw) {
   try { ({ sock } = await _novoSock(pref)); }
   catch (e) { dN.estado = 'vazia'; await dN.save().catch(() => {}); return { ok: false, motivo: e.message }; }
   let codigo = '';
-  try { codigo = await sock.requestPairingCode(numero); } catch (e) {
-    dN.estado = 'vazia'; await dN.save().catch(() => {});
-    try { sock?.end?.(); } catch {}
+  try {
+    // v12.9.25: MESMAS esperas do Connect — é ISTO que faltava (o código não gerava)
+    await _esperarWsAberto(sock, 30000);
+    await _esperarProntoParaPair(sock, 12000).catch(() => {}); // qr pode não vir no modo pair; seguimos como no Connect
+    codigo = await Promise.race([
+      sock.requestPairingCode(numero),
+      new Promise((_, r) => setTimeout(() => r(new Error('Timeout ao pedir pair code (30s)')), 30000)),
+    ]);
+    if (!codigo) throw new Error('o servidor não devolveu código');
+  } catch (e) {
+    dN.estado = 'vazia'; dN.numero = ''; dN.motivo = 'pairing falhou: ' + String(e.message || e).slice(0, 60); await dN.save().catch(() => {});
+    try { sock?.end?.(); } catch {} try { sock?.ev?.removeAllListeners?.(); } catch {}
     return { ok: false, motivo: e.message };
   }
   // v12.9.22: MESMO formato E MESMO VALOR do Connect — XXXX-XXXX-XXXX-XXXX
