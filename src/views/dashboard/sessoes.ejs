@@ -82,8 +82,11 @@
     ev.preventDefault();
     const numero = document.getElementById('inNumero').value;
     const st = document.getElementById('addStatus');
-    st.textContent = '⏳ a gerar código…';
+    const btn = document.querySelector('#addForm button[type="submit"]');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ a ligar ao WhatsApp… (10-30s)'; }
+    st.textContent = '⏳ a abrir a ligação e a pedir o código ao WhatsApp… não feches esta página.';
     const r = await post('/dashboard/sessoes/adicionar', { numero });
+    if (btn) { btn.disabled = false; btn.textContent = '🔑 Gerar código de emparelhamento'; }
     if (!r.ok) { st.textContent = '❌ ' + (r.motivo === 'sem-slot-livre' ? 'todos os slots ocupados — remove um primeiro' : r.motivo); return; }
     mostrarCodigo(r.slot, r.codigo);
   });
@@ -91,6 +94,7 @@
   // v12.9.26: código persistente na UI — mostra, conta o tempo e NUNCA é apagado por refresh
   let _timerScan = null;
   function mostrarCodigo(slot, codigo) {
+    try { sessionStorage.setItem('darkPair', JSON.stringify({ slot, codigo, ate: Date.now() + 90000 })); } catch {}
     document.getElementById('codigoBox').style.display = 'block';
     document.getElementById('codigo').textContent = codigo;
     const st = document.getElementById('addStatus');
@@ -104,7 +108,14 @@
       if (falta <= 0) { clearInterval(_timerScan); if (el) el.textContent = '⏳ expirou — se não emparelhou, gera um código novo.'; }
     }, 1000);
   }
-  // ao carregar a página: se algum slot está EM LIGAÇÃO com código activo, mostra-o outra vez
+  // ao carregar: 1) sessionStorage (instantâneo), 2) estado.json (oficial, com timeout maior)
+  (() => {
+    try {
+      const p = JSON.parse(sessionStorage.getItem('darkPair') || 'null');
+      if (p && p.ate > Date.now()) mostrarCodigo(p.slot, p.codigo);
+      else sessionStorage.removeItem('darkPair');
+    } catch {}
+  })();
   (async () => {
     try {
       const d = await fetch('/dashboard/sessoes/estado.json').then(x => x.json());
@@ -159,14 +170,14 @@
       if (!d.ok) return;
       const grid = document.getElementById('slotsGrid');
       if (grid && Array.isArray(d.slots) && d.slots.length) grid.innerHTML = d.slots.map(cartaoSlot).join('');
-      // v12.9.26: se um par code está visível, NADA de reload (apagaria o código!)
-      if (document.getElementById('codigoBox').style.display === 'block') {
-        // só actualiza a grelha por baixo
-        return;
-      }
+      // v12.9.27: NUNCA mais reload automático — só actualiza o que precisa
       const st = document.querySelector('.card p.muted strong');
       const botSt = d.bot?.status || '—';
-      if (st && st.textContent !== botSt) { recarregar(); return; } // mudou estado do bot: reload completo
+      if (st && st.textContent !== botSt) st.textContent = botSt;
+      // se há slot EM LIGAÇÃO com código e a caixa não está visível (reload manual), repõe o código
+      const emLig = (d.slots || []).find(s => s.estado === 'ligacao' && s.codigo);
+      if (emLig && document.getElementById('codigoBox').style.display !== 'block') mostrarCodigo(emLig.slot, emLig.codigo);
+      else if (!emLig) { try { sessionStorage.removeItem('darkPair'); } catch {} }
     } catch {}
   }
   setInterval(_actualizar, 15000);

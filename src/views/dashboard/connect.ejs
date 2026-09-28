@@ -212,6 +212,18 @@
       return;
     }
 
+    // v12.9.27: um pair code publicado pela CENTRAL (outros slots) aparece AQUI também —
+    // mesma verdade nas duas páginas, sem depender do status do socket principal
+    if (s !== 'pairing' && data.pairingCode && data.pairingCode !== lastPair) {
+      lastPair = data.pairingCode;
+      pairArea.innerHTML = `<div style="text-align:center">
+        <div class="muted small">PAIR CODE — NOVO SLOT (Central de Sessões):</div>
+        <div class="pair-code">${data.pairingCode}</div>
+        <div class="muted small" style="margin-top:.5rem">Abra o WhatsApp desse número → Aparelhos conectados → Vincular com número → digite o código.</div>
+      </div>`;
+      addLog('success', `🔐 Pair Code (slot da Central): ${data.pairingCode}`);
+    }
+
     if (s === 'pairing') {
       if (data.pairingCode && data.pairingCode !== lastPair) {
         lastPair = data.pairingCode;
