@@ -1,7 +1,7 @@
 <!-- ═══ TOPBAR (v4.0 DARK OS) ═══ -->
 <header class="topbar">
   <button class="menu-toggle" onclick="openSidebar()" aria-label="Menu">☰</button>
-  <div class="topbar-title"><%= title %></div>
+  <div class="topbar-title"><span class="topbar-crumb">DARK OS</span><span class="topbar-sep">/</span><span class="truncate"><%= title %></span></div>
   <div class="topbar-right">
     <div class="bot-status" id="topStatus" title="Estado do bot em tempo real">
       <span class="status-dot" id="topStatusDot"></span>
@@ -119,5 +119,6 @@
       </div>
     </div>
     <a href="/logout" class="btn btn-ghost btn-sm btn-block">Sair da conta</a>
+    <div class="sidebar-meta">DARK OS <b>v4.1</b> · ENGINE <b>v12.9.32</b></div>
   </div>
 </aside>

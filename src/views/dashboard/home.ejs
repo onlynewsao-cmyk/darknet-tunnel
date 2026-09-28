@@ -6,9 +6,9 @@
     <!-- ═══ HERO — CENTRO DE COMANDO ═══ -->
     <section class="hero fade-in">
       <div class="hero-main">
-        <div class="hero-kicker">Dark OS · Centro de Comando</div>
-        <div class="hero-title">Bem-vindo, <%= user.name || user.username %> 👑</div>
-        <div class="hero-sub"><%= new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' }) %> · o bot responde pelo número <strong>+<%= bot.number %></strong></div>
+        <div class="hero-kicker">DARK OS · Centro de comando</div>
+        <div class="hero-title">Bem-vindo, <%= user.name || user.username %></div>
+        <div class="hero-sub">O bot responde pelo número <strong>+<%= bot.number %></strong> · <%= new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' }) %></div>
       </div>
       <div class="hero-metrics">
         <div class="hero-metric">
@@ -40,90 +40,90 @@
 
     <!-- ═══ MÓDULOS — TODAS AS FUNCIONALIDADES DO BOT ═══ -->
     <section class="card">
-      <h2>⚡ Módulos do Sistema</h2>
+      <h2>Módulos do sistema <small>tudo o que o motor faz, num só lugar</small></h2>
       <% if (user.role === 'owner' || user.role === 'admin') { %>
       <div class="quick-grid">
         <a href="/dashboard/connect" class="quick-card">
-          <div class="quick-icon" style="color:var(--neon-cyan)">🔌</div>
-          <div><strong>Conectar Bot</strong><p>QR Code ou Pair Code</p></div>
+          <div class="quick-icon" style="color:var(--cyan)"><svg viewBox="0 0 24 24"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><circle cx="12" cy="20" r="1" fill="currentColor" stroke="none"/></svg></div>
+          <div><strong>Conectar Bot</strong><p>QR Code ou pair code</p></div>
         </a>
         <a href="/dashboard/sessoes" class="quick-card">
-          <div class="quick-icon" style="color:var(--neon-purple)">🕸️</div>
+          <div class="quick-icon" style="color:var(--violet)"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.6"/><circle cx="4.5" cy="5.5" r="1.8"/><circle cx="19.5" cy="5.5" r="1.8"/><circle cx="4.5" cy="18.5" r="1.8"/><circle cx="19.5" cy="18.5" r="1.8"/><path d="M6 6.8l4 3.4M18 6.8l-4 3.4M6 17.2l4-3.4M18 17.2l-4-3.4"/></svg></div>
           <div><strong>Sessões · Failover</strong><p>4 slots, troca equilibrada</p></div>
         </a>
         <a href="/dashboard/central" class="quick-card">
-          <div class="quick-icon" style="color:var(--neon-green)">🗂️</div>
-          <div><strong>Central de Contas</strong><p>Base de contactos, DDD, captura</p></div>
+          <div class="quick-icon" style="color:var(--green)"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
+          <div><strong>Central de Contas</strong><p>Base de contactos e DDDs</p></div>
         </a>
         <a href="/dashboard/cap" class="quick-card">
-          <div class="quick-icon" style="color:var(--neon-pink)">📸</div>
+          <div class="quick-icon" style="color:var(--pink)"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke-dasharray="4.2 3.4"/><circle cx="12" cy="12" r="3.4"/></svg></div>
           <div><strong>CAP · Stories</strong><p>Baixar stories do Instagram</p></div>
         </a>
         <a href="/dashboard/igapi" class="quick-card">
-          <div class="quick-icon" style="color:var(--neon-yellow)">🛠️</div>
-          <div><strong>IG APIs & Chaves</strong><p>Endpoints + chaves dk_ externas</p></div>
+          <div class="quick-icon" style="color:var(--yellow)"><svg viewBox="0 0 24 24"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg></div>
+          <div><strong>IG APIs & Chaves</strong><p>Endpoints e chaves dk_</p></div>
         </a>
         <a href="/dashboard/commands" class="quick-card">
-          <div class="quick-icon" style="color:var(--neon-purple)">⚡</div>
+          <div class="quick-icon" style="color:var(--violet)"><svg viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg></div>
           <div><strong>Comandos</strong><p>Criar, editar, deletar</p></div>
         </a>
         <a href="/dashboard/control" class="quick-card">
-          <div class="quick-icon" style="color:var(--neon-cyan)">🎛️</div>
-          <div><strong>Painel de Controle</strong><p>Ligar/desligar módulos</p></div>
+          <div class="quick-icon" style="color:var(--cyan)"><svg viewBox="0 0 24 24"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg></div>
+          <div><strong>Painel de Controle</strong><p>Ligar e desligar módulos</p></div>
         </a>
         <a href="/dashboard/ia" class="quick-card">
-          <div class="quick-icon" style="color:var(--neon-pink)">🤖</div>
+          <div class="quick-icon" style="color:var(--pink)"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg></div>
           <div><strong>Aura · IA</strong><p>Inteligência do bot</p></div>
         </a>
         <a href="/dashboard/groups" class="quick-card">
-          <div class="quick-icon" style="color:var(--neon-green)">👥</div>
+          <div class="quick-icon" style="color:var(--green)"><svg viewBox="0 0 24 24"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg></div>
           <div><strong>Grupos</strong><p>Gestão de grupos</p></div>
         </a>
         <a href="/dashboard/broadcast" class="quick-card">
-          <div class="quick-icon" style="color:var(--neon-yellow)">📢</div>
+          <div class="quick-icon" style="color:var(--yellow)"><svg viewBox="0 0 24 24"><path d="M3 11l18-7-7 18-2.5-7.5L3 11z"/></svg></div>
           <div><strong>Broadcast</strong><p>Enviar para todos os grupos</p></div>
         </a>
         <a href="/dashboard/internet" class="quick-card">
-          <div class="quick-icon" style="color:var(--neon-cyan)">📡</div>
+          <div class="quick-icon" style="color:var(--cyan)"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></div>
           <div><strong>Downloads & Buscas</strong><p>Atualizações do sistema</p></div>
         </a>
         <a href="/dashboard/decrypter" class="quick-card">
-          <div class="quick-icon" style="color:var(--neon-orange)">🔓</div>
+          <div class="quick-icon" style="color:var(--orange)"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
           <div><strong>VPN Decrypter</strong><p>Decodificar configs VPN</p></div>
         </a>
         <a href="/dashboard/media" class="quick-card">
-          <div class="quick-icon" style="color:var(--neon-pink)">🖼️</div>
-          <div><strong>Galeria</strong><p>Upload de fotos/vídeos/GIFs</p></div>
+          <div class="quick-icon" style="color:var(--pink)"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg></div>
+          <div><strong>Galeria</strong><p>Upload de fotos e vídeos</p></div>
         </a>
         <a href="/dashboard/nuvem" class="quick-card">
-          <div class="quick-icon" style="color:var(--neon-cyan)">☁️</div>
+          <div class="quick-icon" style="color:var(--cyan)"><svg viewBox="0 0 24 24"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg></div>
           <div><strong>Nuvem do Bot</strong><p>Ficheiros guardados</p></div>
         </a>
         <a href="/dashboard/console" class="quick-card">
-          <div class="quick-icon" style="color:var(--neon-green)">📜</div>
+          <div class="quick-icon" style="color:var(--green)"><svg viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></div>
           <div><strong>Console ao Vivo</strong><p>Logs em tempo real</p></div>
         </a>
         <a href="/dashboard/backup" class="quick-card">
-          <div class="quick-icon" style="color:var(--neon-yellow)">💾</div>
-          <div><strong>Backup</strong><p>Exportar/importar dados</p></div>
+          <div class="quick-icon" style="color:var(--yellow)"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg></div>
+          <div><strong>Backup</strong><p>Exportar e importar dados</p></div>
         </a>
       </div>
       <% } else { %>
       <div class="quick-grid">
         <a href="/dashboard/decrypter" class="quick-card">
-          <div class="quick-icon" style="color:var(--neon-cyan)">🔓</div>
+          <div class="quick-icon" style="color:var(--cyan)"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
           <div><strong>VPN Decrypter</strong><p>Decodificar configs VPN</p></div>
         </a>
         <a href="https://wa.me/<%= bot.number %>" target="_blank" class="quick-card">
-          <div class="quick-icon" style="color:var(--neon-green)">📱</div>
+          <div class="quick-icon" style="color:var(--green)"><svg viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg></div>
           <div><strong>Falar com Bot</strong><p>+<%= bot.number %></p></div>
         </a>
         <a href="https://wa.me/<%= owner.number %>" target="_blank" class="quick-card">
-          <div class="quick-icon" style="color:var(--neon-yellow)">👑</div>
+          <div class="quick-icon" style="color:var(--yellow)"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/><line x1="4.93" y1="4.93" x2="9.17" y2="9.17"/><line x1="14.83" y1="14.83" x2="19.07" y2="19.07"/><line x1="14.83" y1="9.17" x2="19.07" y2="4.93"/><line x1="4.93" y1="19.07" x2="9.17" y2="14.83"/></svg></div>
           <div><strong>Suporte / Dono</strong><p><%= owner.name %></p></div>
         </a>
         <a href="/dashboard/subscribe" class="quick-card">
-          <div class="quick-icon" style="color:var(--neon-purple)">⭐</div>
+          <div class="quick-icon" style="color:var(--violet)"><svg viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg></div>
           <div><strong>Assinar Premium</strong><p>Acesso completo ao bot</p></div>
         </a>
       </div>
@@ -133,24 +133,24 @@
     <!-- ═══ AÇÕES RÁPIDAS (dono) ═══ -->
     <% if (user.role === 'owner') { %>
     <section class="card">
-      <h2>🚀 Ações Rápidas</h2>
+      <h2>Ações rápidas <small>sem escrever um comando no WhatsApp</small></h2>
       <div class="button-row">
-        <a href="#" onclick="ligarMe(event,false)" class="btn btn-success" id="btnLigarMe">📞 Ligar-me agora</a>
-        <a href="#" onclick="ligarMe(event,true)" class="btn btn-primary" id="btnVideoMe">📹 Videochamada</a>
-        <a href="/dashboard/sessoes" class="btn btn-ghost">🔑 Gerar Pair Code</a>
-        <a href="/dashboard/central" class="btn btn-ghost">🕸️ Central de Contas</a>
-        <a href="/dashboard/broadcast" class="btn btn-ghost">📢 Broadcast</a>
+        <a href="#" onclick="ligarMe(event,false)" class="btn btn-success" id="btnLigarMe">Ligar-me agora</a>
+        <a href="#" onclick="ligarMe(event,true)" class="btn btn-primary" id="btnVideoMe">Videochamada</a>
+        <a href="/dashboard/sessoes" class="btn btn-ghost">Gerar pair code</a>
+        <a href="/dashboard/central" class="btn btn-ghost">Central de contas</a>
+        <a href="/dashboard/broadcast" class="btn btn-ghost">Broadcast</a>
       </div>
       <p class="muted small" style="margin-top:.7rem; margin-bottom:0">
-        <span id="ligarMeTxt">Ligação normal: clica e a Aura liga para ti.</span><br>
-        <span id="videoMeTxt">Vídeo: clica e a Aura faz a chamada de vídeo.</span>
+        <span id="ligarMeTxt">A Aura liga para ti num clique.</span><br>
+        <span id="videoMeTxt">Chamada de vídeo com áudio e imagem.</span>
       </p>
     </section>
 
     <!-- CONSOLE LIVE (só dono) -->
     <section class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
-        <h2 style="margin-bottom:0">📜 Atividade em Tempo Real</h2>
+        <h2 style="margin-bottom:0">Atividade em tempo real</h2>
         <button class="btn btn-sm btn-ghost" onclick="clearConsole()">Limpar</button>
       </div>
       <div class="console" id="liveConsole">

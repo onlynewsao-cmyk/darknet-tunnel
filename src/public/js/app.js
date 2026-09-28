@@ -185,9 +185,10 @@ window.formatSize = (bytes) => {
   // relógio HH:MM
   const CLK = document.getElementById('topClock');
   if (CLK) {
+    const SEM = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
     const tic = () => {
       const d = new Date();
-      CLK.textContent = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+      CLK.textContent = SEM[d.getDay()] + ' ' + String(d.getDate()).padStart(2, '0') + ' · ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
     };
     tic();
     setInterval(tic, 15000);
