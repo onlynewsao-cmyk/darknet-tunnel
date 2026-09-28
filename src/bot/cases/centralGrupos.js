@@ -182,17 +182,26 @@ module.exports = function registerCentralGrupos(registerCase) {
     const argDest = String(args[0] || '').trim();
     if (!argDest) {
       const n = (_last.get(ctx.remoteJid) || []).length;
-      return reply(`Uso: *addcentral <jidDestino | nº do grupo> [de <nº|todos>]*\n\n• \`addcentral 3\` → adiciona a base TODA ao grupo 3 da listagem\n• \`addcentral 3 de 1\` → só os contactos capturados do grupo 1\n• \`addcentral 120363...@g.us de todos\`\n\n\n⚠️ O bot precisa de ser *admin* no grupo destino.`);
+      return reply(`Uso: *addcentral <jidDestino | nº do grupo> [de …]*\n• \`addcentral 3\` → a base TODA ao grupo 3\n• \`addcentral 3 de 1\` → só os contactos do grupo 1\n• \`addcentral 3 de ddd:244 9\` → só Angola móvel (92/99…)\n• \`addcentral 3 de pais:brasil\` → só Brasil\n• \`addcentral 120363...@g.us de todos\`\n\n⚠️ O bot precisa de ser *admin* no grupo destino.`);
     }
     const gDest = await pickGrupo(sock, ctx.remoteJid, argDest);
     if (!gDest) return reply(`Destino "${argDest}" não encontrado — corre *gruposbot* para ver a lista.`);
     // fonte
-    const argDe = args.length >= 2 && String(args[1]).toLowerCase() === 'de' ? String(args[2] || 'todos').toLowerCase() : 'todos';
+    const argDeRaw = args.length >= 3 && String(args[1]).toLowerCase() === 'de' ? args.slice(2).join(' ').trim() : 'todos';
+    const argDe = argDeRaw.toLowerCase();
     let filtro = 'todos';
-    if (argDe !== 'todos') { const gf = await pickGrupo(sock, ctx.remoteJid, argDe); if (!gf) return reply(`Fonte "${argDe}" não encontrada na listagem.`); filtro = gf.jid; }
-    const lista = base.fonteParaAdd(filtro);
+    let lista;
+    if (argDe.startsWith('ddd:') || argDe.startsWith('pais:')) {
+      // v12.9.24: SEGMENTAÇÃO POR DDD/país — addcentral 3 de ddd:244 9 | de pais:brasil
+      const val = argDe.includes(':') ? argDe.split(':').slice(1).join(':').trim() : '';
+      lista = base.fontePorDdd(val);
+      if (!lista.length) return reply(`Nenhum contacto para DDD/país *${val}* — captura primeiro (botão da Central ou .capturartodos).`);
+    } else {
+      if (argDe !== 'todos') { const gf = await pickGrupo(sock, ctx.remoteJid, argDe); if (!gf) return reply(`Fonte "${argDeRaw}" não encontrada na listagem.`); filtro = gf.jid; }
+      lista = base.fonteParaAdd(filtro);
+    }
     if (!lista.length) return reply('A base/fonte está vazia — corre *capturartodos* primeiro.');
-    const L = await reply(`⏳ *ADD CENTRAL*\n🎯 destino: ${gDest.nome.slice(0, 40)}\n📇 fonte: ${filtro === 'todos' ? 'base TODA' : 'grupo ' + argDe} → *${lista.length}* contactos\n\n⚠️ Em lotes de 5 · pausa 3s. Quem não deixar adicionar-se (privacidade) fica na lista de convites.`);
+    const L = await reply(`⏳ *ADD CENTRAL*\n🎯 destino: ${gDest.nome.slice(0, 40)}\n📇 fonte: ${(argDe.startsWith('ddd:') || argDe.startsWith('pais:')) ? 'SEGMENTO ' + argDeRaw.toUpperCase() : (filtro === 'todos' ? 'base TODA' : 'grupo ' + argDeRaw)} → *${lista.length}* contactos\n\n⚠️ Em lotes de 5 · pausa 3s. Quem não deixar adicionar-se (privacidade) fica na lista de convites.`);
     // bot admin no destino? (comparação por dígitos — JID vem com @s.whatsapp.net)
     try {
       const metaDest = await sock.groupMetadata(gDest.jid);

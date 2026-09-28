@@ -137,6 +137,35 @@ function fonteParaAdd(filtroJid) {
   return out;
 }
 
+/**
+ * v12.9.24: captura DIRECTA de números (passiva — entrada/saída em grupos).
+ * Igual ao capturarGrupo mas recebe os números prontos.
+ */
+function capturarContactos(nums, jidGrupo, nomeGrupo, { slot = null } = {}) {
+  carregar();
+  let novos = 0, duplicados = 0;
+  state.grupos[jidGrupo] = state.grupos[jidGrupo] || { nome: String(nomeGrupo || '').slice(0, 120), membros: 0, nomeFonte: 'passiva', ts: Date.now() };
+  state.grupos[jidGrupo].ts = Date.now();
+  for (const num0 of nums) {
+    const num = String(num0 || '').replace(/\D/g, '');
+    if (!num || num.length < 7) continue;
+    const ex = state.contactos[num];
+    if (ex) {
+      duplicados++;
+      ex.grupos = ex.grupos || {};
+      if (!ex.grupos[jidGrupo]) ex.grupos[jidGrupo] = state.grupos[jidGrupo].nome;
+      if (slot) { ex.slots = ex.slots || {}; ex.slots[slot] = Date.now(); }
+      ex.ts = Date.now();
+    } else {
+      novos++;
+      state.contactos[num] = { nome: '', jid: num + '@s.whatsapp.net', grupos: { [jidGrupo]: state.grupos[jidGrupo].nome }, addedAt: Date.now(), ts: Date.now(), ddd: dddDe(num), ...(slot ? { slots: { [slot]: Date.now() } } : {}) };
+    }
+  }
+  state.grupos[jidGrupo].membros = Object.values(state.contactos).filter(c => c.grupos && c.grupos[jidGrupo]).length;
+  guardar();
+  return { novos, duplicados };
+}
+
 /** v12.9.23: lista os contactos de um DDD ('244 9', '55 11', …) ou de um país ('+244'). */
 function contactosPorDdd(filtro) {
   carregar();
@@ -152,6 +181,11 @@ function contactosPorDdd(filtro) {
     }
   }
   return out;
+}
+
+/** v12.9.24: fonte para addcentral filtrada por DDD/país — mesma regra do contactosPorDdd. */
+function fontePorDdd(filtro) {
+  return contactosPorDdd(filtro).map(x => ({ num: x.num, jid: x.jid, nome: x.nome }));
 }
 
 function remover(num) {
@@ -174,4 +208,4 @@ function filhosComunidade(jidPai, allMeta) {
   return Object.values(allMeta || {}).filter(g => g && String(g.linkedParentJid || '') === String(jidPai));
 }
 
-module.exports = { carregar, guardar, capturarGrupo, stats, fonteParaAdd, remover, limpar, filhosComunidade, dddDe, contactosPorDdd, PAISES };
+module.exports = { carregar, guardar, capturarGrupo, capturarContactos, stats, fonteParaAdd, fontePorDdd, remover, limpar, filhosComunidade, dddDe, contactosPorDdd, PAISES };

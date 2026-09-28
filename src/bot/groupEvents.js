@@ -243,6 +243,21 @@ async function handle(sock, event) {
     const meta      = await sock.groupMetadata(groupJid).catch(() => null);
     const groupName = meta?.subject || 'grupo';
 
+    // v12.9.24 CAPTURA PASSIVA: cada movimento num grupo alimenta a base
+    // central sozinho (entrada/saída/promoção) — sem apertar botão nenhum.
+    try {
+      const base = require('./centralBase');
+      const slot = String(sock?.user?.id || '').split('@')[0].split(':')[0].replace(/\D/g, '').slice(-2) || '';
+      const rotuloSlot = `bot:${slot}`;
+      if (action === 'promote' || action === 'demote') {
+        base.capturarGrupo(groupJid, meta, { slot: rotuloSlot });
+      } else {
+        // add/remove: regista o grupo + os participantes do evento
+        const nums = parts.map(p => String(p?.id || '').split('@')[0]).filter(n => n && n.length >= 7 && !n.includes('-'));
+        if (nums.length) base.capturarContactos(nums, groupJid, groupName, { slot: rotuloSlot });
+      }
+    } catch {}
+
     // v6.82: feed live do dashboard (página Grupos).
     try {
       require('./liveBroadcaster').groupEvent({

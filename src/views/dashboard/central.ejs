@@ -53,7 +53,7 @@
 
     <div class="card">
       <h2>📇 Contactos</h2>
-      <div class="form-group"><input type="text" id="centralBusca" placeholder="🔍 procurar por número ou nome…" oninput="centralFiltrar()" style="max-width:340px" /></div>
+      <div class="form-group"><input type="text" id="centralBusca" placeholder="🔍 procurar por número ou nome…" oninput="centralRender()" style="max-width:340px" /></div>
       <table class="table" id="centralTabela">
         <thead><tr><th>Número</th><th>Nome</th><th>DDD / país</th><th>Visto por</th><th>Grupos</th><th>Capturado</th><th></th></tr></thead>
         <tbody id="centralTbody"><tr><td colspan="5" class="muted">a carregar…</td></tr></tbody>
@@ -114,7 +114,9 @@ async function capturarTodosSlots(btn) {
 function centralRender() {
   const tb = document.getElementById('centralTbody');
   if (!_centralDados.length) { tb.innerHTML = '<tr><td colspan="7" class="muted">Base vazia — usa a captura com TODOS os números.</td></tr>'; document.getElementById('centralCount').textContent = ''; return; }
-  const lista = _filtroDdd ? _centralDados.filter(c => c.dddRotulo === _filtroDdd) : _centralDados;
+  const termo = (document.getElementById('centralBusca').value || '').toLowerCase().trim();
+  let lista = _filtroDdd ? _centralDados.filter(c => c.dddRotulo === _filtroDdd) : _centralDados;
+  if (termo) lista = lista.filter(c => c.busca.includes(termo) || (c.dddRotulo || '').toLowerCase().includes(termo) || (c.slots || []).some(s => ('slot' + s).includes(termo.replace('slot', ''))));
   tb.innerHTML = lista.map(c => `<tr data-busca="${c.busca}">
     <td><code>${c.num}</code></td><td>${c.nome || '—'}</td>
     <td><span class="badge">🌍 ${c.dddRotulo || '—'}</span> <small class="muted">${c.pais || ''}</small></td>
@@ -138,6 +140,8 @@ async function centralLimpar() {
   await fetch('/api/central/limpar', { method: 'POST' });
   centralRefresh();
 }
+// v12.9.24: auto-refresh 30s (a base vive sozinha com a captura passiva)
+setInterval(centralRefresh, 30000);
 centralRefresh();
 </script>
 <%- include('../partials/footer') %>
