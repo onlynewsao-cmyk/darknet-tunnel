@@ -262,6 +262,49 @@ async function tentarFailover() {
   return { ok: false, motivo: 'sem-suplente' };
 }
 
+/**
+ * v12.9.23 — CAPTURA COM TODOS OS SLOTS 🕸️
+ * Liga UM socket temporário a cada número (EM USO + guardadas vivas) e
+ * captura os membros dos grupos DE CADA NÚMERO para a base central.
+ * Um contacto visto por números diferentes mantém-se único, mas fica
+ * marcado com TODOS os slots que o viram (ex.slots).
+ */
+async function capturarComTodosOsSlots({ pausaMs = [1500, 3000] } = {}) {
+  const base = require('./centralBase'); base.carregar();
+  const mapa = await _mapa();
+  const resultados = [];
+  for (const d of mapa) {
+    if (d.estado !== 'ativa' && d.estado !== 'guardada') continue;
+    const pref = d.prefixo != null ? d.prefixo : _prefixo(d.slot);
+    let sock = null;
+    const r = { slot: d.slot, numero: d.numero || '', grupos: 0, novos: 0, duplicados: 0, erro: '' };
+    try {
+      ({ sock } = await _novoSock(pref));
+      const aberto = await _esperaAbertura(sock, PROBE_TIMEOUT_MS);
+      if (!aberto) throw new Error('não abriu (sessão fria/morta)');
+      r.numero = String(sock?.user?.id || '').replace(/@.*$/, '') || r.numero;
+      const chats = await sock.groupFetchAllParticipating().catch(() => ({}));
+      const metas = Object.entries(chats || {});
+      for (const [jid, meta] of metas) {
+        try {
+          const rr = base.capturarGrupo(jid, meta, { slot: d.slot });
+          r.grupos++; r.novos += rr.novos; r.duplicados += rr.duplicados;
+        } catch {}
+        await new Promise(x => setTimeout(x, 300 + Math.floor(Math.random() * 250))); // ritmo humano
+      }
+    } catch (e) { r.erro = String(e.message || e).slice(0, 80); }
+    finally { try { sock?.end?.(); } catch {} try { sock?.ev?.removeAllListeners?.(); } catch {} }
+    resultados.push(r);
+    await new Promise(x => setTimeout(x, pausaMs[0] + Math.floor(Math.random() * (pausaMs[1] - pausaMs[0]))));
+  }
+  const s = base.stats();
+  try {
+    const { getBot } = require('./whatsapp');
+    getBot()?.emit?.('central:multicaptura', { resultados, total: s.total });
+  } catch {}
+  return { ok: resultados.some(x => !x.erro && x.grupos > 0), totalContactos: s.total, ddds: s.ddds, slots: s.slots, resultados };
+}
+
 /** BOTÃO: rodar manualmente (equilibrado — a fila decide quem assume). */
 async function rodarAgora() {
   for (const d of await _filaEquilibrada()) {
@@ -401,7 +444,7 @@ function arrancarVigia(intervaloMs = 30 * 60 * 1000) {
 module.exports = {
   on: (...a) => eventos.on(...a),
   slotAtual, estadoDetalhado, registarSucesso, falhou,
-  tentarFailover, rodarAgora, promover, novaSessao, remover,
+  tentarFailover, rodarAgora, promover, novaSessao, remover, capturarComTodosOsSlots,
   arrancarVigia,
   _definirFabrica,
   _debug: { _mapa, _slotDoc, _docsDe, _renomearTodos, _provar, _prefixo, RETRY_MS, PROBE_TIMEOUT_MS },

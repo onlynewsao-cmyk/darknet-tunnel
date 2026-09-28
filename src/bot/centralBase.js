@@ -36,8 +36,45 @@ function guardar() {
 }
 let _t = null;
 
+// ── v12.9.23 — DDD & PAÍS 🌍 ────────────────────────────────
+// O "DDD" internacional = país + código de área. Tabela dos códigos
+// mais comuns na base (Angola, Brasil, Portugal, etc.).
+const PAISES = [
+  { ddi: '244', pais: 'Angola', ddds: { '9': 'Móvel', '2': 'Fixo' } },
+  { ddi: '55', pais: 'Brasil', ddds: null }, // Brasil: 2 dígitos de DDD após o 55 (11–99)
+  { ddi: '351', pais: 'Portugal', ddds: { '9': 'Móvel', '2': 'Fixo' } },
+  { ddi: '243', pais: 'RD Congo', ddds: { '8': 'Móvel', '9': 'Móvel' } },
+  { ddi: '242', pais: 'Congo', ddds: { '0': 'Móvel' } },
+  { ddi: '245', pais: 'Guiné-Bissau', ddds: { '9': 'Móvel' } },
+  { ddi: '238', pais: 'Cabo Verde', ddds: { '9': 'Móvel', '2': 'Fixo' } },
+  { ddi: '258', pais: 'Moçambique', ddds: { '8': 'Móvel', '2': 'Fixo' } },
+  { ddi: '239', pais: 'S. Tomé e Príncipe', ddds: null },
+  { ddi: '1', pais: 'EUA/Canadá', ddds: null },
+  { ddi: '33', pais: 'França', ddds: null },
+  { ddi: '35', pais: 'Europa (varios)', ddds: null },
+];
+function dddDe(num) {
+  const s = String(num || '').replace(/\D/g, '');
+  for (const p of PAISES) {
+    if (s.startsWith(p.ddi)) {
+      const resto = s.slice(p.ddi.length);
+      if (!resto) continue;
+      let area = '';
+      if (p.ddi === '55' && resto.length >= 2) area = resto.slice(0, 2);            // Brasil: DDD de 2 dígitos
+      else if (p.ddis) {
+        const primeiro = resto[0];
+        if (!p.ddis[primeiro]) area = resto.slice(0, 2);
+        else area = (primeiro === '9' && p.ddi === '244' && resto.length >= 2) ? resto.slice(0, 2) : primeiro; // AO móvel: 9 + operador (92=Unitel, 99=Africell…)
+      }
+      else area = resto.slice(0, 2);
+      return { ddi: p.ddi, pais: p.pais, ddd: area || '-', rotulo: `+${p.ddi} ${area || ''}`.trim() };
+    }
+  }
+  return { ddi: '?', pais: 'Desconhecido', ddd: s.slice(0, 2) || '-', rotulo: s.slice(0, 2) || '-' };
+}
+
 // meta do Baileys: { id, subject, participants: [{ id: '2449...@s.whatsapp.net' | 'xxx@lid', notify?, name? }] }
-function capturarGrupo(jid, meta, { fonte = '' } = {}) {
+function capturarGrupo(jid, meta, { fonte = '', slot = null } = {}) {
   carregar();
   const nome = String(meta?.subject || '').slice(0, 120) || 'grupo';
   state.grupos[jid] = { nome, membros: (meta?.participants || []).length, nomeFonte: fonte, ts: Date.now() };
@@ -54,10 +91,11 @@ function capturarGrupo(jid, meta, { fonte = '' } = {}) {
       ex.grupos = ex.grupos || {};
       if (!ex.grupos[jid]) ex.grupos[jid] = nome;
       if (nomeP && !ex.nome) ex.nome = nomeP;
+      if (slot) ex.slots = ex.slots || {}; ex.slots[slot] = Date.now(); // v12.9.23: por qual NÚMERO foi visto
       ex.ts = Date.now();
     } else {
       novos++;
-      state.contactos[num] = { nome: nomeP, jid: jidP, grupos: { [jid]: nome }, addedAt: Date.now(), ts: Date.now() };
+      state.contactos[num] = { nome: nomeP, jid: jidP, grupos: { [jid]: nome }, addedAt: Date.now(), ts: Date.now(), ddd: dddDe(num), ...(slot ? { slots: { [slot]: Date.now() } } : {}) };
     }
   }
   guardar();
@@ -73,7 +111,19 @@ function stats() {
       return { jid, nome: g.nome, membros, capturados: membros, ts: g.ts };
     })
     .sort((a, b) => b.capturados - a.capturados);
-  return { total: Object.keys(state.contactos).length, nGrupos, porGrupo, updatedAt: state.UpdatedAt };
+  // v12.9.23: resumo por DDD/país + por slot de captura
+  const _ddd = {};
+  const _slots = {};
+  for (const [num, c] of Object.entries(state.contactos)) {
+    const d = c.ddd || dddDe(num);
+    const chave = `+${d.ddi} ${d.ddd}`.trim();
+    _ddd[chave] = _ddd[chave] || { rotulo: chave, pais: d.pais, ddi: d.ddi, ddd: d.ddd, total: 0 };
+    _ddd[chave].total++;
+    for (const sl of Object.keys(c.slots || {})) { _slots[sl] = _slots[sl] || { slot: sl, total: 0 }; _slots[sl].total++; }
+  }
+  const ddds = Object.values(_ddd).sort((a, b) => b.total - a.total);
+  const slots = Object.values(_slots).sort((a, b) => b.total - a.total);
+  return { total: Object.keys(state.contactos).length, nGrupos, porGrupo, ddds, slots, updatedAt: state.UpdatedAt };
 }
 
 // fonte para addcentral: 'todos' → base inteira; jid de grupo → só quem está nesse grupo
@@ -83,6 +133,23 @@ function fonteParaAdd(filtroJid) {
   for (const [num, c] of Object.entries(state.contactos)) {
     if (filtroJid && filtroJid !== 'todos' && !(c.grupos && c.grupos[filtroJid])) continue;
     out.push({ num, jid: c.jid || num + '@s.whatsapp.net', nome: c.nome || '' });
+  }
+  return out;
+}
+
+/** v12.9.23: lista os contactos de um DDD ('244 9', '55 11', …) ou de um país ('+244'). */
+function contactosPorDdd(filtro) {
+  carregar();
+  let f = String(filtro || '').trim().toLowerCase();
+  if (f && !f.startsWith('+') && /^\d/.test(f)) f = '+' + f; // aceita "244 9" e "+244 9"
+  const out = [];
+  for (const [num, c] of Object.entries(state.contactos)) {
+    const d = c.ddd || dddDe(num);
+    const rot = `+${d.ddi} ${d.ddd}`.trim().toLowerCase();
+    const rotP = `+${d.ddi} ${String(d.ddd).slice(0, 1)}`.toLowerCase();
+    if (rot === f || rotP === f || ('+' + String(d.ddi)) === f || String(d.pais).toLowerCase() === f) {
+      out.push({ num, jid: c.jid || num + '@s.whatsapp.net', nome: c.nome || '', ddd: d });
+    }
   }
   return out;
 }
@@ -107,4 +174,4 @@ function filhosComunidade(jidPai, allMeta) {
   return Object.values(allMeta || {}).filter(g => g && String(g.linkedParentJid || '') === String(jidPai));
 }
 
-module.exports = { carregar, guardar, capturarGrupo, stats, fonteParaAdd, remover, limpar, filhosComunidade };
+module.exports = { carregar, guardar, capturarGrupo, stats, fonteParaAdd, remover, limpar, filhosComunidade, dddDe, contactosPorDdd, PAISES };

@@ -15,13 +15,27 @@
         <div class="card" style="margin:0"><h3 style="font-size:1.6rem;margin:0">📇 <%= total %></h3><small class="muted">contactos únicos</small></div>
         <div class="card" style="margin:0"><h3 style="font-size:1.6rem;margin:0">📋 <%= nGrupos %></h3><small class="muted">grupos conhecidos</small></div>
         <div class="card" style="margin:0"><h3 style="font-size:1.6rem;margin:0">🕒 <%= updatedAt ? new Date(updatedAt).toLocaleString('pt-PT') : '—' %></h3><small class="muted">última captura</small></div>
+        <div class="card" style="margin:0"><h3 style="font-size:1.6rem;margin:0" id="ddCard">🌍 …</h3><small class="muted">DDDs / países</small></div>
+        <div class="card" style="margin:0"><h3 style="font-size:1.6rem;margin:0" id="slotsCard">🧱 …</h3><small class="muted">números que capturaram</small></div>
       </div>
       <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
-        <a class="btn btn-primary" href="/api/central/csv">⬇️ Exportar CSV</a>
+        <button class="btn btn-primary" onclick="capturarTodosSlots(this)">🕸️ Capturar com TODOS os números</button>
+        <a class="btn" href="/api/central/csv">⬇️ Exportar CSV (com DDD)</a>
         <button class="btn" onclick="centralRefresh()">🔄 Recarregar</button>
         <button class="btn btn-danger" onclick="centralLimpar()">🗑️ Limpar base</button>
       </div>
+      <small class="muted" id="multiStatus">A captura com todos os números liga cada slot (EM USO + guardadas) e junta os membros dos grupos de cada um — sem duplicados.</small>
       <small class="muted">No WhatsApp: <code>.central</code> (menu), <code>.gruposbot</code>, <code>.capturartodos</code>, <code>.contactos</code>, <code>.addcentral &lt;dest&gt; [de &lt;nº|todos&gt;]</code>, <code>.comunidade</code> — tudo só do dono.</small>
+    </div>
+
+    <div class="card">
+      <h2>🌍 Por DDD / país <small class="muted">clica para filtrar a tabela</small></h2>
+      <div id="ddChips" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+    </div>
+
+    <div class="card">
+      <h2>🧱 Por número (slot) <small class="muted">qual número viu quem</small></h2>
+      <div id="slotChips" style="display:flex;gap:8px;flex-wrap:wrap"></div>
     </div>
 
     <div class="card">
@@ -41,7 +55,7 @@
       <h2>📇 Contactos</h2>
       <div class="form-group"><input type="text" id="centralBusca" placeholder="🔍 procurar por número ou nome…" oninput="centralFiltrar()" style="max-width:340px" /></div>
       <table class="table" id="centralTabela">
-        <thead><tr><th>Número</th><th>Nome</th><th>Grupos</th><th>Capturado</th><th></th></tr></thead>
+        <thead><tr><th>Número</th><th>Nome</th><th>DDD / país</th><th>Visto por</th><th>Grupos</th><th>Capturado</th><th></th></tr></thead>
         <tbody id="centralTbody"><tr><td colspan="5" class="muted">a carregar…</td></tr></tbody>
       </table>
       <small class="muted" id="centralCount"></small>
@@ -51,20 +65,64 @@
 
 <script>
 let _centralDados = [];
+let _filtroDdd = '';
 async function centralRefresh() {
   const r = await fetch('/api/central/state').then(x => x.json()).catch(() => null);
   if (!r) return;
-  _centralDados = r.contactos || [];
+  _centralDados = (r.contactos || []).map(c => ({ ...c, busca: (c.num + ' ' + (c.nome || '')).toLowerCase() }));
+  const dd = document.getElementById('ddCard');
+  if (dd) dd.textContent = '🌍 ' + (r.ddds || []).length;
+  const sc2 = document.getElementById('slotsCard');
+  if (sc2) sc2.textContent = '🧱 ' + (r.slots || []).length;
+  renderDds(r.ddds || []);
+  renderSlots(r.slots || []);
   centralRender();
+}
+function renderDds(ddds) {
+  const el = document.getElementById('ddChips');
+  if (!el) return;
+  if (!ddds.length) { el.innerHTML = '<small class="muted">Sem contactos ainda.</small>'; return; }
+  el.innerHTML = ddds.map(d => `<button class="btn btn-sm" data-ddd="${d.rotulo}" onclick="filtrarDdd('${d.rotulo}', this)" style="<%= 'margin:2px' %>">🌍 <b>${d.rotulo}</b> ${d.pais} · ${d.total}</button>`).join(' ');
+}
+function renderSlots(slots) {
+  const el = document.getElementById('slotChips');
+  if (!el) return;
+  if (!slots.length) { el.innerHTML = '<small class="muted">Ainda sem captura por número — usa a captura com TODOS os números.</small>'; return; }
+  el.innerHTML = slots.map(s => `<span class="badge" style="margin:2px">🧱 SLOT ${s.slot} · ${s.total} contactos</span>`).join(' ');
+}
+function filtrarDdd(rot, btn) {
+  _filtroDdd = _filtroDdd === rot ? '' : rot;
+  document.querySelectorAll('#ddChips .btn').forEach(b => b.style.outline = '');
+  if (_filtroDdd && btn) btn.style.outline = '2px solid currentColor';
+  centralRender();
+}
+async function capturarTodosSlots(btn) {
+  if (!confirm('Ligar cada número (EM USO + guardadas) e capturar os grupos de TODOS? Demora ~1-2 min.')) return;
+  const st = document.getElementById('multiStatus');
+  btn.disabled = true; st.textContent = '⏳ A ligar os números e a capturar… não feches esta página.';
+  try {
+    const r = await fetch('/api/central/capturar-slots', { method: 'POST' }).then(x => x.json());
+    if (!r.ok && !r.resultados) { st.textContent = '❌ ' + (r.erro || 'falhou'); }
+    else {
+      const okN = (r.resultados || []).filter(x => !x.erro && x.grupos > 0).length;
+      st.textContent = `✅ ${okN} número(s) capturaram · base agora com ${r.totalContactos} contactos · ` + (r.resultados || []).map(x => `S${x.slot}:${x.erro ? '⚠️' : '+' + x.novos}`).join(' ');
+    }
+  } catch (e) { st.textContent = '❌ ' + e.message; }
+  btn.disabled = false;
+  centralRefresh();
 }
 function centralRender() {
   const tb = document.getElementById('centralTbody');
-  if (!_centralDados.length) { tb.innerHTML = '<tr><td colspan="5" class="muted">Base vazia — usa .capturartodos no WhatsApp.</td></tr>'; document.getElementById('centralCount').textContent = ''; return; }
-  tb.innerHTML = _centralDados.map(c => `<tr data-busca="${(c.num + ' ' + (c.nome || '')).toLowerCase()}">
-    <td><code>${c.num}</code></td><td>${c.nome || '—'}</td><td>${c.grupos || '—'}${c.nGrupos > 3 ? ` <small class="muted">+${c.nGrupos - 3}</small>` : ''}</td>
+  if (!_centralDados.length) { tb.innerHTML = '<tr><td colspan="7" class="muted">Base vazia — usa a captura com TODOS os números.</td></tr>'; document.getElementById('centralCount').textContent = ''; return; }
+  const lista = _filtroDdd ? _centralDados.filter(c => c.dddRotulo === _filtroDdd) : _centralDados;
+  tb.innerHTML = lista.map(c => `<tr data-busca="${c.busca}">
+    <td><code>${c.num}</code></td><td>${c.nome || '—'}</td>
+    <td><span class="badge">🌍 ${c.dddRotulo || '—'}</span> <small class="muted">${c.pais || ''}</small></td>
+    <td>${(c.slots || []).map(s => `🧱${s}`).join(' ') || '—'}</td>
+    <td>${c.grupos || '—'}${c.nGrupos > 3 ? ` <small class="muted">+${c.nGrupos - 3}</small>` : ''}</td>
     <td>${c.ts ? new Date(c.ts).toLocaleDateString('pt-PT') : '—'}</td>
     <td><button class="btn btn-sm" onclick="centralRemover('${c.num}')">Remover</button></td></tr>`).join('');
-  document.getElementById('centralCount').textContent = _centralDados.length + ' contactos';
+  document.getElementById('centralCount').textContent = lista.length + ' contactos' + (_filtroDdd ? ' (filtro ' + _filtroDdd + ')' : '');
 }
 function centralFiltrar() {
   const q = (document.getElementById('centralBusca').value || '').toLowerCase();

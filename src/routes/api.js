@@ -1026,10 +1026,15 @@ module.exports = function (io) {
     const s = cb.stats();
     res.json({
       total: s.total, nGrupos: s.nGrupos, updatedAt: s.updatedAt,
-      grupos: s.porGrupo,
-      contactos: Object.entries(cb.carregar().contactos).map(([num, c]) => ({
-        num, nome: c.nome || '', grupos: Object.values(c.grupos || {}).slice(0, 3).join(', '), nGrupos: Object.keys(c.grupos || {}).length, ts: c.addedAt,
-      })).sort((a, b) => b.ts - a.ts),
+      grupos: s.porGrupo, ddds: s.ddds, slots: s.slots,
+      contactos: Object.entries(cb.carregar().contactos).map(([num, c]) => {
+        const d = c.ddd || cb.dddDe(num);
+        return {
+          num, nome: c.nome || '', grupos: Object.values(c.grupos || {}).slice(0, 3).join(', '), nGrupos: Object.keys(c.grupos || {}).length, ts: c.addedAt,
+          ddi: d.ddi, pais: d.pais, ddd: d.ddd, dddRotulo: `+${d.ddi} ${d.ddd}`.trim(),
+          slots: Object.keys(c.slots || {}),
+        };
+      }).sort((a, b) => b.ts - a.ts),
     });
   });
   router.post('/central/remover', requireApiOwner, (req, res) => {
@@ -1039,11 +1044,35 @@ module.exports = function (io) {
   router.post('/central/limpar', requireApiOwner, (req, res) => { const cb = centralBase(); cb.limpar(); res.json({ ok: true }); });
   router.get('/central/csv', requireApiOwner, (req, res) => {
     const cb = centralBase(); cb.carregar();
-    const linhas = ['numero,nome,grupos'];
-    for (const [num, c] of Object.entries(cb.carregar().contactos)) linhas.push(`${num},"${(c.nome || '').replace(/"/g, "'")}","${Object.values(c.grupos || {}).join(' | ').replace(/"/g, "'")}"`);
+    const linhas = ['numero,ddi,pais,ddd,nome,slots,grupos'];
+    for (const [num, c] of Object.entries(cb.carregar().contactos)) {
+      const d = c.ddd || cb.dddDe(num);
+      const slotsStr = Object.keys(c.slots || {}).join('|');
+      linhas.push(`${num},${d.ddi},${d.pais},${d.ddd},"${(c.nome || '').replace(/"/g, "'")}","${slotsStr}","${Object.values(c.grupos || {}).join(' | ').replace(/"/g, "'")}"`);
+    }
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename="central-contactos.csv"');
     res.send(linhas.join('\n'));
+  });
+
+  // ═══ 🕸️ Central v12.9.23: DDDs + captura com TODOS os slots ═══
+  router.get('/central/ddds', requireApiOwner, (req, res) => {
+    const s = centralBase().stats();
+    res.json({ ok: true, total: s.total, ddds: s.ddds, slots: s.slots });
+  });
+
+  router.get('/central/ddd/:filtro', requireApiOwner, (req, res) => {
+    const cb = centralBase();
+    const lista = cb.contactosPorDdd(decodeURIComponent(req.params.filtro));
+    res.json({ ok: true, filtro: req.params.filtro, total: lista.length, contactos: lista });
+  });
+
+  router.post('/central/capturar-slots', requireApiOwner, async (req, res) => {
+    try {
+      const sc = require('../bot/sessionCenter');
+      const r = await sc.capturarComTodosOsSlots();
+      res.json(r);
+    } catch (e) { res.json({ ok: false, erro: e.message }); }
   });
 
   // ═══ v7.34: C∆P API (dono) ═══
