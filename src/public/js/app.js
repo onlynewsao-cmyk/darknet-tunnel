@@ -144,3 +144,52 @@ window.formatSize = (bytes) => {
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
 };
+
+/* ════════════════════════════════════════════════════════════
+   DARK OS v4.0 — TOPBAR AO VIVO (estado do bot + relógio)
+   ════════════════════════════════════════════════════════════ */
+(function () {
+  const TXT = document.getElementById('topStatusText');
+  const DOT = document.getElementById('topStatusDot');
+  if (!TXT || !DOT) return;
+
+  const ROTULOS = {
+    connected: 'ONLINE', disconnected: 'OFFLINE', connecting: 'A LIGAR',
+    reconnecting: 'A RECONECTAR', pairing: 'EMPARCELHAR', restricted: 'RESTRITO',
+    loggedOut: 'SESSÃO EXPIRADA', qr: 'QR CODE',
+  };
+  const CORES = {
+    connected: 'status-connected', disconnected: 'status-disconnected',
+    connecting: 'status-connecting', reconnecting: 'status-connecting',
+    pairing: 'status-pairing', restricted: 'status-restricted',
+    loggedOut: 'status-disconnected', qr: 'status-connecting',
+  };
+
+  window.__darkSetBotStatus = function (status) {
+    TXT.textContent = ROTULOS[status] || String(status || '').toUpperCase();
+    DOT.className = 'status-dot ' + (CORES[status] || '');
+  };
+
+  // estado inicial
+  fetch('/api/bot/status', { cache: 'no-store' })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((d) => { if (d && d.status) window.__darkSetBotStatus(d.status); })
+    .catch(() => {});
+
+  // ao vivo via socket (o app.js global já criou window.darkBotSocket)
+  const sock = window.darkBotSocket;
+  if (sock && typeof sock.on === 'function') {
+    sock.on('bot:status', (d) => { if (d && d.status) window.__darkSetBotStatus(d.status); });
+  }
+
+  // relógio HH:MM
+  const CLK = document.getElementById('topClock');
+  if (CLK) {
+    const tic = () => {
+      const d = new Date();
+      CLK.textContent = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+    };
+    tic();
+    setInterval(tic, 15000);
+  }
+})();

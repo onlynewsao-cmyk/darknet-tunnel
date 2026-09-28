@@ -5,37 +5,73 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title><%= siteMeta?.title || bot.name %></title>
   <meta name="description" content="<%= siteMeta?.description || 'DARK BOT - Bot WhatsApp profissional' %>">
+  <meta name="theme-color" content="#05070d">
   <link rel="stylesheet" href="/css/style.css">
   <style>
-    body { background:#0a0a0a; color:#e5e5e5; font-family:'Segoe UI',sans-serif; margin:0; }
-    .hero { min-height:100vh; display:flex; align-items:center; justify-content:center; flex-direction:column; text-align:center; padding:2rem; }
-    .hero h1 { font-size:3.5rem; color:#8B5CF6; margin:0 0 1rem; letter-spacing:-1px; }
-    .hero p { font-size:1.2rem; color:#aaa; max-width:500px; margin:0 auto 2rem; }
-    .btn-hero { display:inline-block; padding:.85rem 2rem; background:#8B5CF6; color:#fff; border-radius:8px; text-decoration:none; font-weight:600; font-size:1rem; transition:.2s; }
-    .btn-hero:hover { background:#7C3AED; transform:translateY(-2px); }
-    .tag { display:inline-block; background:#1a1a2e; border:1px solid #8B5CF6; color:#8B5CF6; padding:.3rem .8rem; border-radius:20px; font-size:.8rem; margin:.25rem; }
-    .features { display:flex; gap:1.5rem; flex-wrap:wrap; justify-content:center; margin:3rem 0; }
-    .feat { background:#111; border:1px solid #222; border-radius:12px; padding:1.5rem; max-width:200px; text-align:center; }
-    .feat .icon { font-size:2rem; margin-bottom:.5rem; }
-    .feat h3 { margin:0 0 .5rem; font-size:.95rem; color:#e5e5e5; }
-    .feat p { margin:0; font-size:.8rem; color:#777; }
+    body { margin:0; }
+    .land {
+      min-height: 100vh;
+      display: flex; align-items: center; justify-content: center;
+      flex-direction: column; text-align: center; padding: 2.5rem 1.2rem;
+      position: relative; overflow: hidden;
+    }
+    .land-ico {
+      width: 84px; height: 84px; border-radius: 24px; overflow: hidden;
+      border: 1px solid rgba(139,92,246,.45); box-shadow: 0 8px 32px -8px rgba(139,92,246,.55);
+      margin-bottom: 1.4rem;
+    }
+    .land-ico img { width: 100%; height: 100%; object-fit: cover; }
+    .land h1 {
+      font-family: 'Sora', sans-serif;
+      font-size: clamp(2.4rem, 8vw, 4rem);
+      margin: 0 0 1rem; letter-spacing: -0.03em; line-height: 1.05;
+      background: linear-gradient(135deg, #e7ecf5 30%, #a78bfa 70%, #22d3ee);
+      -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .land > .land-sub { font-size: 1.05rem; color: #94a0b8; max-width: 520px; margin: 0 auto 2rem; line-height: 1.6; }
+    .btn-hero {
+      display: inline-block; padding: .95rem 2.4rem;
+      background: linear-gradient(135deg, #8b5cf6, #22d3ee);
+      color: #fff; border-radius: 14px; text-decoration: none; font-weight: 700;
+      font-size: 1.02rem; transition: .25s; box-shadow: 0 12px 40px -10px rgba(139,92,246,.6);
+      letter-spacing: .01em;
+    }
+    .btn-hero:hover { transform: translateY(-3px); box-shadow: 0 18px 52px -10px rgba(34,211,238,.5); color: #fff; }
+    .land .tag {
+      display: inline-block; padding: .35rem .95rem; border-radius: 99px;
+      font-size: .78rem; font-weight: 600; margin: .28rem;
+      background: rgba(139,92,246,.08); border: 1px solid rgba(139,92,246,.3); color: #c4b5fd;
+    }
+    .land .features { display: flex; gap: 1rem; flex-wrap: wrap; justify-content: center; margin: 3rem 0 0; }
+    .land .feat {
+      background: rgba(15,20,36,.75); border: 1px solid rgba(148,163,196,.16);
+      border-radius: 18px; padding: 1.4rem 1.6rem; max-width: 210px; text-align: center;
+      backdrop-filter: blur(10px); transition: .25s; box-shadow: 0 12px 40px -16px rgba(0,0,0,.6);
+    }
+    .land .feat:hover { transform: translateY(-4px); border-color: rgba(139,92,246,.5); }
+    .land .feat .icon { font-size: 1.9rem; margin-bottom: .5rem; }
+    .land .feat h3 { margin: 0 0 .4rem; font-size: .95rem; color: #e7ecf5; font-family: 'Sora', sans-serif; }
+    .land .feat p { margin: 0; font-size: .8rem; color: #94a0b8; }
+    .land footer { margin-top: 3rem; color: #64708a; font-size: .82rem; }
+    .land footer strong { color: #a78bfa; }
   </style>
 </head>
 <body>
-  <div class="hero">
-    <div style="font-size:4rem;margin-bottom:1rem">🕸️</div>
+  <div class="land">
+    <div class="land-ico"><img src="/img/logo.jpg" alt="Logo"></div>
     <h1><%= bot.name %></h1>
-    <p>Bot WhatsApp profissional com Dashboard moderno, IA com memória, downloads, stickers e muito mais.</p>
+    <p class="land-sub">Bot WhatsApp profissional com Dashboard DARK OS, IA com memória, failover de 4 sessões, downloads, stickers e muito mais.</p>
     <a href="/login" class="btn-hero">Entrar no Dashboard →</a>
 
-    <div style="margin-top:2rem">
+    <div style="margin-top:2.2rem">
       <span class="tag">🧠 IA com Memória</span>
+      <span class="tag">🕸️ Failover 4 Slots</span>
       <span class="tag">📥 Downloads YT</span>
       <span class="tag">🎨 Stickers</span>
       <span class="tag">🎮 Jogos</span>
       <span class="tag">💰 Dark Bank</span>
       <span class="tag">🛡️ Anti-spam</span>
-      <span class="tag">👥 Grupos</span>
+      <span class="tag">🗂️ Central de Contas</span>
       <span class="tag">🔓 VPN Decrypt</span>
     </div>
 
@@ -46,7 +82,7 @@
       <div class="feat"><div class="icon">👑</div><h3>Completo</h3><p>271+ comandos</p></div>
     </div>
 
-    <p style="color:#555;font-size:.85rem">Criado por <strong style="color:#8B5CF6"><%= owner.name %></strong> · Dark Net Engine 🕸️</p>
+    <footer>Criado por <strong><%= owner.name %></strong> · Dark Net Engine 🕸️</footer>
   </div>
 </body>
 </html>

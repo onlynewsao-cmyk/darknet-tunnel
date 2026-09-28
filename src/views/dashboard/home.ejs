@@ -3,131 +3,155 @@
   <%- include('../partials/sidebar') %>
   <main class="main">
 
-    <header class="page-header">
-      <div>
-        <h1>📊 Dashboard</h1>
-        <p class="muted">Bem-vindo, <strong><%= user.name || user.username %></strong> · <%= new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' }) %></p>
+    <!-- ═══ HERO — CENTRO DE COMANDO ═══ -->
+    <section class="hero fade-in">
+      <div class="hero-main">
+        <div class="hero-kicker">Dark OS · Centro de Comando</div>
+        <div class="hero-title">Bem-vindo, <%= user.name || user.username %> 👑</div>
+        <div class="hero-sub"><%= new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' }) %> · o bot responde pelo número <strong>+<%= bot.number %></strong></div>
       </div>
-      <div class="bot-status" id="botStatusBadge">
-        <span class="status-dot status-<%= stats.botStatus %>"></span>
-        <span id="botStatusText"><%= stats.botStatus %></span>
-      </div>
-    </header>
-
-    <!-- STATS CARDS -->
-    <section class="stats-grid">
-      <div class="stat-card">
-        <div class="stat-icon"><img src="/img/logo.jpg" alt="" style="width:34px;height:34px;border-radius:50%;object-fit:cover" /></div>
-        <div class="stat-info">
-          <div class="stat-label">Status Bot</div>
-          <div class="stat-value" id="statBotStatus" style="font-size:1rem;margin-top:.3rem">
-            <span class="chip chip-<%= stats.botStatus === 'connected' ? 'success' : stats.botStatus === 'disconnected' ? 'danger' : 'info' %>">
-              <%= stats.botStatus %>
-            </span>
-          </div>
+      <div class="hero-metrics">
+        <div class="hero-metric">
+          <div class="v"><span class="chip chip-<%= stats.botStatus === 'connected' ? 'success' : stats.botStatus === 'disconnected' ? 'danger' : 'info' %>" id="statBotStatus"><%= stats.botStatus %></span></div>
+          <div class="k">Estado</div>
         </div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-icon">👥</div>
-        <div class="stat-info">
-          <div class="stat-label">Usuários</div>
-          <div class="stat-value"><%= stats.totalUsers %></div>
+        <div class="hero-metric">
+          <div class="v"><%= stats.totalUsers %></div>
+          <div class="k">Usuários</div>
         </div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-icon">⭐</div>
-        <div class="stat-info">
-          <div class="stat-label">Premium</div>
-          <div class="stat-value"><%= stats.premiumUsers %></div>
+        <div class="hero-metric">
+          <div class="v"><%= stats.premiumUsers %></div>
+          <div class="k">Premium</div>
         </div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-icon">⚡</div>
-        <div class="stat-info">
-          <div class="stat-label">Comandos DB</div>
-          <div class="stat-value"><%= stats.totalCommands %></div>
+        <div class="hero-metric">
+          <div class="v"><%= stats.totalCommands %></div>
+          <div class="k">Comandos</div>
         </div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-icon">🖼️</div>
-        <div class="stat-info">
-          <div class="stat-label">Mídias</div>
-          <div class="stat-value"><%= stats.totalMedia %></div>
+        <div class="hero-metric">
+          <div class="v"><%= stats.totalMedia %></div>
+          <div class="k">Mídias</div>
         </div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-icon">💬</div>
-        <div class="stat-info">
-          <div class="stat-label">Mensagens</div>
-          <div class="stat-value" id="msgCount"><%= stats.messageCount || 0 %></div>
+        <div class="hero-metric">
+          <div class="v" id="msgCount"><%= stats.messageCount || 0 %></div>
+          <div class="k">Mensagens</div>
         </div>
       </div>
     </section>
 
-    <!-- AÇÕES RÁPIDAS -->
+    <!-- ═══ MÓDULOS — TODAS AS FUNCIONALIDADES DO BOT ═══ -->
+    <section class="card">
+      <h2>⚡ Módulos do Sistema</h2>
+      <% if (user.role === 'owner' || user.role === 'admin') { %>
+      <div class="quick-grid">
+        <a href="/dashboard/connect" class="quick-card">
+          <div class="quick-icon" style="color:var(--neon-cyan)">🔌</div>
+          <div><strong>Conectar Bot</strong><p>QR Code ou Pair Code</p></div>
+        </a>
+        <a href="/dashboard/sessoes" class="quick-card">
+          <div class="quick-icon" style="color:var(--neon-purple)">🕸️</div>
+          <div><strong>Sessões · Failover</strong><p>4 slots, troca equilibrada</p></div>
+        </a>
+        <a href="/dashboard/central" class="quick-card">
+          <div class="quick-icon" style="color:var(--neon-green)">🗂️</div>
+          <div><strong>Central de Contas</strong><p>Base de contactos, DDD, captura</p></div>
+        </a>
+        <a href="/dashboard/cap" class="quick-card">
+          <div class="quick-icon" style="color:var(--neon-pink)">📸</div>
+          <div><strong>CAP · Stories</strong><p>Baixar stories do Instagram</p></div>
+        </a>
+        <a href="/dashboard/igapi" class="quick-card">
+          <div class="quick-icon" style="color:var(--neon-yellow)">🛠️</div>
+          <div><strong>IG APIs & Chaves</strong><p>Endpoints + chaves dk_ externas</p></div>
+        </a>
+        <a href="/dashboard/commands" class="quick-card">
+          <div class="quick-icon" style="color:var(--neon-purple)">⚡</div>
+          <div><strong>Comandos</strong><p>Criar, editar, deletar</p></div>
+        </a>
+        <a href="/dashboard/control" class="quick-card">
+          <div class="quick-icon" style="color:var(--neon-cyan)">🎛️</div>
+          <div><strong>Painel de Controle</strong><p>Ligar/desligar módulos</p></div>
+        </a>
+        <a href="/dashboard/ia" class="quick-card">
+          <div class="quick-icon" style="color:var(--neon-pink)">🤖</div>
+          <div><strong>Aura · IA</strong><p>Inteligência do bot</p></div>
+        </a>
+        <a href="/dashboard/groups" class="quick-card">
+          <div class="quick-icon" style="color:var(--neon-green)">👥</div>
+          <div><strong>Grupos</strong><p>Gestão de grupos</p></div>
+        </a>
+        <a href="/dashboard/broadcast" class="quick-card">
+          <div class="quick-icon" style="color:var(--neon-yellow)">📢</div>
+          <div><strong>Broadcast</strong><p>Enviar para todos os grupos</p></div>
+        </a>
+        <a href="/dashboard/internet" class="quick-card">
+          <div class="quick-icon" style="color:var(--neon-cyan)">📡</div>
+          <div><strong>Downloads & Buscas</strong><p>Atualizações do sistema</p></div>
+        </a>
+        <a href="/dashboard/decrypter" class="quick-card">
+          <div class="quick-icon" style="color:var(--neon-orange)">🔓</div>
+          <div><strong>VPN Decrypter</strong><p>Decodificar configs VPN</p></div>
+        </a>
+        <a href="/dashboard/media" class="quick-card">
+          <div class="quick-icon" style="color:var(--neon-pink)">🖼️</div>
+          <div><strong>Galeria</strong><p>Upload de fotos/vídeos/GIFs</p></div>
+        </a>
+        <a href="/dashboard/nuvem" class="quick-card">
+          <div class="quick-icon" style="color:var(--neon-cyan)">☁️</div>
+          <div><strong>Nuvem do Bot</strong><p>Ficheiros guardados</p></div>
+        </a>
+        <a href="/dashboard/console" class="quick-card">
+          <div class="quick-icon" style="color:var(--neon-green)">📜</div>
+          <div><strong>Console ao Vivo</strong><p>Logs em tempo real</p></div>
+        </a>
+        <a href="/dashboard/backup" class="quick-card">
+          <div class="quick-icon" style="color:var(--neon-yellow)">💾</div>
+          <div><strong>Backup</strong><p>Exportar/importar dados</p></div>
+        </a>
+      </div>
+      <% } else { %>
+      <div class="quick-grid">
+        <a href="/dashboard/decrypter" class="quick-card">
+          <div class="quick-icon" style="color:var(--neon-cyan)">🔓</div>
+          <div><strong>VPN Decrypter</strong><p>Decodificar configs VPN</p></div>
+        </a>
+        <a href="https://wa.me/<%= bot.number %>" target="_blank" class="quick-card">
+          <div class="quick-icon" style="color:var(--neon-green)">📱</div>
+          <div><strong>Falar com Bot</strong><p>+<%= bot.number %></p></div>
+        </a>
+        <a href="https://wa.me/<%= owner.number %>" target="_blank" class="quick-card">
+          <div class="quick-icon" style="color:var(--neon-yellow)">👑</div>
+          <div><strong>Suporte / Dono</strong><p><%= owner.name %></p></div>
+        </a>
+        <a href="/dashboard/subscribe" class="quick-card">
+          <div class="quick-icon" style="color:var(--neon-purple)">⭐</div>
+          <div><strong>Assinar Premium</strong><p>Acesso completo ao bot</p></div>
+        </a>
+      </div>
+      <% } %>
+    </section>
+
+    <!-- ═══ AÇÕES RÁPIDAS (dono) ═══ -->
+    <% if (user.role === 'owner') { %>
     <section class="card">
       <h2>🚀 Ações Rápidas</h2>
-      <div class="quick-grid">
-        <% if (user.role === 'owner') { %>
-          <a href="#" onclick="ligarMe(event,false)" class="quick-card" id="btnLigarMe">
-            <div class="quick-icon" style="color:#00e676">📞</div>
-            <div><strong>Ligar-me agora</strong><p id="ligarMeTxt">A AurΔ liga para ti</p></div>
-          </a>
-          <a href="#" onclick="ligarMe(event,true)" class="quick-card" id="btnVideoMe">
-            <div class="quick-icon" style="color:var(--neon-purple)">📹</div>
-            <div><strong>Videochamada</strong><p id="videoMeTxt">Chamada de vídeo</p></div>
-          </a>
-          <a href="/dashboard/connect" class="quick-card">
-            <div class="quick-icon" style="color:var(--neon-cyan)">🔌</div>
-            <div><strong>Conectar Bot</strong><p>QR Code ou Pair Code</p></div>
-          </a>
-          <a href="/dashboard/commands" class="quick-card">
-            <div class="quick-icon" style="color:var(--neon-purple)">⚡</div>
-            <div><strong>Comandos</strong><p>Criar, editar, deletar</p></div>
-          </a>
-          <a href="/dashboard/media" class="quick-card">
-            <div class="quick-icon" style="color:var(--neon-pink)">🖼️</div>
-            <div><strong>Galeria</strong><p>Upload de fotos/vídeos/GIFs</p></div>
-          </a>
-          <a href="/dashboard/users" class="quick-card">
-            <div class="quick-icon" style="color:var(--neon-green)">👥</div>
-            <div><strong>Usuários</strong><p>Free / Premium / Bloqueios</p></div>
-          </a>
-          <a href="/dashboard/broadcast" class="quick-card">
-            <div class="quick-icon" style="color:var(--neon-yellow)">📢</div>
-            <div><strong>Broadcast</strong><p>Enviar para todos os grupos</p></div>
-          </a>
-          <a href="/dashboard/decrypter" class="quick-card">
-            <div class="quick-icon" style="color:var(--neon-orange)">🔓</div>
-            <div><strong>VPN Decrypter</strong><p>Decodificar configs VPN</p></div>
-          </a>
-        <% } else { %>
-          <a href="https://wa.me/<%= bot.number %>" target="_blank" class="quick-card">
-            <div class="quick-icon" style="color:var(--neon-green)">📱</div>
-            <div><strong>Falar com Bot</strong><p>+<%= bot.number %></p></div>
-          </a>
-          <a href="https://wa.me/<%= owner.number %>" target="_blank" class="quick-card">
-            <div class="quick-icon" style="color:var(--neon-yellow)">👑</div>
-            <div><strong>Suporte / Dono</strong><p><%= owner.name %></p></div>
-          </a>
-          <a href="/dashboard/decrypter" class="quick-card">
-            <div class="quick-icon" style="color:var(--neon-cyan)">🔓</div>
-            <div><strong>VPN Decrypter</strong><p>Decodificar configs VPN</p></div>
-          </a>
-          <a href="/dashboard/subscribe" class="quick-card">
-            <div class="quick-icon" style="color:var(--neon-purple)">⭐</div>
-            <div><strong>Assinar Premium</strong><p>Acesso completo ao bot</p></div>
-          </a>
-        <% } %>
+      <div class="button-row">
+        <a href="#" onclick="ligarMe(event,false)" class="btn btn-success" id="btnLigarMe">📞 Ligar-me agora</a>
+        <a href="#" onclick="ligarMe(event,true)" class="btn btn-primary" id="btnVideoMe">📹 Videochamada</a>
+        <a href="/dashboard/sessoes" class="btn btn-ghost">🔑 Gerar Pair Code</a>
+        <a href="/dashboard/central" class="btn btn-ghost">🕸️ Central de Contas</a>
+        <a href="/dashboard/broadcast" class="btn btn-ghost">📢 Broadcast</a>
       </div>
+      <p class="muted small" style="margin-top:.7rem; margin-bottom:0">
+        <span id="ligarMeTxt">Ligação normal: clica e a Aura liga para ti.</span><br>
+        <span id="videoMeTxt">Vídeo: clica e a Aura faz a chamada de vídeo.</span>
+      </p>
     </section>
 
     <!-- CONSOLE LIVE (só dono) -->
-    <% if (user.role === 'owner') { %>
     <section class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
         <h2 style="margin-bottom:0">📜 Atividade em Tempo Real</h2>
-        <button class="btn btn-sm btn-ghost" onclick="clearConsole()">🗑️ Limpar</button>
+        <button class="btn btn-sm btn-ghost" onclick="clearConsole()">Limpar</button>
       </div>
       <div class="console" id="liveConsole">
         <div class="console-line log-info">
