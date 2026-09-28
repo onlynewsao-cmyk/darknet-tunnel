@@ -509,25 +509,114 @@ async function _varrerPresos() {
   return limpos;
 }
 
+// v12.9.30 — A ÚLTIMA PEÇA DO CICLO DE VIDA (a ciência que o Connect SEMPRE teve):
+// quando o telefone aceita o código, o servidor FECHA a stream com 515
+// (restartRequired) À ESPERA que o bot reabra o socket com os credenciais
+// novos que já estão registados no MongoDB — é o ciclo normal de um novo
+// aparelho. O motor principal reconstrói o socket nesse fecho ("Reconectando
+// em Xs…") e por isso o Connect FUNCIONA; a Central tratava esse MESMO fecho
+// como falha, matava o socket e APAGAVA os creds acabados de registar →
+// o telefone ficava sem par: "Não foi possível associar o dispositivo".
+function _esperarPosPair(sock, timeoutMs, log) {
+  return new Promise((resolve) => {
+    let feito = false;
+    const fim = (r) => { if (!feito) { feito = true; try { sock?.ev?.off?.('connection.update', onU); } catch {} clearTimeout(t); resolve(r); } };
+    const onU = (u) => {
+      if (u?.connection === 'open') return fim({ tipo: 'aberta' });
+      if (u?.connection === 'close') {
+        const st = u?.lastDisconnect?.error?.output?.statusCode;
+        const msg = String(u?.lastDisconnect?.error?.message || '').slice(0, 60);
+        log(`connection close (status ${st}) ${msg}`);
+        if (st === 401 || st === 403) return fim({ tipo: 'morta', razao: `sessão rejeitada (status ${st})` });
+        if (st === 440) return fim({ tipo: 'morta', razao: 'outra instância assumiu a sessão (440)' });
+        // 515/409/428/408… = reabrir com os creds que já estão no Mongo
+        return fim({ tipo: 'reiniciar', st });
+      }
+    };
+    const t = setTimeout(() => fim({ tipo: 'morta', razao: 'tempo esgotado sem emparelhar' }), timeoutMs);
+    try { sock.ev.on('connection.update', onU); } catch (e) { fim({ tipo: 'morta', razao: String(e.message || e) }); }
+  });
+}
+
 async function _vigiarPair(slotN, sock, codigoFmt) {
-  const ok = await _esperaAbertura(sock, PAIR_TIMEOUT_MS);
+  const pref = _prefixo(slotN);
+  const log = (m) => { try { console.log(`[Central Pair slot${slotN}] ${m}`); } catch {} };
+  let vivo = sock;
+  let aberta = false;
+  let razaoFinal = 'não emparelou a tempo';
+  let codigoCorrente = codigoFmt;
+  let posPairVisto = false;   // já vimos o 515 pós-emparelhamento (pairing ACEITE)
+  let rePedidos = 0;
+  const inicio = Date.now();
+  const prazo = () => inicio + PAIR_TIMEOUT_MS + 45000;   // 90s do código + margem p/ reinícios
+
+  while (Date.now() < prazo() && !aberta) {
+    const resta = prazo() - Date.now();
+    const r = await _esperarPosPair(vivo, Math.min(resta, PAIR_TIMEOUT_MS), log);
+    if (r.tipo === 'aberta') { aberta = true; break; }
+    if (r.tipo === 'morta') { razaoFinal = r.razao; break; }
+    // ── REINICIAR: o mesmo que o motor principal faz no fecho ──
+    const posPair = r.st === 515 || r.st === 409;
+    if (posPair) { posPairVisto = true; log('📞 telefone ACEITOU o código — a reabrir com os creds novos (515), como o Connect faz…'); }
+    else log(`fecho transitório (status ${r.st}) — a reabrir…`);
+    try { vivo?.end?.(); } catch {} try { vivo?.ev?.removeAllListeners?.(); } catch {}
+    let novo = null;
+    try { ({ sock: novo } = await _novoSock(pref)); }
+    catch (e) { razaoFinal = 'reinício falhou: ' + String(e.message || e).slice(0, 50); break; }
+    vivo = novo;
+    // fecho ANTES do emparelhamento: o código morreu com a sessão de ruído —
+    // pedir OUTRO para o mesmo número (máx. 2x) e publicar na hora (as duas
+    // páginas mostram o novo via auto-refresh/estado)
+    const par = _pairingAtivos.get(slotN);
+    if (!posPair && par && par.ate > Date.now() && rePedidos < 2) {
+      rePedidos++;
+      try {
+        await _esperarWsAberto(vivo, 30000);
+        await _esperarProntoParaPair(vivo, 12000).catch(() => {});
+        const c2 = await Promise.race([
+          vivo.requestPairingCode(par.numero),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 30000)),
+        ]);
+        if (c2) {
+          codigoCorrente = String(c2).match(/.{1,4}/g)?.join('-') || c2;
+          _pairingAtivos.set(slotN, { codigo: codigoCorrente, numero: par.numero, ate: Date.now() + PAIR_TIMEOUT_MS });
+          try {
+            const { getBot } = require('./whatsapp');
+            const b = getBot();
+            if (b) { b.pairingCode = codigoCorrente; b.emit('bot:status', { status: b.status, pairingCode: codigoCorrente, phoneNumber: par.numero }); }
+          } catch {}
+          log(`🔑 novo código para o mesmo número: ${codigoCorrente}`);
+        }
+      } catch (e) { log('re-pedido do código falhou: ' + String(e.message || e).slice(0, 50)); }
+    } else if (!posPair && !par) {
+      razaoFinal = 'a sessão do código expirou'; break;
+    }
+  }
+
   const dN = await _slotDoc(slotN).catch(() => null);
-  try { sock?.end?.(); } catch {}
-  try { sock?.ev?.removeAllListeners?.(); } catch {}
+  const numeroFinal = String(vivo?.user?.id || '').replace(/@.*$/, '') || (_pairingAtivos.get(slotN)?.numero ?? '');
+  try { sock?.end?.(); } catch {} try { sock?.ev?.removeAllListeners?.(); } catch {}
+  try { vivo?.end?.(); } catch {} try { vivo?.ev?.removeAllListeners?.(); } catch {}
   _pairingAtivos.delete(slotN);
-  // limpa o código partilhado com o Connect (só se ainda for o deste pairing)
   try {
     const { getBot } = require('./whatsapp');
     const b = getBot();
-    if (b && b.pairingCode === codigoFmt) { b.pairingCode = null; b.emit('bot:status', { status: b.status, pairingCode: null }); }
+    if (b && b.pairingCode === codigoCorrente) { b.pairingCode = null; b.emit('bot:status', { status: b.status, pairingCode: null }); }
   } catch {}
   if (!dN) return;
-  if (ok) {
-    await _gravarSlot(slotN, { estado: 'guardada', ultimaViva: _agora(), motivo: '' });
+  if (aberta) {
+    log(`✅ EMPARELHADO (${numeroFinal || 'número?'}) — slot na fila e na rotação`);
+    await _gravarSlot(slotN, { estado: 'guardada', numero: numeroFinal, ultimaViva: _agora(), motivo: '', retryAte: null, tentativas: 0 });
     await promover(slotN, { apagarAtual: false });   // actual segue guardada (emit dentro)
   } else {
-    await _gravarSlot(slotN, { estado: 'vazia', numero: '', motivo: 'pairing expirou sem scan' });
-    for (const f of await _docsDe(_prefixo(slotN))) await Session.deleteOne({ fileName: f }).catch(() => {});
+    log('❌ ' + razaoFinal);
+    await _gravarSlot(slotN, { estado: 'vazia', numero: '', retryAte: null, tentativas: 0, motivo: 'pairing não concluído: ' + String(razaoFinal).slice(0, 60) });
+    // creds só se apagam se o pairing NUNCA foi aceite — se o 515 já chegou,
+    // os creds registados são OURO (o telefone já associou); a próxima
+    // tentativa faz fresh de qualquer forma.
+    if (!posPairVisto) {
+      try { for (const f of await _docsDe(pref)) await Session.deleteOne({ fileName: f }).catch(() => {}); } catch {}
+    }
   }
 }
 
