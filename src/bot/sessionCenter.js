@@ -36,22 +36,63 @@ let _fabrica = null;   // (prefixo) => Promise<{ sock, state }>
 
 function _definirFabrica(fn) { _fabrica = fn; }
 
+// v12.9.28 — VERSÃO DO WHATSAPP WEB: o pair code é SENSÍVEL à versão (a
+// mesma ciência v7.18 do Connect) — com versão velha o servidor FECHA a
+// ligação ao pedir o código ('Connection Closed').
+const WA_VERSION_FALLBACK = [2, 3000, 1043857760];
+let _waVerCache = null;
+let _waVerTs = 0;
+async function _versaoWA() {
+  if (_waVerCache && Date.now() - _waVerTs < 6 * 60 * 60 * 1000) return _waVerCache;
+  try {
+    const baileys = require('@systemzero/baileys');
+    const latest = await Promise.race([
+      baileys.fetchLatestBaileysVersion(),
+      new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 4000)),
+    ]);
+    if (latest && Array.isArray(latest.version) && latest.version.length === 3) {
+      _waVerCache = latest.version;
+      _waVerTs = Date.now();
+      return _waVerCache;
+    }
+  } catch {}
+  return WA_VERSION_FALLBACK;
+}
+
+// v12.9.28 — A RECEITA EXACTA DO CONNECT (o que FUNCIONA em produção):
+// browser Browsers.ubuntu('Chrome') como o Connect em modo pair + versão
+// recente. A marca custom ['DARK BOT','Chrome','2.0'] era a causa do
+// 'Connection Closed': o WhatsApp só aceita pedidos de pair code de
+// plataformas reais (Ubuntu/macOS/Windows) e fecha o socket às restantes.
 async function _fabricaPadrao(prefixo) {
   const baileys = require('@systemzero/baileys');
   const makeWASocket = baileys.default || baileys.makeWASocket || baileys;
+  const browser = baileys.Browsers?.ubuntu ? baileys.Browsers.ubuntu('Chrome') : ['Ubuntu', 'Chrome', '20.0.04'];
   const { useMongoAuthState } = require('./mongoAuthState');
   const { state, saveCreds } = await useMongoAuthState({ prefix: prefixo });
   const sock = makeWASocket({
     auth: state,
+    version: await _versaoWA(),
     printQRInTerminal: false,
     syncFullHistory: false,
     markOnlineOnConnect: false,
     generateHighQualityLinkPreview: false,
-    browser: ['DARK BOT', 'Chrome', '2.0'],
+    browser,
+    connectTimeoutMs: 45000,
+    keepAliveIntervalMs: 20000,
   });
   sock.ev.on('creds.update', saveCreds);
   return { sock, state };
 }
+
+// v12.9.28 — gravação ATÓMICA do doc do slot: o save() do mongoose leva
+// VersionError quando outra escrita toca no doc entretanto e falha EM
+// SILÊNCIO (o .catch(() => {}) engolia) — foi assim que o slot ficou
+// preso em 'A LIGAR' sem conectar. updateOne não tem versão: grava SEMPRE.
+async function _gravarSlot(slotN, campos) {
+  await SessionSlot.updateOne({ slot: slotN }, { $set: campos }).catch(() => {});
+}
+
 async function _novoSock(prefixo) { return (_fabrica || _fabricaPadrao)(prefixo); }
 
 // ── helpers ────────────────────────────────────────────────
@@ -365,28 +406,43 @@ async function rodarAgora() {
   return { ok: false, motivo: 'sem-suplente-viva' };
 }
 
-/** BOTÃO: adicionar sessão nova (pairing) — devolve o código na hora. */
+// v12.9.28: guard anti duplo-clique — UM pairing de cada vez (dois cliques
+// geravam dois sockets e dois códigos que se sobrescreviam)
+const _pairingEmCurso = new Set();
+
+/** BOTÃO: adicionar sessão nova (pairing) — devolve o código na hora.
+ *  v12.9.28: todas as escritas do slot são ATÓMICAS (_gravarSlot) e
+ *  QUALQUER falha devolve o slot a LIVRE com o número limpo — o slot
+ *  nunca mais fica 'A LIGAR' sem estar realmente a emparelhar. */
 async function novaSessao(numeroRaw) {
   const numero = String(numeroRaw || '').replace(/\D/g, '');
   if (numero.length < 8) return { ok: false, motivo: 'numero-invalido' };
+  if (_pairingEmCurso.size) return { ok: false, motivo: 'já está a gerar um código — espera pelo actual' };
   let slotLivre = null;
   for (let n = 2; n <= SLOTS; n++) {
     const d = await _slotDoc(n);
     if (d && d.estado === 'vazia') { slotLivre = n; break; }
   }
   if (!slotLivre) return { ok: false, motivo: 'sem-slot-livre' };
-  const pref = await _prefDe(slotLivre);
-  const dN = await _slotDoc(slotLivre);
-  dN.estado = 'ligacao'; dN.numero = numero; dN.motivo = '';
-  dN.retryAte = new Date(Date.now() + RETRY_MS);      // 2 dias de insistência
-  dN.tentativas = 0; await dN.save();
+  _pairingEmCurso.add(slotLivre);
+  try { return await _pairingInterno(slotLivre, numero); }
+  finally { _pairingEmCurso.delete(slotLivre); }
+}
 
+async function _pairingInterno(slotLivre, numero) {
+  const pref = await _prefDe(slotLivre);
+  // 'ligacao' é estado TRANSITÓRIO do pairing (90s) — sem retryAte:
+  // retry é para slots GUARDADAS comatose, não para pairing em curso
+  await _gravarSlot(slotLivre, { estado: 'ligacao', numero, motivo: '', tentativas: 0, retryAte: null });
   let sock;
   try { ({ sock } = await _novoSock(pref)); }
-  catch (e) { dN.estado = 'vazia'; await dN.save().catch(() => {}); return { ok: false, motivo: e.message }; }
+  catch (e) {
+    await _gravarSlot(slotLivre, { estado: 'vazia', numero: '', motivo: 'socket falhou: ' + String(e.message || e).slice(0, 60) });
+    return { ok: false, motivo: e.message };
+  }
   let codigo = '';
   try {
-    // v12.9.25: MESMAS esperas do Connect — é ISTO que faltava (o código não gerava)
+    // MESMAS esperas do Connect (v12.9.25): WS aberto + servidor pronto p/ pair
     await _esperarWsAberto(sock, 30000);
     await _esperarProntoParaPair(sock, 12000).catch(() => {}); // qr pode não vir no modo pair; seguimos como no Connect
     codigo = await Promise.race([
@@ -395,7 +451,11 @@ async function novaSessao(numeroRaw) {
     ]);
     if (!codigo) throw new Error('o servidor não devolveu código');
   } catch (e) {
-    dN.estado = 'vazia'; dN.numero = ''; dN.motivo = 'pairing falhou: ' + String(e.message || e).slice(0, 60); await dN.save().catch(() => {});
+    // v12.9.28: rollback ATÓMICO + creds do prefixo APAGADAS (a próxima
+    // tentativa começa limpa, sem lixo de registos a meio)
+    await _gravarSlot(slotLivre, { estado: 'vazia', numero: '', motivo: 'pairing falhou: ' + String(e.message || e).slice(0, 60) });
+    _pairingAtivos.delete(slotLivre);
+    try { for (const f of await _docsDe(_prefixo(slotLivre))) await Session.deleteOne({ fileName: f }).catch(() => {}); } catch {}
     try { sock?.end?.(); } catch {} try { sock?.ev?.removeAllListeners?.(); } catch {}
     return { ok: false, motivo: e.message };
   }
@@ -415,6 +475,24 @@ async function novaSessao(numeroRaw) {
   return { ok: true, slot: slotLivre, codigo: codigoFmt, timeoutMs: PAIR_TIMEOUT_MS };
 }
 
+// v12.9.28 — VARREDURA DE PRESOS: 'A LIGAR' só pode existir DURANTE o
+// pairing desta instância (máx. 90s). Restart a meio ou rollback que não
+// persistiu deixava o slot preso PARA SEMPRE com o número — limpo no
+// arranque (arrancarVigia) e a cada ronda do vigia.
+async function _varrerPresos() {
+  let limpos = 0;
+  for (let n = 2; n <= SLOTS; n++) {
+    const d = await _slotDoc(n).catch(() => null);
+    if (!d || d.estado !== 'ligacao') continue;
+    if (_pairingEmCurso.has(n)) continue;        // pairing EM CURSO (a pedir código) — não tocar
+    const par = _pairingAtivos.get(n);
+    if (par && par.ate > Date.now()) continue;   // código gerado, à espera da ligação — não tocar
+    await _gravarSlot(n, { estado: 'vazia', numero: '', retryAte: null, tentativas: 0, motivo: 'pairing não concluído (limpeza)' });
+    limpos++;
+  }
+  return limpos;
+}
+
 async function _vigiarPair(slotN, sock, codigoFmt) {
   const ok = await _esperaAbertura(sock, PAIR_TIMEOUT_MS);
   const dN = await _slotDoc(slotN).catch(() => null);
@@ -429,12 +507,10 @@ async function _vigiarPair(slotN, sock, codigoFmt) {
   } catch {}
   if (!dN) return;
   if (ok) {
-    dN.estado = 'guardada'; dN.ultimaViva = _agora(); dN.motivo = '';
-    await dN.save();
+    await _gravarSlot(slotN, { estado: 'guardada', ultimaViva: _agora(), motivo: '' });
     await promover(slotN, { apagarAtual: false });   // actual segue guardada (emit dentro)
   } else {
-    dN.estado = 'vazia'; dN.numero = ''; dN.motivo = 'pairing expirou sem scan';
-    await dN.save();
+    await _gravarSlot(slotN, { estado: 'vazia', numero: '', motivo: 'pairing expirou sem scan' });
     for (const f of await _docsDe(_prefixo(slotN))) await Session.deleteOne({ fileName: f }).catch(() => {});
   }
 }
@@ -476,6 +552,7 @@ async function _vigiarBotCaido() {
 
 async function _ronda() {
   _vigiarBotCaido().catch(() => {});
+  _varrerPresos().catch(() => {});   // v12.9.28: presos em 'A LIGAR' → LIVRE
   for (let n = 2; n <= SLOTS; n++) {
     const d = await _slotDoc(n).catch(() => null);
     if (!d || d.estado !== 'guardada') continue;
@@ -494,6 +571,7 @@ async function _ronda() {
 let _timer = null;
 function arrancarVigia(intervaloMs = 30 * 60 * 1000) {
   if (_timer) return;
+  _varrerPresos().catch(() => {});   // v12.9.28: limpar 'A LIGAR' preso no arranque
   _timer = setInterval(() => _ronda().catch(() => {}), intervaloMs);
   if (_timer.unref) _timer.unref();
 }
@@ -504,5 +582,5 @@ module.exports = {
   tentarFailover, rodarAgora, promover, novaSessao, remover, capturarComTodosOsSlots,
   arrancarVigia,
   _definirFabrica,
-  _debug: { _mapa, _slotDoc, _docsDe, _renomearTodos, _provar, _prefixo, RETRY_MS, PROBE_TIMEOUT_MS },
+  _debug: { _mapa, _slotDoc, _docsDe, _renomearTodos, _provar, _prefixo, RETRY_MS, PROBE_TIMEOUT_MS, _varrerPresos, _gravarSlot, _pairingEmCurso },
 };
