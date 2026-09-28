@@ -59,6 +59,13 @@ async function _novoSock(prefixo) { return (_fabrica || _fabricaPadrao)(prefixo)
 // sempre — os creds é que viajam entre prefixos na promoção; o doc sabe
 // sempre onde estão os seus (campo prefixo). Nunca se renumera nada.
 const _prefixo = (n) => (n === 1 ? '' : `slot${n}`);
+// v12.9.26: pair codes ACTIVOS por slot (a UI recupera o código mesmo após reload)
+const _pairingAtivos = new Map(); // slot -> { codigo, numero, ate }
+function codigoDePairing(slotN) {
+  const p = _pairingAtivos.get(slotN);
+  if (!p || p.ate < Date.now()) { _pairingAtivos.delete(slotN); return null; }
+  return p.codigo;
+}
 async function _prefDe(n) {
   const d = await _slotDoc(n).catch(() => null);
   return d?.prefixo != null ? d.prefixo : _prefixo(n);
@@ -103,6 +110,7 @@ async function estadoDetalhado() {
     ultimaProva: d.ultimaProva || null,
     retryAte: d.retryAte || null,
     emRetry: !!(d.retryAte && d.retryAte.getTime() > Date.now()),
+    codigo: d.estado === 'ligacao' ? codigoDePairing(d.slot) : null,
   }));
 }
 
@@ -395,6 +403,7 @@ async function novaSessao(numeroRaw) {
   // e publicado no estado do bot: a página Connect passa a mostrar O MESMO
   // código em tempo real (uma só verdade, zero códigos desencontrados).
   const codigoFmt = String(codigo || '').match(/.{1,4}/g)?.join('-') || codigo;
+  _pairingAtivos.set(slotLivre, { codigo: codigoFmt, numero, ate: Date.now() + PAIR_TIMEOUT_MS });
   try {
     const { getBot } = require('./whatsapp');
     const b = getBot();
@@ -411,6 +420,7 @@ async function _vigiarPair(slotN, sock, codigoFmt) {
   const dN = await _slotDoc(slotN).catch(() => null);
   try { sock?.end?.(); } catch {}
   try { sock?.ev?.removeAllListeners?.(); } catch {}
+  _pairingAtivos.delete(slotN);
   // limpa o código partilhado com o Connect (só se ainda for o deste pairing)
   try {
     const { getBot } = require('./whatsapp');

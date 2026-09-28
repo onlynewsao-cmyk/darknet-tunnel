@@ -85,11 +85,33 @@
     st.textContent = '⏳ a gerar código…';
     const r = await post('/dashboard/sessoes/adicionar', { numero });
     if (!r.ok) { st.textContent = '❌ ' + (r.motivo === 'sem-slot-livre' ? 'todos os slots ocupados — remove um primeiro' : r.motivo); return; }
-    st.textContent = '✅ slot ' + r.slot + ' — liga o número com o código abaixo';
-    document.getElementById('codigoBox').style.display = 'block';
-    document.getElementById('codigo').textContent = r.codigo;
-    setTimeout(recarregar, 95000);
+    mostrarCodigo(r.slot, r.codigo);
   });
+
+  // v12.9.26: código persistente na UI — mostra, conta o tempo e NUNCA é apagado por refresh
+  let _timerScan = null;
+  function mostrarCodigo(slot, codigo) {
+    document.getElementById('codigoBox').style.display = 'block';
+    document.getElementById('codigo').textContent = codigo;
+    const st = document.getElementById('addStatus');
+    st.textContent = '✅ slot ' + slot + ' — liga o número com o código acima';
+    let falta = 90;
+    clearInterval(_timerScan);
+    _timerScan = setInterval(() => {
+      falta--;
+      const el = document.getElementById('codigoTimer');
+      if (el) el.textContent = `à espera do scan… (${falta}s)`;
+      if (falta <= 0) { clearInterval(_timerScan); if (el) el.textContent = '⏳ expirou — se não emparelhou, gera um código novo.'; }
+    }, 1000);
+  }
+  // ao carregar a página: se algum slot está EM LIGAÇÃO com código activo, mostra-o outra vez
+  (async () => {
+    try {
+      const d = await fetch('/dashboard/sessoes/estado.json').then(x => x.json());
+      const emLig = (d.slots || []).find(s => s.estado === 'ligacao' && s.codigo);
+      if (emLig) mostrarCodigo(emLig.slot, emLig.codigo);
+    } catch {}
+  })();
 
   async function remover(slot) {
     if (!confirm('Remover a sessão do slot ' + slot + '?')) return;
@@ -137,6 +159,11 @@
       if (!d.ok) return;
       const grid = document.getElementById('slotsGrid');
       if (grid && Array.isArray(d.slots) && d.slots.length) grid.innerHTML = d.slots.map(cartaoSlot).join('');
+      // v12.9.26: se um par code está visível, NADA de reload (apagaria o código!)
+      if (document.getElementById('codigoBox').style.display === 'block') {
+        // só actualiza a grelha por baixo
+        return;
+      }
       const st = document.querySelector('.card p.muted strong');
       const botSt = d.bot?.status || '—';
       if (st && st.textContent !== botSt) { recarregar(); return; } // mudou estado do bot: reload completo
