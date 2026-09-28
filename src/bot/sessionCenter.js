@@ -68,10 +68,15 @@ async function _fabricaPadrao(prefixo) {
   const baileys = require('@systemzero/baileys');
   const makeWASocket = baileys.default || baileys.makeWASocket || baileys;
   const browser = baileys.Browsers?.ubuntu ? baileys.Browsers.ubuntu('Chrome') : ['Ubuntu', 'Chrome', '20.0.04'];
+  const logger = require('pino')({ level: 'silent' });
   const { useMongoAuthState } = require('./mongoAuthState');
   const { state, saveCreds } = await useMongoAuthState({ prefix: prefixo });
   const sock = makeWASocket({
-    auth: state,
+    // v12.9.29: MESMO auth do Connect — keystore cacheado (o Connect sempre
+    // usou makeCacheableSignalKeyStore; evita leituras/escritas de pre-keys
+    // desalinhadas com o servidor durante o emparelhamento)
+    auth: { creds: state.creds, keys: baileys.makeCacheableSignalKeyStore
+      ? baileys.makeCacheableSignalKeyStore(state.keys, logger) : state.keys },
     version: await _versaoWA(),
     printQRInTerminal: false,
     syncFullHistory: false,
@@ -430,14 +435,24 @@ async function novaSessao(numeroRaw) {
 }
 
 async function _pairingInterno(slotLivre, numero) {
-  const pref = await _prefDe(slotLivre);
+  // v12.9.29 — FRESH TRUE DA CENTRAL (a causa do 'não foi possível conectar'):
+  // o Connect em modo pair faz SEMPRE fresh (apaga TODA a sessão antes de
+  // emparelhar). A Central criava o socket sobre os creds VELHOS do slot —
+  // chaves meio-escritas das tentativas antigas falhadas — e o WhatsApp
+  // REJEITAVA essa identidade quando o telefone digitava o código.
+  const dLixo = await _slotDoc(slotLivre).catch(() => null);
+  const prefixes = [...new Set([dLixo?.prefixo, _prefixo(slotLivre)].filter((p) => p != null))];
+  for (const p of prefixes) {
+    try { for (const f of await _docsDe(p)) await Session.deleteOne({ fileName: f }).catch(() => {}); } catch {}
+  }
+  if (dLixo && dLixo.prefixo !== _prefixo(slotLivre)) await _gravarSlot(slotLivre, { prefixo: _prefixo(slotLivre) });
   // 'ligacao' é estado TRANSITÓRIO do pairing (90s) — sem retryAte:
   // retry é para slots GUARDADAS comatose, não para pairing em curso
   await _gravarSlot(slotLivre, { estado: 'ligacao', numero, motivo: '', tentativas: 0, retryAte: null });
   let sock;
-  try { ({ sock } = await _novoSock(pref)); }
+  try { ({ sock } = await _novoSock(_prefixo(slotLivre))); }
   catch (e) {
-    await _gravarSlot(slotLivre, { estado: 'vazia', numero: '', motivo: 'socket falhou: ' + String(e.message || e).slice(0, 60) });
+    await _gravarSlot(slotLivre, { estado: 'vazia', numero: '', retryAte: null, tentativas: 0, prefixo: _prefixo(slotLivre), motivo: 'socket falhou: ' + String(e.message || e).slice(0, 60) });
     return { ok: false, motivo: e.message };
   }
   let codigo = '';
@@ -453,7 +468,7 @@ async function _pairingInterno(slotLivre, numero) {
   } catch (e) {
     // v12.9.28: rollback ATÓMICO + creds do prefixo APAGADAS (a próxima
     // tentativa começa limpa, sem lixo de registos a meio)
-    await _gravarSlot(slotLivre, { estado: 'vazia', numero: '', motivo: 'pairing falhou: ' + String(e.message || e).slice(0, 60) });
+    await _gravarSlot(slotLivre, { estado: 'vazia', numero: '', retryAte: null, tentativas: 0, prefixo: _prefixo(slotLivre), motivo: 'pairing falhou: ' + String(e.message || e).slice(0, 60) });
     _pairingAtivos.delete(slotLivre);
     try { for (const f of await _docsDe(_prefixo(slotLivre))) await Session.deleteOne({ fileName: f }).catch(() => {}); } catch {}
     try { sock?.end?.(); } catch {} try { sock?.ev?.removeAllListeners?.(); } catch {}
@@ -487,6 +502,7 @@ async function _varrerPresos() {
     if (_pairingEmCurso.has(n)) continue;        // pairing EM CURSO (a pedir código) — não tocar
     const par = _pairingAtivos.get(n);
     if (par && par.ate > Date.now()) continue;   // código gerado, à espera da ligação — não tocar
+    try { for (const f of await _docsDe(_prefixo(n))) await Session.deleteOne({ fileName: f }).catch(() => {}); } catch {}
     await _gravarSlot(n, { estado: 'vazia', numero: '', retryAte: null, tentativas: 0, motivo: 'pairing não concluído (limpeza)' });
     limpos++;
   }
