@@ -1057,7 +1057,7 @@ module.exports = function (io) {
     const porPagina = Math.min(500, Math.max(10, Number(req.query.porPagina) || 100));
     let lista = [];
     for (const [num, c] of Object.entries(cb.carregar().contactos)) {
-      const d = c.ddd || cb.dddDe(num);
+      const d = (!c.ddd || c.ddd.pais === 'Desconhecido') ? cb.dddDe(num) : c.ddd; // v12.9.39: recalcula c/ tabela mundial
       if (pais && d.pais !== pais) continue;
       const rotulo = `+${d.ddi} ${d.ddd}`.trim();
       if (dddF && rotulo !== dddF) continue;
@@ -1078,7 +1078,7 @@ module.exports = function (io) {
     const cb = centralBase(); cb.carregar();
     const contagem = {};
     for (const [num, c] of Object.entries(cb.carregar().contactos)) {
-      const d = c.ddd || cb.dddDe(num);
+      const d = (!c.ddd || c.ddd.pais === 'Desconhecido') ? cb.dddDe(num) : c.ddd; // v12.9.39: recalcula c/ tabela mundial
       contagem[d.pais] = contagem[d.pais] || { pais: d.pais, ddi: d.ddi, total: 0 };
       contagem[d.pais].total++;
     }
@@ -1122,7 +1122,7 @@ module.exports = function (io) {
     res.write('numero,ddi,pais,ddd,nome,slots,grupos\n');
     let buffer = [];
     for (const [num, c] of Object.entries(cb.carregar().contactos)) {
-      const d = c.ddd || cb.dddDe(num);
+      const d = (!c.ddd || c.ddd.pais === 'Desconhecido') ? cb.dddDe(num) : c.ddd; // v12.9.39: recalcula c/ tabela mundial
       const slotsStr = Object.keys(c.slots || {}).join('|');
       buffer.push(`${num},${d.ddi},${d.pais},${d.ddd},"${(c.nome || '').replace(/"/g, "'")}","${slotsStr}","${Object.values(c.grupos || {}).join(' | ').replace(/"/g, "'")}"`);
       if (buffer.length >= 5000) { res.write(buffer.join('\n') + '\n'); buffer = []; }
