@@ -27,7 +27,8 @@ function guardar() {
   state.UpdatedAt = Date.now();
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(BASE_FILE, JSON.stringify(state, null, 1));
+    fs.writeFileSync(BASE_FILE + '.tmp', JSON.stringify(state));
+    fs.renameSync(BASE_FILE + '.tmp', BASE_FILE);   // v12.9.34: atómica — base grande nunca corrompida a meio
   } catch (e) { console.warn('[CENTRAL] save:', e.message); }
   clearTimeout(_t);
   _t = setTimeout(() => {
@@ -74,8 +75,10 @@ function dddDe(num) {
 }
 
 // meta do Baileys: { id, subject, participants: [{ id: '2449...@s.whatsapp.net' | 'xxx@lid', notify?, name? }] }
-function capturarGrupo(jid, meta, { fonte = '', slot = null } = {}) {
-  carregar();
+function capturarGrupo(jid, meta, { fonte = '', slot = null, persistir = true } = {}) {
+  // v12.9.34: persistir=false → memória só (captura em LOTES feita pelo chamador;
+  // com 1000+ grupos, carregar+guardar a base completa POR GRUPO era O(n²))
+  if (persistir) carregar();
   const nome = String(meta?.subject || '').slice(0, 120) || 'grupo';
   state.grupos[jid] = { nome, membros: (meta?.participants || []).length, nomeFonte: fonte, ts: Date.now() };
   let novos = 0, duplicados = 0;

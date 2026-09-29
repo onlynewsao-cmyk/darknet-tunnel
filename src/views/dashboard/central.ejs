@@ -97,19 +97,26 @@ function filtrarDdd(rot, btn) {
   centralRender();
 }
 async function capturarTodosSlots(btn) {
-  if (!confirm('Ligar cada número (EM USO + guardadas) e capturar os grupos de TODOS? Demora ~1-2 min.')) return;
+  if (!confirm('Ligar cada número (EM USO + guardadas) e capturar os grupos de TODOS? Com muitos grupos corre em segundo plano — podes fechar esta página.')) return;
   const st = document.getElementById('multiStatus');
-  btn.disabled = true; st.textContent = '⏳ A ligar os números e a capturar… não feches esta página.';
+  btn.disabled = true;
   try {
     const r = await fetch('/api/central/capturar-slots', { method: 'POST' }).then(x => x.json());
-    if (!r.ok && !r.resultados) { st.textContent = '❌ ' + (r.erro || 'falhou'); }
-    else {
-      const okN = (r.resultados || []).filter(x => !x.erro && x.grupos > 0).length;
-      st.textContent = `✅ ${okN} número(s) capturaram · base agora com ${r.totalContactos} contactos · ` + (r.resultados || []).map(x => `S${x.slot}:${x.erro ? '⚠️' : '+' + x.novos}`).join(' ');
-    }
-  } catch (e) { st.textContent = '❌ ' + e.message; }
-  btn.disabled = false;
-  centralRefresh();
+    if (!r.ok) { st.textContent = '❌ ' + (r.erro || r.motivo || 'falhou'); btn.disabled = false; return; }
+    st.textContent = '⏳ Captura em segundo plano…';
+    // v12.9.34: segue o progresso — suporta 1000+ grupos sem timeout de HTTP
+    const _iv = setInterval(async () => {
+      const p = await fetch('/api/central/captura-progresso').then(x => x.json()).catch(() => null);
+      if (!p) return;
+      if (p.emCurso) { st.textContent = '⏳ Slot ' + p.slot + ' · ' + p.feitos + '/' + p.total + ' grupos · +' + p.novos + ' contactos novos…'; return; }
+      clearInterval(_iv);
+      const rs = p.resultados || [];
+      const okN = rs.filter(x => !x.erro && x.grupos > 0).length;
+      st.textContent = '✅ ' + okN + ' número(s) capturaram · base com ' + p.totalContactos + ' contactos · ' + rs.map(x => 'S' + x.slot + ':' + (x.erro ? '⚠️' : '+' + x.novos)).join(' ');
+      btn.disabled = false;
+      centralRefresh();
+    }, 3000);
+  } catch (e) { st.textContent = '❌ ' + e.message; btn.disabled = false; }
 }
 function centralRender() {
   const tb = document.getElementById('centralTbody');

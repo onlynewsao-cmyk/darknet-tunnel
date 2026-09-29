@@ -1070,9 +1070,14 @@ module.exports = function (io) {
   router.post('/central/capturar-slots', requireApiOwner, async (req, res) => {
     try {
       const sc = require('../bot/sessionCenter');
-      const r = await sc.capturarComTodosOsSlots();
+      const r = await sc.capturarComTodosOsSlotsEmFundo();
       res.json(r);
     } catch (e) { res.json({ ok: false, erro: e.message }); }
+  });
+
+  // v12.9.34: progresso da captura em fundo (o dashboard consulta a cada 3s)
+  router.get('/central/captura-progresso', requireApiOwner, (req, res) => {
+    res.json(require('../bot/sessionCenter').capturaProgresso());
   });
 
   // ═══ v7.34: C∆P API (dono) ═══

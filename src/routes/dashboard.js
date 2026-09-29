@@ -56,7 +56,8 @@ router.get('/sessoes/estado.json', requireOwner, async (req, res) => {
 router.post('/sessoes/adicionar', requireOwner, async (req, res) => {
   const sc = require('../bot/sessionCenter');
   const numero = String(req.body?.numero || '').trim();
-  const r = await sc.novaSessao(numero).catch((e) => ({ ok: false, motivo: e.message }));
+  const slot = Number(req.body?.slot) || null;
+  const r = await sc.novaSessao(numero, slot).catch((e) => ({ ok: false, motivo: e.message }));
   res.json(r);
 });
 

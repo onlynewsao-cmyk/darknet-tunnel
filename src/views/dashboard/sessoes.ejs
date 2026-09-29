@@ -25,8 +25,18 @@
           <label>Número WhatsApp (com código do país)</label>
           <input type="text" id="inNumero" placeholder="244912345678" required />
         </div>
+        <div class="form-group" style="width:170px">
+          <label>Slot de destino</label>
+          <select id="inSlot">
+            <option value="">Automático</option>
+            <% slots.filter(s => s.slot > 1 && s.estado === 'vazia').forEach(s => { %>
+            <option value="<%= s.slot %>">SLOT <%= s.slot %></option>
+            <% }) %>
+          </select>
+        </div>
         <button type="submit" class="btn btn-primary">🔑 Gerar código de emparelhamento</button>
       </form>
+      <p class="muted" style="font-size:0.8rem;margin-top:0.5rem">🟦 A sessão fica <strong>GUARDADA no slot escolhido</strong> — não assume o bot sozinha; entra na fila e o failover usa-a se o número principal morrer.</p>
       <div id="codigoBox" style="display:none;margin-top:1rem;text-align:center">
         <p class="muted">Abre o WhatsApp no número novo → <em>Aparelhos ligados</em> → <em>Ligar com código</em> e introduz:</p>
         <p class="muted" style="font-size:0.8rem">🔗 Este é <strong>O MESMO par code</strong> da página <em>Connect</em> — aparece nas duas em tempo real.</p>
@@ -81,13 +91,14 @@
   document.getElementById('addForm').addEventListener('submit', async (ev) => {
     ev.preventDefault();
     const numero = document.getElementById('inNumero').value;
+    const slot = document.getElementById('inSlot')?.value || null;
     const st = document.getElementById('addStatus');
     const btn = document.querySelector('#addForm button[type="submit"]');
     if (btn) { btn.disabled = true; btn.textContent = '⏳ a ligar ao WhatsApp… (10-30s)'; }
     st.textContent = '⏳ a abrir a ligação e a pedir o código ao WhatsApp… não feches esta página.';
-    const r = await post('/dashboard/sessoes/adicionar', { numero });
+    const r = await post('/dashboard/sessoes/adicionar', { numero, slot });
     if (btn) { btn.disabled = false; btn.textContent = '🔑 Gerar código de emparelhamento'; }
-    if (!r.ok) { st.textContent = '❌ ' + (r.motivo === 'sem-slot-livre' ? 'todos os slots ocupados — remove um primeiro' : r.motivo); return; }
+    if (!r.ok) { st.textContent = '❌ ' + (r.motivo === 'sem-slot-livre' ? 'todos os slots ocupados — remove um primeiro' : r.motivo === 'slot-ocupado' ? 'esse slot já está ocupado — escolhe outro ou Automático' : r.motivo); return; }
     mostrarCodigo(r.slot, r.codigo);
   });
 

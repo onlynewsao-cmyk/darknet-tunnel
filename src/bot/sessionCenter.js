@@ -300,17 +300,14 @@ async function _filaEquilibrada() {
 async function tentarFailover() {
   for (const d of await _filaEquilibrada()) {
     const p = await _provar(d.prefixo != null ? d.prefixo : _prefixo(d.slot));
-    d.ultimaProva = _agora();
     if (p.ok) {
-      d.numero = d.numero || p.numero;
-      await d.save();
+      await _gravarSlot(d.slot, { ultimaProva: _agora(), numero: d.numero || p.numero, tentativas: 0, motivo: '' });
       const r = await promover(d.slot, { apagarAtual: true });
       if (r.ok) return { ok: true, promovida: d.slot, numero: r.numero };
     } else {
-      d.tentativas = (d.tentativas || 0) + 1;
       // 2 dias de insistência: dentro da janela segue comatosa, fora morre
-      if (d.retryAte && d.retryAte.getTime() < Date.now()) { d.estado = 'morta'; d.motivo = 'probe falhou após 2 dias'; }
-      await d.save();
+      const morta = !!(d.retryAte && d.retryAte.getTime() < Date.now());
+      await _gravarSlot(d.slot, { ultimaProva: _agora(), tentativas: (d.tentativas || 0) + 1, ...(morta ? { estado: 'morta', motivo: 'probe falhou após 2 dias' } : {}) });
     }
   }
   return { ok: false, motivo: 'sem-suplente' };
@@ -361,7 +358,9 @@ function _esperarProntoParaPair(sock, timeoutMs = 30000) {
  * Um contacto visto por números diferentes mantém-se único, mas fica
  * marcado com TODOS os slots que o viram (ex.slots).
  */
-async function capturarComTodosOsSlots({ pausaMs = [1500, 3000] } = {}) {
+const _captura = { emCurso: false, slot: '', feitos: 0, total: 0, novos: 0, iniciado: null, fim: null, resultados: null, totalContactos: 0 };
+function capturaProgresso() { return { ..._captura }; }
+async function capturarComTodosOsSlots({ pausaMs = [1500, 3000], pausaGrupoMs = [300, 550] } = {}) {
   const base = require('./centralBase'); base.carregar();
   const mapa = await _mapa();
   const resultados = [];
@@ -377,13 +376,24 @@ async function capturarComTodosOsSlots({ pausaMs = [1500, 3000] } = {}) {
       r.numero = String(sock?.user?.id || '').replace(/@.*$/, '') || r.numero;
       const chats = await sock.groupFetchAllParticipating().catch(() => ({}));
       const metas = Object.entries(chats || {});
+      _captura.slot = d.slot; _captura.feitos = 0; _captura.total = metas.length;
+      let feitos = 0;
       for (const [jid, meta] of metas) {
         try {
-          const rr = base.capturarGrupo(jid, meta, { slot: d.slot });
+          // v12.9.34: memória só — gravação em LOTES (gravar a base completa
+          // por grupo com 1000+ grupos = 2000 reescritas gigantes → O(n²))
+          const rr = base.capturarGrupo(jid, meta, { slot: d.slot, persistir: false });
           r.grupos++; r.novos += rr.novos; r.duplicados += rr.duplicados;
         } catch {}
-        await new Promise(x => setTimeout(x, 300 + Math.floor(Math.random() * 250))); // ritmo humano
+        feitos++;
+        if (feitos % 25 === 0) base.guardar();   // lote a cada 25 grupos
+        if (feitos % 10 === 0 || feitos === metas.length) {
+          _captura.feitos = feitos; _captura.novos = r.novos;
+          try { require('./whatsapp').getBot()?.emit('central:captura-progresso', capturaProgresso()); } catch {}
+        }
+        await new Promise(x => setTimeout(x, pausaGrupoMs[0] + Math.floor(Math.random() * (pausaGrupoMs[1] - pausaGrupoMs[0])))); // ritmo humano
       }
+      base.guardar();   // fecha o lote do slot
     } catch (e) { r.erro = String(e.message || e).slice(0, 80); }
     finally { try { sock?.end?.(); } catch {} try { sock?.ev?.removeAllListeners?.(); } catch {} }
     resultados.push(r);
@@ -397,12 +407,24 @@ async function capturarComTodosOsSlots({ pausaMs = [1500, 3000] } = {}) {
   return { ok: resultados.some(x => !x.erro && x.grupos > 0), totalContactos: s.total, ddds: s.ddds, slots: s.slots, resultados };
 }
 
+/** v12.9.34: captura em FUNDO — a API devolve já e o dashboard segue o
+ *  progresso (1000+ grupos demoram minutos; HTTP síncrono morria a meio). */
+async function capturarComTodosOsSlotsEmFundo() {
+  if (_captura.emCurso) return { ok: false, motivo: 'captura-ja-em-curso', progresso: capturaProgresso() };
+  _captura.emCurso = true; _captura.feitos = 0; _captura.total = 0; _captura.novos = 0;
+  _captura.resultados = null; _captura.iniciado = Date.now(); _captura.fim = null;
+  capturarComTodosOsSlots()
+    .then((r) => { _captura.resultados = r; _captura.totalContactos = r.totalContactos || 0; })
+    .catch(() => {})
+    .finally(() => { _captura.emCurso = false; _captura.fim = Date.now(); try { require('./whatsapp').getBot()?.emit('central:captura-progresso', capturaProgresso()); } catch {} });
+  return { ok: true, fundo: true, progresso: capturaProgresso() };
+}
+
 /** BOTÃO: rodar manualmente (equilibrado — a fila decide quem assume). */
 async function rodarAgora() {
   for (const d of await _filaEquilibrada()) {
     const p = await _provar(d.prefixo != null ? d.prefixo : _prefixo(d.slot));
-    d.ultimaProva = _agora();
-    await d.save();
+    await _gravarSlot(d.slot, { ultimaProva: _agora() });
     if (p.ok) {
       const r = await promover(d.slot, { apagarAtual: false });
       if (r.ok) return { ok: true, promovida: d.slot, numero: r.numero };
@@ -419,16 +441,26 @@ const _pairingEmCurso = new Set();
  *  v12.9.28: todas as escritas do slot são ATÓMICAS (_gravarSlot) e
  *  QUALQUER falha devolve o slot a LIVRE com o número limpo — o slot
  *  nunca mais fica 'A LIGAR' sem estar realmente a emparelhar. */
-async function novaSessao(numeroRaw) {
+async function novaSessao(numeroRaw, slotDesejado) {
   const numero = String(numeroRaw || '').replace(/\D/g, '');
   if (numero.length < 8) return { ok: false, motivo: 'numero-invalido' };
   if (_pairingEmCurso.size) return { ok: false, motivo: 'já está a gerar um código — espera pelo actual' };
   let slotLivre = null;
-  for (let n = 2; n <= SLOTS; n++) {
-    const d = await _slotDoc(n);
-    if (d && d.estado === 'vazia') { slotLivre = n; break; }
+  if (slotDesejado) {
+    // v12.9.34: o DONO ESCOLHE o slot — se estiver ocupado devolve o erro,
+    // em vez de escolher outro slot por trás do utilizador
+    const nD = Number(slotDesejado);
+    if (!Number.isInteger(nD) || nD < 2 || nD > SLOTS) return { ok: false, motivo: 'slot-invalido' };
+    const dD = await _slotDoc(nD);
+    if (!dD || dD.estado !== 'vazia') return { ok: false, motivo: 'slot-ocupado' };
+    slotLivre = nD;
+  } else {
+    for (let n = 2; n <= SLOTS; n++) {
+      const d = await _slotDoc(n);
+      if (d && d.estado === 'vazia') { slotLivre = n; break; }
+    }
   }
-  if (!slotLivre) return { ok: false, motivo: 'sem-slot-livre' };
+  if (!slotLivre) return { ok: false, motivo: slotDesejado ? 'slot-ocupado' : 'sem-slot-livre' };
   _pairingEmCurso.add(slotLivre);
   try { return await _pairingInterno(slotLivre, numero); }
   finally { _pairingEmCurso.delete(slotLivre); }
@@ -605,9 +637,12 @@ async function _vigiarPair(slotN, sock, codigoFmt) {
   } catch {}
   if (!dN) return;
   if (aberta) {
-    log(`✅ EMPARELHADO (${numeroFinal || 'número?'}) — slot na fila e na rotação`);
+    // v12.9.34: o número fica GUARDADO NO SEU SLOT (reserva) — NÃO assume o bot
+    // sozinho. Só assume via FAILOVER (o principal morreu → o bot procura na
+    // fila 2→3→4 a que estiver viva) ou pelo botão «Rodar agora».
+    log(`✅ EMPARELHADO (${numeroFinal || 'número?'}) — sessão GUARDADA no slot ${slotN} (reserva p/ failover)`);
     await _gravarSlot(slotN, { estado: 'guardada', numero: numeroFinal, ultimaViva: _agora(), motivo: '', retryAte: null, tentativas: 0 });
-    await promover(slotN, { apagarAtual: false });   // actual segue guardada (emit dentro)
+    try { eventos.emit('guardada', { slot: slotN, numero: numeroFinal }); } catch {}
   } else {
     log('❌ ' + razaoFinal);
     await _gravarSlot(slotN, { estado: 'vazia', numero: '', retryAte: null, tentativas: 0, motivo: 'pairing não concluído: ' + String(razaoFinal).slice(0, 60) });
@@ -662,15 +697,12 @@ async function _ronda() {
     const d = await _slotDoc(n).catch(() => null);
     if (!d || d.estado !== 'guardada') continue;
     const p = await _provar(_prefixo(n));
-    d.ultimaProva = _agora();
-    if (p.ok) { d.tentativas = 0; d.motivo = ''; }
-    else {
-      d.tentativas = (d.tentativas || 0) + 1;
-      if (d.retryAte && d.retryAte.getTime() < Date.now()) {
-        d.estado = 'morta'; d.motivo = `sem contacto por 2 dias (${d.tentativas}x)`;
-      }
+    if (p.ok) {
+      await _gravarSlot(n, { ultimaProva: _agora(), tentativas: 0, motivo: '' });
+    } else {
+      const morta = !!(d.retryAte && d.retryAte.getTime() < Date.now());
+      await _gravarSlot(n, { ultimaProva: _agora(), tentativas: (d.tentativas || 0) + 1, ...(morta ? { estado: 'morta', motivo: `sem contacto por 2 dias` } : {}) });
     }
-    await d.save().catch(() => {});
   }
 }
 let _timer = null;
@@ -684,7 +716,7 @@ function arrancarVigia(intervaloMs = 30 * 60 * 1000) {
 module.exports = {
   on: (...a) => eventos.on(...a),
   slotAtual, estadoDetalhado, registarSucesso, falhou,
-  tentarFailover, rodarAgora, promover, novaSessao, remover, capturarComTodosOsSlots,
+  tentarFailover, rodarAgora, promover, novaSessao, remover, capturarComTodosOsSlots, capturarComTodosOsSlotsEmFundo, capturaProgresso,
   arrancarVigia,
   _definirFabrica,
   _debug: { _mapa, _slotDoc, _docsDe, _renomearTodos, _provar, _prefixo, RETRY_MS, PROBE_TIMEOUT_MS, _varrerPresos, _gravarSlot, _pairingEmCurso },
