@@ -94,7 +94,9 @@ function capturarGrupo(jid, meta, { fonte = '', slot = null, persistir = true } 
       ex.grupos = ex.grupos || {};
       if (!ex.grupos[jid]) ex.grupos[jid] = nome;
       if (nomeP && !ex.nome) ex.nome = nomeP;
-      if (slot) ex.slots = ex.slots || {}; ex.slots[slot] = Date.now(); // v12.9.23: por qual NÚMERO foi visto
+      // v12.9.35 FIX: o `if` só guardava a 1ª instrução — ex.slots[slot]=… corria SEMPRE
+      // e rebentava em contacto repetido sem slot (era o crash silencioso do .capturar!)
+      if (slot) { ex.slots = ex.slots || {}; ex.slots[slot] = Date.now(); } // v12.9.23: por qual NÚMERO foi visto
       ex.ts = Date.now();
     } else {
       novos++;

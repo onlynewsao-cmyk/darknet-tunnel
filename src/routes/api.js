@@ -1080,6 +1080,28 @@ module.exports = function (io) {
     res.json(require('../bot/sessionCenter').capturaProgresso());
   });
 
+  // ═══ v12.9.35: GRUPOS DO BOT AO VIVO — leitura e captura individual/todos/comunidade ═══
+  const capViva = require('../bot/capturaViva');
+  router.get('/central/grupos-vivos', requireApiOwner, async (req, res) => {
+    try { res.json(await capViva.listarVivos()); }
+    catch (e) { res.json({ ok: false, motivo: e.message }); }
+  });
+  // captura 1 grupo (sync — 1 chamada, devolve já)
+  router.post('/central/capturar-vivo', requireApiOwner, async (req, res) => {
+    try { res.json(await capViva.capturarUm(String(req.body?.jid || ''))); }
+    catch (e) { res.json({ ok: false, motivo: e.message }); }
+  });
+  // captura em FUNDO: { comunidade: jid } (pai+filhos) ou { todos: true }
+  router.post('/central/capturar-vivo-fundo', requireApiOwner, async (req, res) => {
+    try {
+      const r = await capViva.capturarFundo(req.body || {});
+      res.json(r);
+    } catch (e) { res.json({ ok: false, motivo: e.message }); }
+  });
+  router.get('/central/captura-viva-progresso', requireApiOwner, (req, res) => {
+    res.json(capViva.progresso());
+  });
+
   // ═══ v7.34: C∆P API (dono) ═══
   const capE = () => { const c = require('../cap/capEngine'); c.load(); return c; };
   router.get('/cap/state', requireApiOwner, async (req, res) => {

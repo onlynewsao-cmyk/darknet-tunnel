@@ -9,6 +9,23 @@
       </div>
     </header>
 
+    <!-- ═══ v12.9.35: GRUPOS DO BOT AO VIVO — captura individual/comunidade/todos ═══ -->
+    <div class="card">
+      <h2>🎯 Grupos do bot <small class="muted">ao vivo · captura um a um, por comunidade ou tudo</small></h2>
+      <div class="button-row" style="margin-bottom:0.8rem">
+        <button class="btn btn-sm btn-secondary" onclick="vivosCarregar(this)">🔄 Carregar grupos</button>
+        <button class="btn btn-sm btn-primary" onclick="vivosCapturarTudo(this)">📥 Capturar TODOS</button>
+        <input type="text" id="vivosBusca" placeholder="buscar grupo…" style="flex:1;min-width:150px;padding:0.45rem 0.7rem;border-radius:8px;border:1px solid var(--border);background:var(--bg-2);color:var(--text)" oninput="vivosRender()">
+      </div>
+      <p class="muted small" id="vivosStatus" style="margin-bottom:0.6rem">Carrega os grupos para ver e capturar — 🏘️ marca comunidades (captura pai + todos os subgrupos).</p>
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:0.85rem">
+          <thead><tr><th style="text-align:left">Grupo</th><th>👥</th><th></th></tr></thead>
+          <tbody id="vivosTbody"><tr><td colspan="3" class="muted">— carrega os grupos do bot —</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
     <div class="card">
       <h2>📊 Resumo</h2>
       <div class="form-grid" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr))">
@@ -95,6 +112,72 @@ function filtrarDdd(rot, btn) {
   document.querySelectorAll('#ddChips .btn').forEach(b => b.style.outline = '');
   if (_filtroDdd && btn) btn.style.outline = '2px solid currentColor';
   centralRender();
+}
+// ═══ v12.9.35: GRUPOS AO VIVO — listar, capturar um, comunidade ou todos ═══
+let _vivos = [], _vivosEmCurso = false;
+async function vivosCarregar(btn) {
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ a carregar…'; }
+  const st = document.getElementById('vivosStatus');
+  try {
+    const r = await fetch('/api/central/grupos-vivos').then(x => x.json());
+    if (!r.ok) { st.textContent = '❌ ' + (r.motivo === 'bot-nao-conectado' ? 'o bot não está conectado — conecta primeiro' : (r.motivo || 'falhou')); }
+    else { _vivos = r.grupos || []; st.textContent = `✅ ${r.total} grupo(s) encontrados. 🏘️ = comunidade (captura pai + subgrupos).`; vivosRender(); }
+  } catch (e) { st.textContent = '❌ ' + e.message; }
+  if (btn) { btn.disabled = false; btn.textContent = '🔄 Carregar grupos'; }
+}
+function vivosRender() {
+  const tb = document.getElementById('vivosTbody');
+  const termo = (document.getElementById('vivosBusca').value || '').toLowerCase().trim();
+  const lista = termo ? _vivos.filter(g => g.nome.toLowerCase().includes(termo) || g.jid.includes(termo)) : _vivos;
+  if (!lista.length) { tb.innerHTML = '<tr><td colspan="3" class="muted">' + (_vivos.length ? 'nenhum grupo corresponde à busca' : '— carrega os grupos do bot —') + '</td></tr>'; return; }
+  tb.innerHTML = lista.map(g => `<tr>
+    <td style="padding:0.45rem 0.5rem">${g.comunidade ? '🏘️ ' : g.pai ? '↳ ' : ''}${String(g.nome).replace(/</g, '&lt;')}${g.comunidade ? ' <b style="color:var(--neon-yellow)">COMUNIDADE</b>' : ''}</td>
+    <td style="text-align:center">${g.size}</td>
+    <td style="text-align:right;white-space:nowrap">
+      <button class="btn btn-sm btn-ghost" onclick="vivosCapturarUm('${g.jid}', this)">📥</button>
+      ${g.comunidade ? `<button class="btn btn-sm btn-ghost" title="capturar pai + subgrupos" onclick="vivosCapturarComunidade('${g.jid}', this)">🏘️</button>` : ''}
+    </td>
+  </tr>`).join('');
+}
+async function vivosCapturarUm(jid, btn) {
+  if (_vivosEmCurso) { toast('Já existe uma captura a correr', 'warn'); return; }
+  const st = document.getElementById('vivosStatus');
+  if (btn) btn.disabled = true;
+  try {
+    const r = await fetch('/api/central/capturar-vivo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jid }) }).then(x => x.json());
+    if (!r.ok) { st.textContent = '❌ ' + (r.motivo || 'falhou'); }
+    else { st.textContent = `✅ ${r.nome}: +${r.novos} novos · ♻️ ${r.duplicados} duplicados · base com ${r.totalBase} contactos`; centralRefresh(); }
+  } catch (e) { st.textContent = '❌ ' + e.message; }
+  if (btn) btn.disabled = false;
+}
+async function vivosCapturarComunidade(jid, btn) {
+  return vivosFundo({ comunidade: jid }, btn, 'comunidade (pai + subgrupos)');
+}
+async function vivosCapturarTudo(btn) {
+  if (!confirm('Capturar TODOS os grupos do bot? Corre em segundo plano — podes navegar no dashboard.')) return;
+  return vivosFundo({ todos: true }, btn, 'todos os grupos');
+}
+async function vivosFundo(body, btn, nome) {
+  if (_vivosEmCurso) { toast('Já existe uma captura a correr', 'warn'); return; }
+  const st = document.getElementById('vivosStatus');
+  if (btn) btn.disabled = true;
+  try {
+    const r = await fetch('/api/central/capturar-vivo-fundo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(x => x.json());
+    if (!r.ok) { st.textContent = '❌ ' + (r.motivo || 'falhou'); if (btn) btn.disabled = false; return; }
+    _vivosEmCurso = true;
+    st.textContent = `⏳ Captura de ${nome} em segundo plano (${r.total} grupos)…`;
+    const _iv = setInterval(async () => {
+      const p = await fetch('/api/central/captura-viva-progresso').then(x => x.json()).catch(() => null);
+      if (!p) return;
+      if (p.emCurso) { st.textContent = `⏳ ${p.feitos}/${p.total} grupos · +${p.novos} contactos novos · ${p.grupo || '…'}`; return; }
+      clearInterval(_iv);
+      _vivosEmCurso = false;
+      const rs = p.resultados || {};
+      st.textContent = rs.ok ? `✅ ${rs.grupos} grupo(s) capturados · +${rs.novos} novos · base com ${rs.totalBase} contactos` + (rs.falharam ? ` · ⚠️ ${rs.falharam} falharam` : '') : '❌ ' + (rs.motivo || 'falhou');
+      if (btn) btn.disabled = false;
+      centralRefresh();
+    }, 3000);
+  } catch (e) { st.textContent = '❌ ' + e.message; if (btn) btn.disabled = false; }
 }
 async function capturarTodosSlots(btn) {
   if (!confirm('Ligar cada número (EM USO + guardadas) e capturar os grupos de TODOS? Com muitos grupos corre em segundo plano — podes fechar esta página.')) return;

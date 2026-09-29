@@ -74,28 +74,19 @@ module.exports = function registerCentralGrupos(registerCase) {
     const { arr } = await listarGrupos(sock);
     if (!arr.length) return reply('O bot não está em nenhum grupo.');
     registrarListagem(ctx.remoteJid, arr);
-    // carrossel em páginas de 6 cards — MESMO formato do menu/pesquisa (cascata: carrossel→lista→botões→texto)
-    const PG = 6, pags = Math.ceil(arr.length / PG);
-    for (let pg = 0; pg < Math.min(pags, 3); pg++) {
-      const fatia = arr.slice(pg * PG, pg * PG + PG);
-      if (!fatia.length) break;
-      await ui.carrosselSeguro(sock, ctx.remoteJid,
-        `📋 *GRUPOS DO BOT (${arr.length})* — página ${pg + 1}/${pags}`,
-        fatia.map((g, k) => {
-          const i = pg * PG + k;
-          return {
-            title: `${i + 1}. ${g.nome.slice(0, 40)}`,
-            body: `👥 ${g.size} membros${g.comunidade ? '\n🏘️ COMUNIDADE' : ''}${g.pai ? '\n↳ filho de comunidade' : ''}`,
-            footer: g.jid,
-            buttons: [
-              { text: '📥 Capturar', id: `${prefix}capturar ${i + 1}` },
-              { text: '➕ Addcentral', id: `${prefix}addcentral ${i + 1}` },
-            ],
-          };
-        }),
-        { footer: 'Central · só dono', quoted: msg, listaTitle: 'Grupos do bot' });
-    }
-    if (pags > 3) await sock.sendMessage(ctx.remoteJid, { text: `📋 Mostrando ${Math.min(pags, 3)} de ${pags} páginas (${arr.length} grupos).\n> Usa \`capturar <nº>\` · \`addcentral <dest> [de <nº|todos>]\`` }, { quoted: msg });
+    // v12.9.35: LISTA EM TEXTO NUMERADO — o WhatsApp novo deixa de renderizar
+    // o carrossel (sem erro, simplesmente não aparece no telefone). Texto
+    // renderiza SEMPRE e alimenta `capturar <nº>` / `addcentral <dest> de <nº>`.
+    const { listaTexto } = require('../centralTexto');
+    await listaTexto(sock, ctx.remoteJid,
+      `📋 *GRUPOS DO BOT (${arr.length})*`,
+      arr.map((g, i) => ({
+        num: i + 1,
+        titulo: g.nome.slice(0, 55),
+        detalhe: `👥 ${g.size}${g.comunidade ? ' · 🏘️ COMUNIDADE' : ''}${g.pai ? ' · ↳ filho de comunidade' : ''}`,
+        marcador: '',
+      })),
+      { quoted: msg, nota: '> `capturar <nº>` · `addcentral <dest> de <nº>` · `comunidade` para ver hierarquias' });
     await buttonHandler.sendButtons(sock, ctx.remoteJid, '⚡ *Acções rápidas da Central*', 'Central · só dono',
       [{ id: `${prefix}capturartodos`, text: '📥 Capturar TODOS' }, { id: `${prefix}contactos`, text: '📊 Base de contactos' }], msg);
   }, owner);
@@ -296,11 +287,15 @@ module.exports = function registerCentralGrupos(registerCase) {
       return buttonHandler.sendButtons(sock, ctx.remoteJid, txt, 'Central · comunidades',
         [{ id: `${prefix}capturar ${arr.indexOf(g) + 1}`, text: g.comunidade ? '📥 Capturar TUDO' : '📥 Capturar' }, { id: `${prefix}gruposbot`, text: '📋 Grupos' }], msg);
     }
-    return ui.lista(sock, ctx.remoteJid,
-      '🕸️ Central · Comunidades',
-      `🏘️ *COMUNIDADES* — ${pais.length} pai(s) · ${filhos.length} filho(s)\n\nEscolhe para ver a hierarquia completa:`,
-      '🕸️ Abrir comunidades',
-      secoes.map(s => ({ title: s.titulo, rows: s.linhas.map(l => ({ header: l.titulo, title: l.descricao || 'ver', id: l.id })) })),
-      { quoted: msg });
+
+    // v12.9.35: lista em TEXTO — o carrossel/lista interactiva deixa de renderizar nos clientes novos
+    const { listaTexto } = require('../centralTexto');
+    await listaTexto(sock, ctx.remoteJid,
+      `🏘️ *COMUNIDADES* — ${pais.length} pai(s) · ${filhos.length} filho(s)`,
+      [
+        ...pais.map((g) => ({ num: arr.indexOf(g) + 1, titulo: g.nome.slice(0, 55), detalhe: `🏘️ pai · 👥 ${g.size} · \`.comunidade ${arr.indexOf(g) + 1}\` para ver os filhos`, marcador: '🏘️' })),
+        ...filhos.map((g) => ({ num: arr.indexOf(g) + 1, titulo: g.nome.slice(0, 55), detalhe: `↳ filho de comunidade · 👥 ${g.size}`, marcador: '' })),
+      ],
+      { quoted: msg, nota: '> \`capturar <nº>\` captura a comunidade INTEIRA (pai + subgrupos) quando o nº é um pai' });
   }, owner);
 };
