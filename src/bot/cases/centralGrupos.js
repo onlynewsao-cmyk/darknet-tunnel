@@ -50,6 +50,102 @@ async function pickGrupo(sock, chatId, arg) {
   return null;
 }
 
+// ═══ v12.9.40: MENU ADD CENTRAL (comando .add — não é submenu) ═══
+async function _menuAdd(sock, msg, ctx) {
+  const s = base.stats();
+  const ehGrupo = /@g\.us$/.test(ctx.remoteJid || '');
+  const top = ehGrupo ? (s.paises || []).slice(0, 3) : [];
+  const bts = [];
+  if (ehGrupo) {
+    bts.push({ id: ctx.prefix + 'addpre todos', text: '➕ Base TODA aqui (' + fmtN(s.total) + ')' });
+    for (const p of top) bts.push({ id: ctx.prefix + 'addpre pais:' + p.pais, text: '🌍 ' + p.pais + ' (' + fmtN(p.total) + ')' });
+  }
+  bts.push({ id: ctx.prefix + 'gruposbot', text: '📋 Grupos do bot' });
+  bts.push({ id: ctx.prefix + 'contactos', text: '📊 Estatísticas' });
+  let txt = '➕ *ADD CENTRAL — contactos → grupos/comunidades*\n\n📇 ' + fmtN(s.total) + ' contactos · 📋 ' + s.nGrupos + ' grupos';
+  if ((s.paises || []).length) txt += '\n🌐 ' + (s.paises || []).slice(0, 4).map(p => p.pais + ' ' + fmtN(p.total)).join(' · ');
+  txt += '\n\n• \`' + ctx.prefix + 'add <dest> de todos\` — a base TODA'
+    + '\n• \`' + ctx.prefix + 'add <dest> de 3\` — de 1 grupo'
+    + '\n• \`' + ctx.prefix + 'add <dest> de 3 5\` — de 2 grupos'
+    + '\n• \`' + ctx.prefix + 'add <dest> de pais:angola\` — de 1 país'
+    + '\n• \`' + ctx.prefix + 'add <dest> de pais:angola+brasil\` — de 2 países'
+    + '\n• \`' + ctx.prefix + 'add <dest> de ddd:244 9\` — por operadora'
+    + '\n• \`' + ctx.prefix + 'add 244912345678\` — adiciona 1 pessoa AQUI'
+    + '\n\n⚠️ O bot precisa de ser *admin* no grupo destino.'
+    + (ehGrupo ? '\n💡 Os botões adicionam a ESTE grupo (pedem confirmação).' : '\n👉 Usa o comando DENTRO do grupo destino para ver os botões rápidos.');
+  return buttonHandler.sendButtons(sock, ctx.remoteJid, txt, 'Central · só dono', bts, msg);
+}
+
+// fonte de contactos p/ ADD: 'todos' | 'ddd:…' | 'pais:x' | 'pais:a+b' (2 países)
+// | '<nº grupo>' | '<n1> <n2>' (2 grupos) | jid — tudo com dedup
+async function parseFonte(sock, chatId, argDeRaw) {
+  const argDe = String(argDeRaw || 'todos').toLowerCase().trim();
+  if (argDe === 'todos') return { lista: base.fonteParaAdd('todos'), desc: 'base TODA' };
+  if (argDe.startsWith('ddd:') || argDe.startsWith('pais:')) {
+    const val = argDe.includes(':') ? argDe.split(':').slice(1).join(':').trim() : '';
+    // 2 países: pais:a+b | pais:a,b | pais:a pais:b  ('ddd:' NÃO se parte — 'ddd:244 9' é 1 filtro)
+    const partes = argDe.startsWith('pais:') ? val.split(/\s*\+\s*|\s*,\s*|\s+pais:\s*/).map(x => x.trim()).filter(Boolean) : [val];
+    let lista = [];
+    for (const p of partes) lista = lista.concat(base.fontePorDdd(p));
+    const vistos = new Set();
+    lista = lista.filter(x => !vistos.has(x.num) && vistos.add(x.num));
+    return { lista, desc: partes.length > 1 ? 'países ' + partes.join(' + ') : 'SEGMENTO ' + val.toUpperCase() };
+  }
+  // 1 ou 2 grupos: '3' | '3 5' | '3,5' | jid
+  const toks = argDe.split(/[\s,]+/).filter(Boolean).slice(0, 2);
+  let lista = [];
+  const nomes = [];
+  for (const t of toks) {
+    const gf = await pickGrupo(sock, chatId, t);
+    if (!gf) return { lista: null, erro: 'Fonte "' + t + '" não encontrada na listagem — corre *gruposbot*.' };
+    lista = lista.concat(base.fonteParaAdd(gf.jid));
+    nomes.push(String(gf.nome || 'grupo').slice(0, 25));
+  }
+  const vistos = new Set();
+  lista = lista.filter(x => !vistos.has(x.num) && vistos.add(x.num));
+  return { lista, desc: 'grupo' + (nomes.length > 1 ? 's ' : ' ') + nomes.join(' + ') };
+}
+
+// motor do ADD (addcentral e addgo partilham): admin check → lotes de 5 →
+// resultado com PERGUNTA de convite (nunca automático)
+async function executarAddCentral(sock, msg, ctx, reply, gDest, fonteDesc, lista, L) {
+  try {
+    const metaDest = await sock.groupMetadata(gDest.jid);
+    const meuNum = String((sock.user?.id || '')).split('/')[0].split(':')[0].split('@')[0].replace(/\D/g, '');
+    const souAdm = (metaDest.participants || []).some(p => {
+      const num = String(p.id || '').split('@')[0].replace(/\D/g, '');
+      return num === meuNum && (p.admin === 'admin' || p.admin === 'superadmin');
+    });
+    if (!souAdm) return buttonHandler.sendButtons(sock, ctx.remoteJid,
+      '⚠️ Preciso ser *admin* de *' + String(gDest.nome).slice(0, 40) + '* para adicionar pessoas.', 'Central',
+      [{ id: ctx.prefix + 'gruposbot', text: '📋 Ver grupos' }], msg);
+  } catch (e) { return reply('❌ Não consegui ler o grupo destino: ' + (e.message || '').slice(0, 80)); }
+  const okN = [], falharam = [];
+  for (let i = 0; i < lista.length; i += 5) {
+    const lote = lista.slice(i, i + 5);
+    try {
+      const res = await sock.groupParticipantsUpdate(gDest.jid, lote.map(x => x.jid), 'add');
+      for (const r of (res || [])) {
+        const info = lista.find(x => x.jid === r.jid || x.num === String(r.jid || '').split('@')[0]);
+        if (!r || !r.status || r.status === '200') okN.push(info || { nome: r.jid });
+        else falharam.push({ jid: r.jid, nome: (info && info.nome) || '', status: r.status });
+      }
+    } catch (e) {
+      const msg403 = /403|forbidden|not-authorized|conflict/i.test(e.message || '');
+      for (const x of lote) falharam.push({ jid: x.jid, nome: x.nome, status: msg403 ? '403' : 'erro' });
+    }
+    if (i % 20 === 15 && L && L.key) { try { await sock.sendMessage(ctx.remoteJid, { edit: L.key, text: '⏳ ' + Math.min(i + 5, lista.length) + '/' + lista.length + '… ✅ ' + okN.length + ' · ❌ ' + falharam.length }); } catch {} }
+    await new Promise(r => setTimeout(r, 3000));
+  }
+  _pend.set(ctx.remoteJid, { dest: gDest.jid, destNome: gDest.nome, falhados: falharam, ts: Date.now() });
+  let texto = '✅ *ADD CENTRAL CONCLUÍDO*\n\n🎯 ' + String(gDest.nome).slice(0, 40) + '\n✅ adicionados: *' + okN.length + '*\n❌ não deixaram (privacidade/erro): *' + falharam.length + '*';
+  if (falharam.length) texto += '\n\n📨 Queres que eu mande o *convite no PV* dos ' + falharam.length + '?';
+  const bts = falharam.length
+    ? [{ id: ctx.prefix + 'addconvite sim', text: '📨 Convite PV (' + falharam.length + ')' }, { id: ctx.prefix + 'addconvite nao', text: '❌ Não enviar' }]
+    : [{ id: ctx.prefix + 'contactos', text: '📊 Ver base' }];
+  return buttonHandler.sendButtons(sock, ctx.remoteJid, texto, 'convite SÓ com a tua confirmação', bts, msg);
+}
+
 module.exports = function registerCentralGrupos(registerCase) {
   const owner = true; // só dono em todos
 
@@ -168,70 +264,36 @@ module.exports = function registerCentralGrupos(registerCase) {
 
   // ═══════════ ADD CENTRAL — puxar a base para um grupo ═══════════
   // addcentral <jidDest|nº> [de <nº|todos>]   (default: todos os contactos)
-  registerCase(['addcentral', 'puxarbase', 'addcontactos'], async ({ sock, msg, ctx, args, isOwner, reply }) => {
+  // v12.9.40: .add/.adicionar = MENU ADD CENTRAL (não é submenu — comando próprio, como .central)
+  registerCase(['addcentral', 'puxarbase', 'addcontactos', 'add', 'adicionar'], async ({ sock, msg, ctx, args, isOwner, reply }) => {
     if (!only(isOwner, reply)) return;
     const argDest = String(args[0] || '').trim();
     if (!argDest) {
-      const n = (_last.get(ctx.remoteJid) || []).length;
-      return reply(`Uso: *addcentral <jidDestino | nº do grupo> [de …]*\n• \`addcentral 3\` → a base TODA ao grupo 3\n• \`addcentral 3 de 1\` → só os contactos do grupo 1\n• \`addcentral 3 de ddd:244 9\` → só Angola móvel (92/99…)\n• \`addcentral 3 de pais:brasil\` → só Brasil\n• \`addcentral 120363...@g.us de todos\`\n\n⚠️ O bot precisa de ser *admin* no grupo destino.`);
+      return _menuAdd(sock, msg, ctx);
+    }
+    // .add <número> → adiciona 1 pessoa AO GRUPO ACTUAL (comportamento .add clássico)
+    if (/^\+?\d{7,15}$/.test(argDest) && !args.slice(1).includes('de')) {
+      if (!/@g\.us$/.test(ctx.remoteJid || '')) return reply('Para adicionar 1 pessoa, usa o comando DENTRO do grupo. Para puxar a base: *add <dest> de …*');
+      const num = argDest.replace(/\D/g, '');
+      try {
+        await sock.groupParticipantsUpdate(ctx.remoteJid, [num + '@s.whatsapp.net'], 'add');
+        return reply('✅ +' + num + ' adicionado ao grupo!');
+      } catch (e) {
+        if (/not admin|forbidden|403/i.test(e?.message || '')) return reply('⚠️ Preciso ser *admin* do grupo! Promove-me.');
+        return reply('❌ ' + (e?.message || 'erro').slice(0, 80));
+      }
     }
     const gDest = await pickGrupo(sock, ctx.remoteJid, argDest);
     if (!gDest) return reply(`Destino "${argDest}" não encontrado — corre *gruposbot* para ver a lista.`);
-    // fonte
+    // fonte — v12.9.40: 1/2 grupos · 1/2 países · ddd · todos
     const argDeRaw = args.length >= 3 && String(args[1]).toLowerCase() === 'de' ? args.slice(2).join(' ').trim() : 'todos';
-    const argDe = argDeRaw.toLowerCase();
-    let filtro = 'todos';
-    let lista;
-    if (argDe.startsWith('ddd:') || argDe.startsWith('pais:')) {
-      // v12.9.24: SEGMENTAÇÃO POR DDD/país — addcentral 3 de ddd:244 9 | de pais:brasil
-      const val = argDe.includes(':') ? argDe.split(':').slice(1).join(':').trim() : '';
-      lista = base.fontePorDdd(val);
-      if (!lista.length) return reply(`Nenhum contacto para DDD/país *${val}* — captura primeiro (botão da Central ou .capturartodos).`);
-    } else {
-      if (argDe !== 'todos') { const gf = await pickGrupo(sock, ctx.remoteJid, argDe); if (!gf) return reply(`Fonte "${argDeRaw}" não encontrada na listagem.`); filtro = gf.jid; }
-      lista = base.fonteParaAdd(filtro);
-    }
-    if (!lista.length) return reply('A base/fonte está vazia — corre *capturartodos* primeiro.');
-    const L = await reply(`⏳ *ADD CENTRAL*\n🎯 destino: ${gDest.nome.slice(0, 40)}\n📇 fonte: ${(argDe.startsWith('ddd:') || argDe.startsWith('pais:')) ? 'SEGMENTO ' + argDeRaw.toUpperCase() : (filtro === 'todos' ? 'base TODA' : 'grupo ' + argDeRaw)} → *${lista.length}* contactos\n\n⚠️ Em lotes de 5 · pausa 3s. Quem não deixar adicionar-se (privacidade) fica na lista de convites.`);
-    // bot admin no destino? (comparação por dígitos — JID vem com @s.whatsapp.net)
-    try {
-      const metaDest = await sock.groupMetadata(gDest.jid);
-      const meuNum = String((sock.user?.id || '')).split('/')[0].split(':')[0].split('@')[0].replace(/\D/g, '');
-      const souAdm = (metaDest.participants || []).some(p => {
-        const num = String(p.id || '').split('@')[0].replace(/\D/g, '');
-        return num === meuNum && (p.admin === 'admin' || p.admin === 'superadmin');
-      });
-      if (!souAdm) return buttonHandler.sendButtons(sock, ctx.remoteJid,
-        `⚠️ Preciso ser *admin* de *${gDest.nome.slice(0, 40)}* para adicionar pessoas.`, 'Central',
-        [{ id: ctx.prefix + 'gruposbot', text: '📋 Ver grupos' }], msg);
-    } catch (e) { return reply(`❌ Não consegui ler o grupo destino: ${e.message?.slice(0, 80)}`); }
-    // lote
-    const okN = [], falharam = [];
-    for (let i = 0; i < lista.length; i += 5) {
-      const lote = lista.slice(i, i + 5);
-      try {
-        const res = await sock.groupParticipantsUpdate(gDest.jid, lote.map(x => x.jid), 'add');
-        for (const r of (res || [])) {
-          const info = lista.find(x => x.jid === r.jid || x.num === String(r.jid || '').split('@')[0]);
-          if (!r || !r.status || r.status === '200') okN.push(info || { nome: r.jid });
-          else falharam.push({ jid: r.jid, nome: info?.nome || '', status: r.status });
-        }
-      } catch (e) {
-        // erro de lote inteiro → marcar todos como falhados se 403-ish
-        const msg403 = /403|forbidden|not-authorized|conflict/i.test(e.message || '');
-        for (const x of lote) falharam.push({ jid: x.jid, nome: x.nome, status: msg403 ? '403' : 'erro' });
-      }
-      if (i % 20 === 15) { try { await sock.sendMessage(ctx.remoteJid, { edit: L.key, text: `⏳ ${Math.min(i + 5, lista.length)}/${lista.length}… ✅ ${okN.length} · ❌ ${falharam.length}` }); } catch {} }
-      await new Promise(r => setTimeout(r, 3000));
-    }
-    // resultado + PERGUNTA de convite (botões) — NUNCA automático
-    _pend.set(ctx.remoteJid, { dest: gDest.jid, destNome: gDest.nome, falhados: falharam, ts: Date.now() });
-    let texto = `✅ *ADD CENTRAL CONCLUÍDO*\n\n🎯 ${gDest.nome.slice(0, 40)}\n✅ adicionados: *${okN.length}*\n❌ não deixaram (privacidade/erro): *${falharam.length}*`;
-    if (falharam.length) texto += `\n\n📨 Queres que eu mande o *convite no PV* dos ${falharam.length}?`;
-    const bts = falharam.length
-      ? [{ id: `${ctx.prefix}addconvite sim`, text: `📨 Convite PV (${falharam.length})` }, { id: `${ctx.prefix}addconvite nao`, text: '❌ Não enviar' }]
-      : [{ id: `${ctx.prefix}contactos`, text: '📊 Ver base' }];
-    return buttonHandler.sendButtons(sock, ctx.remoteJid, texto, 'convite SÓ com a tua confirmação', bts, msg);
+    const _fonte = await parseFonte(sock, ctx.remoteJid, argDeRaw);
+    if (_fonte.erro) return reply(_fonte.erro);
+    const fonteDesc = _fonte.desc;
+    const lista = _fonte.lista;
+    if (!lista || !lista.length) return reply('A base/fonte está vazia — corre *capturartodos* primeiro.');
+    const L = await reply(`⏳ *ADD CENTRAL*\n🎯 destino: ${gDest.nome.slice(0, 40)}\n📇 fonte: ${fonteDesc} → *${lista.length}* contactos\n\n⚠️ Em lotes de 5 · pausa 3s. Quem não deixar adicionar-se (privacidade) fica na lista de convites.`);
+    return executarAddCentral(sock, msg, ctx, reply, gDest, fonteDesc, lista, L);
   }, owner);
 
   // ═══════════ CONFIRMAÇÃO DO CONVITE ═══════════
@@ -297,5 +359,30 @@ module.exports = function registerCentralGrupos(registerCase) {
         ...filhos.map((g) => ({ num: arr.indexOf(g) + 1, titulo: g.nome.slice(0, 55), detalhe: `↳ filho de comunidade · 👥 ${g.size}`, marcador: '' })),
       ],
       { quoted: msg, nota: '> \`capturar <nº>\` captura a comunidade INTEIRA (pai + subgrupos) quando o nº é um pai' });
+  }, owner);
+
+  // ═══ ADD AQUI — botões do menu .add usados DENTRO do grupo destino ═══
+  registerCase(['addpre'], async ({ sock, msg, ctx, args, isOwner, reply }) => {
+    if (!only(isOwner, reply)) return;
+    if (!/@g\.us$/.test(ctx.remoteJid || '')) return reply('Este atalho é para usar DENTRO do grupo destino.');
+    const fonte = args.join(' ').trim() || 'todos';
+    const { lista, desc, erro } = await parseFonte(sock, ctx.remoteJid, fonte);
+    if (erro) return reply(erro);
+    if (!lista || !lista.length) return reply('Nada na base para *' + fonte + '* — captura primeiro (*capturartodos*).');
+    return buttonHandler.sendButtons(sock, ctx.remoteJid,
+      '⚠️ Adicionar *' + lista.length + '* contactos (' + desc + ') a ESTE grupo?',
+      'o bot precisa de ser admin aqui',
+      [{ id: ctx.prefix + 'addgo ' + fonte, text: '✅ Adicionar ' + lista.length }, { id: ctx.prefix + 'contactos', text: '❌ Cancelar' }], msg);
+  }, owner);
+
+  registerCase(['addgo'], async ({ sock, msg, ctx, args, isOwner, reply }) => {
+    if (!only(isOwner, reply)) return;
+    if (!/@g\.us$/.test(ctx.remoteJid || '')) return reply('Este atalho é para usar DENTRO do grupo destino.');
+    const fonte = args.join(' ').trim() || 'todos';
+    const { lista, desc, erro } = await parseFonte(sock, ctx.remoteJid, fonte);
+    if (erro) return reply(erro);
+    if (!lista || !lista.length) return reply('Nada na base para *' + fonte + '*.');
+    const L = await reply('⏳ *ADD CENTRAL*\n🎯 destino: ESTE grupo\n📇 fonte: ' + desc + ' → *' + lista.length + '* contactos');
+    return executarAddCentral(sock, msg, ctx, reply, { jid: ctx.remoteJid, nome: 'este grupo' }, desc, lista, L);
   }, owner);
 };

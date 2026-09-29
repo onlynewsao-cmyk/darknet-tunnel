@@ -175,7 +175,17 @@ router.get('/nuvem/file/:id', requireOwner, async (req, res) => {
   res.set('Content-Disposition', (req.query.dl ? 'attachment' : 'inline') + '; filename="' + String(f.name).replace(/"/g, '') + '"');
   res.send(Buffer.from(f.data));
 });
-router.get('/users', requireOwner, async (req, res) => res.render('dashboard/users', { title: 'Usuários', users: await User.find().sort({ createdAt: -1 }) }));
+router.get('/users', requireOwner, async (req, res) => {
+  // v12.9.40: PAGINADO — os números capturados entram como usuários autoCreated (100k+)
+  const porPagina = 50;
+  const total = await User.countDocuments();
+  const paginas = Math.max(1, Math.ceil(total / porPagina));
+  const pag = Math.min(Math.max(1, Number(req.query.pag) || 1), paginas);
+  const users = await User.find().sort({ createdAt: -1 }).skip((pag - 1) * porPagina).limit(porPagina).lean();
+  const premium = await User.countDocuments({ role: 'premium' });
+  const auto = await User.countDocuments({ autoCreated: true });
+  res.render('dashboard/users', { title: 'Usuários', users, total, premium, auto, pag, paginas });
+});
 
 router.get('/payments', requireOwner, async (req, res) => {
   const payments = await Payment.find().sort({ createdAt: -1 }).limit(200);

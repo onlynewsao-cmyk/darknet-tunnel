@@ -46,9 +46,67 @@ async function _flushMongo() {
   }
   for (let i = 0; i < ops.length; i += 500) {
     try { await CC.bulkWrite(ops.slice(i, i + 500), { ordered: false }); }
-    catch (e) { console.warn('[CENTRAL] flush mongo:', String(e.message).slice(0, 60)); }
+    catch (e) {
+      console.warn('[CENTRAL] flush mongo:', String(e.message).slice(0, 60));
+      // v12.9.40: mongo falhou → NÃO perder a base: salva no FICHEIRO
+      if (_modoMongo && Object.keys(state.contactos).length <= 150000) {
+        _modoMongo = false;
+        try {
+          fs.mkdirSync(DATA_DIR, { recursive: true });
+          fs.writeFileSync(BASE_FILE + '.tmp', JSON.stringify(state));
+          fs.renameSync(BASE_FILE + '.tmp', BASE_FILE);
+          console.warn('[CENTRAL] mongo indisponível — base salva no FICHEIRO (' + Object.keys(state.contactos).length + ')');
+        } catch (e2) { console.warn('[CENTRAL] fallback ficheiro:', e2.message); }
+      }
+    }
   }
 }
+
+// ═══ v12.9.40: CAPTURADOS → USUÁRIOS DO BOT ═══
+// os números capturados entram TAMBÉM na colecção User (whatsappNumber +
+// autoCreated) — o registo que o bot consulta em TODA mensagem. Fila com
+// flush em lotes de 500 (nunca bloqueia a captura); senha = 1 hash único
+// intrasponível (estes usuários entram pelo WhatsApp, não pelo dashboard).
+const _usersFila = new Map();     // num → nome
+const _usersFeitos = new Set();   // já sincronizados nesta vida do processo
+let _usersT = null;
+let _HASH_USERS = null;
+function _senhaHash() {
+  if (!_HASH_USERS) {
+    try { _HASH_USERS = require('bcryptjs').hashSync('dk-' + require('crypto').randomBytes(24).toString('hex'), 8); }
+    catch { _HASH_USERS = '$2a$08$DARKUSERSsemloginsemloginsemloginsssssss'; }
+  }
+  return _HASH_USERS;
+}
+function _sincronizarUsuarios() {
+  clearTimeout(_usersT); _usersT = null;
+  if (!_modoMongo || !_usersFila.size) return Promise.resolve();
+  const User = require('../database/models/User');
+  const entra = [..._usersFila.entries()]; _usersFila.clear();
+  const ops = [];
+  for (const [num, nome] of entra) {
+    if (_usersFeitos.has(num)) continue;
+    _usersFeitos.add(num);
+    ops.push({ updateOne: { filter: { username: num.toLowerCase() }, update: { $setOnInsert: { username: num.toLowerCase(), whatsappNumber: num, password: _senhaHash(), name: String(nome || '').slice(0, 60), role: 'free', active: true, autoCreated: true } }, upsert: true } });
+  }
+  if (!ops.length) return Promise.resolve();
+  return (async () => {
+    for (let i = 0; i < ops.length; i += 500) {
+      try { await User.bulkWrite(ops.slice(i, i + 500), { ordered: false }); }
+      catch (e) { console.warn('[CENTRAL] sync usuários:', String(e.message).slice(0, 60)); }
+    }
+  })();
+}
+function _filaUsuarios(pares) {
+  if (!_modoMongo || !pares || !pares.length) return;
+  for (const [num, nome] of pares) if (!_usersFeitos.has(num) && !_usersFila.has(num)) _usersFila.set(num, nome || '');
+  if (_usersFila.size && !_usersT) _usersT = setTimeout(() => { _sincronizarUsuarios().catch(() => {}); }, 4000);
+}
+async function sincronizarUsuarios() {
+  if (_usersT) { clearTimeout(_usersT); _usersT = null; }
+  await _sincronizarUsuarios();
+}
+function usuariosNaFila() { return _usersFila.size; }
 
 function guardar() {
   state.UpdatedAt = Date.now();
@@ -358,6 +416,7 @@ function capturarGrupo(jid, meta, { fonte = '', slot = null, persistir = true } 
   const nome = String(meta?.subject || '').slice(0, 120) || 'grupo';
   state.grupos[jid] = { nome, membros: (meta?.participants || []).length, nomeFonte: fonte, ts: Date.now() };
   let novos = 0, duplicados = 0, lidsIgnorados = 0;
+  const _paresNovos = [];
   for (const p of (meta?.participants || [])) {
     const _tel = _participanteTelefone(p);
     if (!_tel) { if (String(p?.id || '').includes('@lid')) lidsIgnorados++; continue; }
@@ -379,9 +438,11 @@ function capturarGrupo(jid, meta, { fonte = '', slot = null, persistir = true } 
       novos++;
       state.contactos[num] = { nome: nomeP, jid: jidP, grupos: { [jid]: nome }, addedAt: Date.now(), ts: Date.now(), ddd: dddDe(num), ...(slot ? { slots: { [slot]: Date.now() } } : {}) };
       _marcarSujo(num);
+      _paresNovos.push([num, nomeP]);
     }
   }
   guardar();
+  _filaUsuarios(_paresNovos);
   return { novos, duplicados, total: (meta?.participants || []).length, nome, lidsIgnorados };
 }
 
@@ -399,17 +460,20 @@ function stats() {
     .sort((a, b) => b.capturados - a.capturados);
   // v12.9.23: resumo por DDD/país + por slot de captura
   const _ddd = {};
+  const _paisesT = {};
   const _slots = {};
   for (const [num, c] of Object.entries(state.contactos)) {
     const d = c.ddd || dddDe(num);
     const chave = `+${d.ddi} ${d.ddd}`.trim();
     _ddd[chave] = _ddd[chave] || { rotulo: chave, pais: d.pais, ddi: d.ddi, ddd: d.ddd, total: 0 };
     _ddd[chave].total++;
+    _paisesT[d.pais] = (_paisesT[d.pais] || 0) + 1;
     for (const sl of Object.keys(c.slots || {})) { _slots[sl] = _slots[sl] || { slot: sl, total: 0 }; _slots[sl].total++; }
   }
   const ddds = Object.values(_ddd).sort((a, b) => b.total - a.total);
+  const paises = Object.entries(_paisesT).map(([pais, total]) => ({ pais, total })).sort((a, b) => b.total - a.total);
   const slots = Object.values(_slots).sort((a, b) => b.total - a.total);
-  return { total: Object.keys(state.contactos).length, nGrupos, porGrupo, ddds, slots, updatedAt: state.UpdatedAt };
+  return { total: Object.keys(state.contactos).length, nGrupos, porGrupo, ddds, paises, slots, updatedAt: state.UpdatedAt };
 }
 
 // fonte para addcentral: 'todos' → base inteira; jid de grupo → só quem está nesse grupo
@@ -428,7 +492,8 @@ function fonteParaAdd(filtroJid) {
  * Igual ao capturarGrupo mas recebe os números prontos.
  */
 function capturarContactos(nums, jidGrupo, nomeGrupo, opts = {}) {
-  const { slot = null } = opts || {};   // v12.9.36: tolera opts=null (era crash silencioso)
+  const { slot = null } = opts || {};
+  const _paresCC = [];   // v12.9.36: tolera opts=null (era crash silencioso)
   carregar();
   let novos = 0, duplicados = 0;
   state.grupos[jidGrupo] = state.grupos[jidGrupo] || { nome: String(nomeGrupo || '').slice(0, 120), membros: 0, nomeFonte: 'passiva', ts: Date.now() };
@@ -447,12 +512,14 @@ function capturarContactos(nums, jidGrupo, nomeGrupo, opts = {}) {
       novos++;
       state.contactos[num] = { nome: '', jid: num + '@s.whatsapp.net', grupos: { [jidGrupo]: state.grupos[jidGrupo].nome }, addedAt: Date.now(), ts: Date.now(), ddd: dddDe(num), ...(slot ? { slots: { [slot]: Date.now() } } : {}) };
       _marcarSujo(num);
+      _paresCC.push([num, '']);
     }
   }
   // v12.9.36: membros INCREMENTAL — o scan completo da base por chamada
   // custava O(base) POR LOTE (250M operações a 500k contactos!)
   state.grupos[jidGrupo].membros = (state.grupos[jidGrupo].membros || 0) + novos;
   guardar();
+  _filaUsuarios(_paresCC);
   return { novos, duplicados };
 }
 
@@ -521,4 +588,4 @@ function contarLids() {
   return n;
 }
 
-module.exports = { carregar, guardar, capturarGrupo, capturarContactos, stats, fonteParaAdd, fontePorDdd, remover, limpar, filhosComunidade, dddDe, contactosPorDdd, PAISES, carregarMongo, modoMongo, limparLids, contarLids };
+module.exports = { carregar, guardar, capturarGrupo, capturarContactos, stats, fonteParaAdd, fontePorDdd, remover, limpar, filhosComunidade, dddDe, contactosPorDdd, PAISES, carregarMongo, modoMongo, limparLids, contarLids, sincronizarUsuarios, usuariosNaFila };

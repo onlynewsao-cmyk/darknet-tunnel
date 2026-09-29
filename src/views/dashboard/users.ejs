@@ -9,8 +9,9 @@
         <p class="muted">Gerencie usuários, planos e bloqueios</p>
       </div>
       <div class="flex gap-2">
-        <span class="chip chip-info"><%= users.length %> total</span>
-        <span class="chip chip-premium"><%= users.filter(u=>u.role==='premium').length %> premium</span>
+        <span class="chip chip-info"><%= total %> total</span>
+        <span class="chip chip-premium"><%= premium %> premium</span>
+        <span class="chip chip-free"><%= auto %> da captura 🤖</span>
         <button class="btn btn-sm btn-primary" onclick="openModal('criarModal')">➕ Adicionar usuário</button>
       </div>
     </header>
@@ -92,6 +93,13 @@
             <% }) %>
           </tbody>
         </table>
+        <% if (paginas > 1) { %>
+        <div style="display:flex;gap:.5rem;justify-content:center;align-items:center;margin:1rem 0 0">
+          <% if (pag > 1) { %><a class="btn btn-sm" href="/users?pag=<%= pag - 1 %>">‹ Anterior</a><% } %>
+          <span class="muted small">página <%= pag %>/<%= paginas %> · <%= total %> usuários</span>
+          <% if (pag < paginas) { %><a class="btn btn-sm" href="/users?pag=<%= pag + 1 %>">Próxima ›</a><% } %>
+        </div>
+        <% } %>
       </div>
     </div>
 

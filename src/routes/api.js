@@ -284,7 +284,18 @@ module.exports = function (io) {
 
   // ===== USUÁRIOS =====
   router.get('/users', requireApiOwner, async (req, res) => {
-    res.json(await User.find().sort({ createdAt: -1 }));
+    // v12.9.40: paginado (?pag=&porPagina=&busca=) — sem ?pag devolve array (cap 2000, compat)
+    const busca = String(req.query.busca || '').trim();
+    const esc = busca.replace(/[^\w]/g, '\\$&');
+    const q = busca ? { $or: ['username', 'name', 'whatsappNumber'].map((f) => ({ [f]: new RegExp(esc, 'i') })) } : {};
+    if (req.query.pag) {
+      const porPagina = Math.min(500, Math.max(10, Number(req.query.porPagina) || 100));
+      const total = await User.countDocuments(q);
+      const paginas = Math.max(1, Math.ceil(total / porPagina));
+      const pag = Math.min(Math.max(1, Number(req.query.pag) || 1), paginas);
+      return res.json({ users: await User.find(q).sort({ createdAt: -1 }).skip((pag - 1) * porPagina).limit(porPagina), total, pagina: pag, paginas });
+    }
+    res.json(await User.find(q).sort({ createdAt: -1 }).limit(2000));
   });
 
   router.put('/users/:id', requireApiOwner, async (req, res) => {
