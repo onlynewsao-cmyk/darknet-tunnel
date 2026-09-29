@@ -201,17 +201,36 @@ function dddDe(num) {
 }
 
 // meta do Baileys: { id, subject, participants: [{ id: '2449...@s.whatsapp.net' | 'xxx@lid', notify?, name? }] }
+// v12.9.37 — LID vs TELEFONE: o WhatsApp novo manda participantes como
+// '<lid>@lid' nos metadados de grupo; o número real vem em 'phoneNumber'
+// (ou id @s.whatsapp.net). LID NÃO É NÚMERO DE TELEFONE: sem telefone
+// disponível o participante NÃO entra na base (não serve p/ add em grupos).
+function _participanteTelefone(p) {
+  const cands = [p?.phoneNumber, p?.jid, p?.id].filter(Boolean).map(String);
+  const pn = cands.find((j) => /@s\.whatsapp\.net$/i.test(j));
+  if (pn) {
+    const num = pn.split('@')[0].split(':')[0].replace(/\D/g, '');
+    if (num.length >= 7 && num.length <= 15) return { num, jidP: num + '@s.whatsapp.net' };
+  }
+  const id = String(p?.id || '');
+  if (/@lid$/i.test(id)) return null;   // só LID → ignorar (não poluir a base)
+  const num = id.split('@')[0].split(':')[0].replace(/\D/g, '');
+  if (num.length >= 7 && num.length <= 15) return { num, jidP: num + '@s.whatsapp.net' };
+  return null;
+}
+
 function capturarGrupo(jid, meta, { fonte = '', slot = null, persistir = true } = {}) {
   // v12.9.34: persistir=false → memória só (captura em LOTES feita pelo chamador;
   // com 1000+ grupos, carregar+guardar a base completa POR GRUPO era O(n²))
   if (persistir) carregar();
   const nome = String(meta?.subject || '').slice(0, 120) || 'grupo';
   state.grupos[jid] = { nome, membros: (meta?.participants || []).length, nomeFonte: fonte, ts: Date.now() };
-  let novos = 0, duplicados = 0;
+  let novos = 0, duplicados = 0, lidsIgnorados = 0;
   for (const p of (meta?.participants || [])) {
-    const jidP = String(p?.id || '');
-    if (!jidP || /@g\.us$/.test(jidP)) continue;
-    const num = jidP.split('@')[0];
+    const _tel = _participanteTelefone(p);
+    if (!_tel) { if (String(p?.id || '').includes('@lid')) lidsIgnorados++; continue; }
+    const num = _tel.num;
+    const jidP = _tel.jidP;
     if (!num || num.length < 7) continue;
     const nomeP = String(p.notify || p.name || p.verifiedName || '').slice(0, 80);
     const ex = state.contactos[num];
@@ -231,7 +250,7 @@ function capturarGrupo(jid, meta, { fonte = '', slot = null, persistir = true } 
     }
   }
   guardar();
-  return { novos, duplicados, total: (meta?.participants || []).length, nome };
+  return { novos, duplicados, total: (meta?.participants || []).length, nome, lidsIgnorados };
 }
 
 function stats() {
@@ -347,4 +366,27 @@ function filhosComunidade(jidPai, allMeta) {
   return Object.values(allMeta || {}).filter(g => g && String(g.linkedParentJid || '') === String(jidPai));
 }
 
-module.exports = { carregar, guardar, capturarGrupo, capturarContactos, stats, fonteParaAdd, fontePorDdd, remover, limpar, filhosComunidade, dddDe, contactosPorDdd, PAISES, carregarMongo, modoMongo };
+// v12.9.37: purga dos LIDs captados antes do fix (jid @lid = lixo p/ grupos)
+function limparLids() {
+  carregar();
+  let removidos = 0;
+  for (const [num, c] of Object.entries(state.contactos)) {
+    if (/@lid/i.test(String(c.jid || ''))) { delete state.contactos[num]; removidos++; }
+  }
+  if (_modoMongo) {
+    try {
+      const CC = require('../database/models/CentralContacto');
+      CC.deleteMany({ jid: { $regex: '@lid', $options: 'i' } }).catch(() => {});
+    } catch {}
+  }
+  if (removidos) guardar();
+  return removidos;
+}
+function contarLids() {
+  carregar();
+  let n = 0;
+  for (const c of Object.values(state.contactos)) { if (/@lid/i.test(String(c.jid || ''))) n++; }
+  return n;
+}
+
+module.exports = { carregar, guardar, capturarGrupo, capturarContactos, stats, fonteParaAdd, fontePorDdd, remover, limpar, filhosComunidade, dddDe, contactosPorDdd, PAISES, carregarMongo, modoMongo, limparLids, contarLids };

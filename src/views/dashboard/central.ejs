@@ -74,6 +74,8 @@
       </table>
     </div>
 
+    <p id="lidsBox" class="muted small" style="margin-bottom:0.6rem"></p>
+
     <div class="card">
       <h2>📇 Contactos</h2>
       <div class="form-group"><input type="text" id="centralBusca" placeholder="🔍 procurar por número ou nome…" oninput="centralFiltrar()" style="max-width:340px" /></div>
@@ -101,6 +103,7 @@ async function centralRefresh() {
   if (!r) return;
   _centralDados = (r.contactos || []).map(c => ({ ...c, busca: (c.num + ' ' + (c.nome || '')).toLowerCase() }));
   _pagina = r.pagina || 1; _paginas = r.paginas || 1; _totalBase = r.total || 0; _totalFiltrado = r.totalFiltrado || 0;
+  lidsInfo(r.lids || 0);
   const dd = document.getElementById('ddCard');
   if (dd) dd.textContent = '🌍 ' + (r.ddds || []).length;
   const sc2 = document.getElementById('slotsCard');
@@ -238,6 +241,27 @@ function centralRender() {
     <td><button class="btn btn-sm btn-ghost" title="tornar usuário do bot" onclick="centralCriarUsuario('${c.num}', this)">👤+</button></td>
     <td><button class="btn btn-sm" onclick="centralRemover('${c.num}')">Remover</button></td></tr>`).join('');
   paginasRender();
+}
+// v12.9.37: LIDs — aviso + purga
+let _lids = 0;
+function lidsInfo(n) {
+  _lids = n || 0;
+  const el = document.getElementById('lidsBox');
+  if (!el) return;
+  el.innerHTML = _lids > 0
+    ? '⚠️ <b>' + _lids.toLocaleString('pt-PT') + '</b> contactos são LIDs (identificadores internos do WhatsApp, <i>não</i> servem para adicionar em grupos — capturados antes da correcção). <button class="btn btn-sm btn-danger" onclick="lidsLimpar(this)">🧹 Remover LIDs</button>'
+    : '';
+}
+async function lidsLimpar(btn) {
+  if (!confirm('Remover os ' + _lids + ' contactos LID da base? (não são números reais)')) return;
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/central/limpar-lids', { method: 'POST' }).then(x => x.json());
+    toast('🧹 ' + (r.removidos || 0) + ' LIDs removidos', 'success', 5000);
+    lidsInfo(0);
+    centralRefresh();
+  } catch (e) { toast('❌ ' + e.message, 'error'); }
+  btn.disabled = false;
 }
 function paginasRender() {
   const el = document.getElementById('centralCount');

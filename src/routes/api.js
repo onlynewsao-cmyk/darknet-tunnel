@@ -1065,7 +1065,7 @@ module.exports = function (io) {
     const paginas = Math.max(1, Math.ceil(lista.length / porPagina));
     const pagina = Math.min(Math.max(1, Number(req.query.pag) || 1), paginas);
     res.json({
-      total: s.total, totalFiltrado: lista.length, nGrupos: s.nGrupos, updatedAt: s.updatedAt,
+      total: s.total, totalFiltrado: lista.length, nGrupos: s.nGrupos, updatedAt: s.updatedAt, lids: cb.contarLids(),
       grupos: s.porGrupo, ddds: s.ddds, slots: s.slots, pagina, paginas, porPagina,
       contactos: lista.slice((pagina - 1) * porPagina, pagina * porPagina),
     });
@@ -1105,6 +1105,12 @@ module.exports = function (io) {
     res.json({ ok: cb.remover(String(req.body.num || '').replace(/\D/g, '')) });
   });
   router.post('/central/limpar', requireApiOwner, (req, res) => { const cb = centralBase(); cb.limpar(); res.json({ ok: true }); });
+  // v12.9.37: LIDs — contagem no state + purga (LID não é número de telefone)
+  router.post('/central/limpar-lids', requireApiOwner, (req, res) => {
+    const cb = centralBase();
+    const removidos = cb.limparLids();
+    res.json({ ok: true, removidos });
+  });
   // v12.9.36: CSV em STREAMING — nunca junta 1M linhas numa string
   router.get('/central/csv', requireApiOwner, (req, res) => {
     const cb = centralBase(); cb.carregar();
