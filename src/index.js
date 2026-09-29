@@ -113,6 +113,9 @@ async function bootstrap() {
   }
   await seedDefaults(conn);
 
+  // v12.9.36: Central de Contactos em ESCALA (1M+) — a base vive no MongoDB
+  try { require('./bot/centralBase').carregarMongo().catch(() => {}); } catch (_) {}
+
   // v7.88: o mundo RPG recomeça do zero (uma vez) — toda a gente se regista de novo
   require('./bot/rpg/reset788').run().catch(() => {});
 

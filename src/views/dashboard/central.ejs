@@ -26,6 +26,12 @@
       </div>
     </div>
 
+    <!-- ═══ v12.9.36: PAÍSES REAIS com totais — addcentral <dest> de pais:<nome> ═══ -->
+    <div class="card">
+      <h2>🌍 Países <small class="muted">números reais na base — usa <code>addcentral &lt;dest&gt; de pais:&lt;nome&gt;</code> no WhatsApp</small></h2>
+      <div id="paisesBox" class="muted small">a carregar países…</div>
+    </div>
+
     <div class="card">
       <h2>📊 Resumo</h2>
       <div class="form-grid" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr))">
@@ -70,10 +76,10 @@
 
     <div class="card">
       <h2>📇 Contactos</h2>
-      <div class="form-group"><input type="text" id="centralBusca" placeholder="🔍 procurar por número ou nome…" oninput="centralRender()" style="max-width:340px" /></div>
+      <div class="form-group"><input type="text" id="centralBusca" placeholder="🔍 procurar por número ou nome…" oninput="centralFiltrar()" style="max-width:340px" /></div>
       <table class="table" id="centralTabela">
         <thead><tr><th>Número</th><th>Nome</th><th>DDD / país</th><th>Visto por</th><th>Grupos</th><th>Capturado</th><th></th></tr></thead>
-        <tbody id="centralTbody"><tr><td colspan="5" class="muted">a carregar…</td></tr></tbody>
+        <tbody id="centralTbody"><tr><td colspan="8" class="muted">a carregar…</td></tr></tbody>
       </table>
       <small class="muted" id="centralCount"></small>
     </div>
@@ -83,10 +89,18 @@
 <script>
 let _centralDados = [];
 let _filtroDdd = '';
+// ═══ v12.9.36: PAGINAÇÃO no SERVIDOR (1M+ contactos) ═══
+let _pagina = 1, _paginas = 1, _totalBase = 0, _totalFiltrado = 0, _filtroPais = '';
 async function centralRefresh() {
-  const r = await fetch('/api/central/state').then(x => x.json()).catch(() => null);
+  const busca = (document.getElementById('centralBusca').value || '').trim();
+  const qs = new URLSearchParams({ pag: _pagina, porPagina: 100 });
+  if (busca) qs.set('busca', busca);
+  if (_filtroDdd) qs.set('ddd', _filtroDdd);
+  if (_filtroPais) qs.set('pais', _filtroPais);
+  const r = await fetch('/api/central/state?' + qs).then(x => x.json()).catch(() => null);
   if (!r) return;
   _centralDados = (r.contactos || []).map(c => ({ ...c, busca: (c.num + ' ' + (c.nome || '')).toLowerCase() }));
+  _pagina = r.pagina || 1; _paginas = r.paginas || 1; _totalBase = r.total || 0; _totalFiltrado = r.totalFiltrado || 0;
   const dd = document.getElementById('ddCard');
   if (dd) dd.textContent = '🌍 ' + (r.ddds || []).length;
   const sc2 = document.getElementById('slotsCard');
@@ -95,6 +109,17 @@ async function centralRefresh() {
   renderSlots(r.slots || []);
   centralRender();
 }
+async function paisesCarregar() {
+  const box = document.getElementById('paisesBox');
+  try {
+    const r = await fetch('/api/central/paises').then(x => x.json());
+    if (!r.ok) { box.textContent = '❌ falhou a carregar países'; return; }
+    const com = (r.naBase || []).filter(p => p.total > 0);
+    if (!com.length) { box.textContent = 'Ainda sem países na base — captura grupos e volta.'; return; }
+    box.innerHTML = com.map(p => `<button class="btn btn-sm ${_filtroPais === p.pais ? 'btn-primary' : 'btn-ghost'}" style="margin:.15rem" onclick="paisFiltrar('${String(p.pais).replace(/'/g, "\\'")}')">\${p.pais} <b>\${p.total}</b></button>`).join(' ') + (_filtroPais ? ' <button class="btn btn-sm btn-danger" onclick="paisFiltrar(\'\')">✕ limpar país</button>' : '');
+  } catch (e) { box.textContent = '❌ ' + e.message; }
+}
+function paisFiltrar(nome) { _filtroPais = nome || ''; _pagina = 1; paisesCarregar(); centralRefresh(); }
 function renderDds(ddds) {
   const el = document.getElementById('ddChips');
   if (!el) return;
@@ -203,22 +228,45 @@ async function capturarTodosSlots(btn) {
 }
 function centralRender() {
   const tb = document.getElementById('centralTbody');
-  if (!_centralDados.length) { tb.innerHTML = '<tr><td colspan="7" class="muted">Base vazia — usa a captura com TODOS os números.</td></tr>'; document.getElementById('centralCount').textContent = ''; return; }
-  const termo = (document.getElementById('centralBusca').value || '').toLowerCase().trim();
-  let lista = _filtroDdd ? _centralDados.filter(c => c.dddRotulo === _filtroDdd) : _centralDados;
-  if (termo) lista = lista.filter(c => c.busca.includes(termo) || (c.dddRotulo || '').toLowerCase().includes(termo) || (c.slots || []).some(s => ('slot' + s).includes(termo.replace('slot', ''))));
-  tb.innerHTML = lista.map(c => `<tr data-busca="${c.busca}">
+  if (!_centralDados.length) { tb.innerHTML = '<tr><td colspan="8" class="muted">Nenhum contacto nesta página — limpa a busca/filtros ou captura grupos.</td></tr>'; paginasRender(); return; }
+  tb.innerHTML = _centralDados.map(c => `<tr data-busca="${c.busca}">
     <td><code>${c.num}</code></td><td>${c.nome || '—'}</td>
     <td><span class="badge">🌍 ${c.dddRotulo || '—'}</span> <small class="muted">${c.pais || ''}</small></td>
     <td>${(c.slots || []).map(s => `🧱${s}`).join(' ') || '—'}</td>
     <td>${c.grupos || '—'}${c.nGrupos > 3 ? ` <small class="muted">+${c.nGrupos - 3}</small>` : ''}</td>
     <td>${c.ts ? new Date(c.ts).toLocaleDateString('pt-PT') : '—'}</td>
+    <td><button class="btn btn-sm btn-ghost" title="tornar usuário do bot" onclick="centralCriarUsuario('${c.num}', this)">👤+</button></td>
     <td><button class="btn btn-sm" onclick="centralRemover('${c.num}')">Remover</button></td></tr>`).join('');
-  document.getElementById('centralCount').textContent = lista.length + ' contactos' + (_filtroDdd ? ' (filtro ' + _filtroDdd + ')' : '');
+  paginasRender();
 }
+function paginasRender() {
+  const el = document.getElementById('centralCount');
+  const de = _totalFiltrado ? ((pagina offset)) : '';
+  el.innerHTML = '— ' + _totalFiltrado.toLocaleString('pt-PT') + ' contacto(s)' + (_totalBase !== _totalFiltrado ? ' (base: ' + _totalBase.toLocaleString('pt-PT') + ')' : '') + (_filtroDdd ? ' · ddd ' + _filtroDdd : '') + (_filtroPais ? ' · ' + _filtroPais : '') + ' — página ' + _pagina + '/' + _paginas +
+    ' <button class="btn btn-sm btn-ghost" ' + (_pagina <= 1 ? 'disabled' : '') + ' onclick="paginaIr(' + (_pagina - 1) + ')">‹</button>' +
+    ' <button class="btn btn-sm btn-ghost" ' + (_pagina >= _paginas ? 'disabled' : '') + ' onclick="paginaIr(' + (_pagina + 1) + ')">›</button>';
+}
+function paginaIr(p) { _pagina = Math.min(Math.max(1, p), _paginas); centralRefresh(); }
+// v12.9.36: ADICIONAR AOS USUÁRIOS DO BOT
+async function centralCriarUsuario(num, btn) {
+  if (!confirm('Criar USUÁRIO do bot para ' + num + '?\nGerarei username e senha para enviares à pessoa.')) return;
+  if (btn) btn.disabled = true;
+  try {
+    const r = await fetch('/api/central/criar-usuario', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ num }) }).then(x => x.json());
+    if (!r.ok) { toast('❌ ' + (r.erro || 'falhou'), 'error', 6000); }
+    else {
+      const cred = 'Usuário criado ✅\nusername: ' + r.username + '\nsenha: ' + r.senha + '\n(papel: ' + r.role + ')';
+      if (typeof copyText === 'function') copyText(r.username + ' / ' + r.senha, 'Credenciais copiadas');
+      alert(cred + '\n\n(credenciais copiadas para a área de transferência)');
+    }
+  } catch (e) { toast('❌ ' + e.message, 'error'); }
+  if (btn) btn.disabled = false;
+}
+// busca: server-side com debounce (1M+ nunca filtra no cliente)
+let _buscaT = null;
 function centralFiltrar() {
-  const q = (document.getElementById('centralBusca').value || '').toLowerCase();
-  document.querySelectorAll('#centralTbody tr[data-busca]').forEach(tr => { tr.style.display = tr.dataset.busca.includes(q) ? '' : 'none'; });
+  clearTimeout(_buscaT);
+  _buscaT = setTimeout(() => { _pagina = 1; centralRefresh(); }, 350);
 }
 async function centralRemover(num) {
   if (!confirm('Remover ' + num + ' da base?')) return;
@@ -233,5 +281,6 @@ async function centralLimpar() {
 // v12.9.24: auto-refresh 30s (a base vive sozinha com a captura passiva)
 setInterval(centralRefresh, 30000);
 centralRefresh();
+paisesCarregar();
 </script>
 <%- include('../partials/footer') %>

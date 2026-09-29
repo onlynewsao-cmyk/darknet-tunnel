@@ -877,6 +877,28 @@ module.exports = function (io) {
   router.post('/bot/start', requireApiOwner, startBot);
 
   // users.ejs chama /api/users/:id/premium e /api/users/:id/free
+  // v12.9.36: CRIAR usuário do bot no dashboard (Usuários)
+  router.post('/users/criar', requireApiOwner, async (req, res) => {
+    try {
+      const username = String(req.body?.username || '').trim().toLowerCase();
+      const senha = String(req.body?.password || '').trim();
+      if (!/^[a-z0-9_]{3,20}$/.test(username)) return res.json({ ok: false, erro: 'username: 3-20 letras/números/_' });
+      if (senha.length < 4) return res.json({ ok: false, erro: 'senha mínima: 4 caracteres' });
+      const User = require('../database/models/User');
+      if (await User.findOne({ username }).lean()) return res.json({ ok: false, erro: 'username já existe' });
+      const dados = { username, password: senha, name: String(req.body?.name || '').trim(), role: ['free', 'premium'].includes(req.body?.role) ? req.body.role : 'free', autoCreated: false };
+      if (req.body?.whatsappNumber) {
+        const wa = String(req.body.whatsappNumber).replace(/\D/g, '');
+        if (wa.length >= 7) {
+          if (await User.findOne({ whatsappNumber: wa }).lean()) return res.json({ ok: false, erro: 'esse WhatsApp já é usuário' });
+          dados.whatsappNumber = wa;
+        }
+      }
+      const u = await User.create(dados);
+      res.json({ ok: true, id: u._id, username: u.username, nome: u.name });
+    } catch (e) { res.json({ ok: false, erro: String(e.message || e).slice(0, 80) }); }
+  });
+
   router.post('/users/:id/premium', requireApiOwner, async (req, res) => {
     try {
       const days = parseInt(req.body.days) || 30;
@@ -1021,38 +1043,83 @@ module.exports = function (io) {
 
   // ═══ v12.9.11: CENTRAL DE CONTACTOS API (dono) ═══
   const centralBase = () => require('../bot/centralBase');
+  // v12.9.36: PAGINADO no servidor — /central/state de 1M contactos = resposta
+  // de centenas de MB (morria). Agora: 1 página de cada vez (100/max 500).
   router.get('/central/state', requireApiOwner, (req, res) => {
     const cb = centralBase(); cb.carregar();
     const s = cb.stats();
+    const busca = String(req.query.busca || '').toLowerCase().trim();
+    const pais = String(req.query.pais || '').trim();
+    const dddF = String(req.query.ddd || '').trim();
+    const porPagina = Math.min(500, Math.max(10, Number(req.query.porPagina) || 100));
+    let lista = [];
+    for (const [num, c] of Object.entries(cb.carregar().contactos)) {
+      const d = c.ddd || cb.dddDe(num);
+      if (pais && d.pais !== pais) continue;
+      const rotulo = `+${d.ddi} ${d.ddd}`.trim();
+      if (dddF && rotulo !== dddF) continue;
+      if (busca && !(num.includes(busca) || String(c.nome || '').toLowerCase().includes(busca))) continue;
+      lista.push({ num, nome: c.nome || '', grupos: Object.values(c.grupos || {}).slice(0, 3).join(', '), nGrupos: Object.keys(c.grupos || {}).length, ts: c.ts || c.addedAt || 0, ddi: d.ddi, pais: d.pais, ddd: d.ddd, dddRotulo: rotulo, slots: Object.keys(c.slots || {}) });
+    }
+    lista.sort((a, b) => b.ts - a.ts);
+    const paginas = Math.max(1, Math.ceil(lista.length / porPagina));
+    const pagina = Math.min(Math.max(1, Number(req.query.pag) || 1), paginas);
     res.json({
-      total: s.total, nGrupos: s.nGrupos, updatedAt: s.updatedAt,
-      grupos: s.porGrupo, ddds: s.ddds, slots: s.slots,
-      contactos: Object.entries(cb.carregar().contactos).map(([num, c]) => {
-        const d = c.ddd || cb.dddDe(num);
-        return {
-          num, nome: c.nome || '', grupos: Object.values(c.grupos || {}).slice(0, 3).join(', '), nGrupos: Object.keys(c.grupos || {}).length, ts: c.addedAt,
-          ddi: d.ddi, pais: d.pais, ddd: d.ddd, dddRotulo: `+${d.ddi} ${d.ddd}`.trim(),
-          slots: Object.keys(c.slots || {}),
-        };
-      }).sort((a, b) => b.ts - a.ts),
+      total: s.total, totalFiltrado: lista.length, nGrupos: s.nGrupos, updatedAt: s.updatedAt,
+      grupos: s.porGrupo, ddds: s.ddds, slots: s.slots, pagina, paginas, porPagina,
+      contactos: lista.slice((pagina - 1) * porPagina, pagina * porPagina),
     });
+  });
+  // v12.9.36: países REAIS da base com totais (p/ cartão Países e addcentral de pais:X)
+  router.get('/central/paises', requireApiOwner, (req, res) => {
+    const cb = centralBase(); cb.carregar();
+    const contagem = {};
+    for (const [num, c] of Object.entries(cb.carregar().contactos)) {
+      const d = c.ddd || cb.dddDe(num);
+      contagem[d.pais] = contagem[d.pais] || { pais: d.pais, ddi: d.ddi, total: 0 };
+      contagem[d.pais].total++;
+    }
+    const naBase = Object.values(contagem).sort((a, b) => b.total - a.total);
+    const naLista = cb.PAISES.map(p => ({ pais: p.pais, ddi: p.ddi, total: contagem[p.pais]?.total || 0 }));
+    res.json({ ok: true, suportados: naLista, naBase, total: s_totalSafe(cb) });
+  });
+  function s_totalSafe(cb) { try { return cb.stats().total; } catch { return 0; } }
+  // v12.9.36: ADICIONAR AOS USUÁRIOS DO BOT — cria User a partir da base
+  router.post('/central/criar-usuario', requireApiOwner, async (req, res) => {
+    try {
+      const num = String(req.body?.num || '').replace(/\D/g, '');
+      if (!num || num.length < 7) return res.json({ ok: false, erro: 'número inválido' });
+      const User = require('../database/models/User');
+      const jaExiste = await User.findOne({ $or: [{ username: num }, { whatsappNumber: num }] }).lean();
+      if (jaExiste) return res.json({ ok: false, erro: 'já é usuário do bot (' + (jaExiste.username || jaExiste.whatsappNumber) + ')' });
+      const senha = 'dk' + Math.random().toString(36).slice(2, 8) + Math.floor(Math.random() * 90 + 10);
+      const cb2 = centralBase(); cb2.carregar();
+      const info = cb2.carregar().contactos[num];
+      const role = String(req.body?.role || 'free') === 'premium' ? 'premium' : 'free';
+      const u = await User.create({ username: num, password: senha, name: String(req.body?.nome || info?.nome || 'Usuário ' + num.slice(-4)), whatsappNumber: num, role, autoCreated: true });
+      res.json({ ok: true, id: u._id, username: num, senha, role: u.role, nome: u.name });
+    } catch (e) { res.json({ ok: false, erro: String(e.message || e).slice(0, 80) }); }
   });
   router.post('/central/remover', requireApiOwner, (req, res) => {
     const cb = centralBase();
     res.json({ ok: cb.remover(String(req.body.num || '').replace(/\D/g, '')) });
   });
   router.post('/central/limpar', requireApiOwner, (req, res) => { const cb = centralBase(); cb.limpar(); res.json({ ok: true }); });
+  // v12.9.36: CSV em STREAMING — nunca junta 1M linhas numa string
   router.get('/central/csv', requireApiOwner, (req, res) => {
     const cb = centralBase(); cb.carregar();
-    const linhas = ['numero,ddi,pais,ddd,nome,slots,grupos'];
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="central-contactos.csv"');
+    res.write('numero,ddi,pais,ddd,nome,slots,grupos\n');
+    let buffer = [];
     for (const [num, c] of Object.entries(cb.carregar().contactos)) {
       const d = c.ddd || cb.dddDe(num);
       const slotsStr = Object.keys(c.slots || {}).join('|');
-      linhas.push(`${num},${d.ddi},${d.pais},${d.ddd},"${(c.nome || '').replace(/"/g, "'")}","${slotsStr}","${Object.values(c.grupos || {}).join(' | ').replace(/"/g, "'")}"`);
+      buffer.push(`${num},${d.ddi},${d.pais},${d.ddd},"${(c.nome || '').replace(/"/g, "'")}","${slotsStr}","${Object.values(c.grupos || {}).join(' | ').replace(/"/g, "'")}"`);
+      if (buffer.length >= 5000) { res.write(buffer.join('\n') + '\n'); buffer = []; }
     }
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', 'attachment; filename="central-contactos.csv"');
-    res.send(linhas.join('\n'));
+    if (buffer.length) res.write(buffer.join('\n') + '\n');
+    res.end();
   });
 
   // ═══ 🕸️ Central v12.9.23: DDDs + captura com TODOS os slots ═══

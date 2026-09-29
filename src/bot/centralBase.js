@@ -23,8 +23,44 @@ function carregar() {
   return state;
 }
 
+// ═══ v12.9.36 — ESCALA 1M+ ═══════════════════════════════════
+// JSON.stringify de 1M contactos ≈ 500MB numa string → rebenta. A base
+// passa a persistir no MONGODB (bulkWrite dos SÓ os alterados, em lotes);
+// o ficheiro JSON fica como fallback apenas para bases pequenas (<150k).
+let _modoMongo = false;
+const _dirty = new Set();           // nums alterados desde o último flush
+let _flushT = null;
+let _avisoFile = false;
+function _marcarSujo(num) { _dirty.add(num); }
+
+async function _flushMongo() {
+  clearTimeout(_flushT); _flushT = null;
+  if (!_modoMongo || !_dirty.size) return;
+  const CC = require('../database/models/CentralContacto');
+  const nums = [..._dirty]; _dirty.clear();
+  const ops = [];
+  for (const num of nums) {
+    const c = state.contactos[num];
+    if (!c) { ops.push({ deleteOne: { filter: { num } } }); continue; }
+    ops.push({ updateOne: { filter: { num }, update: { $set: { num, nome: c.nome || '', jid: c.jid || '', grupos: c.grupos || {}, slots: c.slots || {}, ddi: c.ddd?.ddi || '?', pais: c.ddd?.pais || 'Desconhecido', ddd: c.ddd?.ddd || '-', addedAt: c.addedAt || 0, ts: c.ts || 0 } }, upsert: true } });
+  }
+  for (let i = 0; i < ops.length; i += 500) {
+    try { await CC.bulkWrite(ops.slice(i, i + 500), { ordered: false }); }
+    catch (e) { console.warn('[CENTRAL] flush mongo:', String(e.message).slice(0, 60)); }
+  }
+}
+
 function guardar() {
   state.UpdatedAt = Date.now();
+  if (_modoMongo) {
+    // lotes de 500 dos alterados — nunca serializa a base inteira
+    if (!_flushT) _flushT = setTimeout(() => { _flushT = null; _flushMongo().catch(() => {}); }, 2000);
+    return;
+  }
+  if (Object.keys(state.contactos).length > 150000) {
+    if (!_avisoFile) { _avisoFile = true; console.warn('[CENTRAL] base >150k e sem mongo — file save ignorado (protecção RAM). Liga o MongoDB.'); }
+    return;
+  }
   try {
     fs.mkdirSync(DATA_DIR, { recursive: true });
     fs.writeFileSync(BASE_FILE + '.tmp', JSON.stringify(state));
@@ -37,22 +73,112 @@ function guardar() {
 }
 let _t = null;
 
+// arranque (chamado do index.js depois do connectDB): carrega TODOS os
+// contactos do mongo por CURSOR (streaming — sem string gigante)
+async function carregarMongo() {
+  try {
+    const mongoose = require('mongoose');
+    if (mongoose.connection?.readyState !== 1) return false;
+    const CC = require('../database/models/CentralContacto');
+    const total = await CC.countDocuments();
+    if (!total) { _modoMongo = true; return true; }
+    const cursor = CC.find({}).lean().cursor();
+    let n = 0;
+    for (let doc = await cursor.next(); doc; doc = await cursor.next()) {
+      state.contactos[doc.num] = { nome: doc.nome || '', jid: doc.jid || doc.num + '@s.whatsapp.net', grupos: doc.grupos || {}, slots: doc.slots || {}, addedAt: doc.addedAt || 0, ts: doc.ts || 0, ddd: { ddi: doc.ddi || '?', pais: doc.pais || 'Desconhecido', ddd: doc.ddd || '-', rotulo: ('+' + (doc.ddi || '?') + ' ' + (doc.ddd || '')).trim() } };
+      n++;
+    }
+    _modoMongo = true; _loaded = true;
+    console.log('[CENTRAL] base do MONGODB: ' + n + ' contactos (escala 1M+ ok)');
+    return true;
+  } catch (e) { console.warn('[CENTRAL] carregarMongo:', String(e.message).slice(0, 60)); return false; }
+}
+function modoMongo() { return _modoMongo; }
+
 // ── v12.9.23 — DDD & PAÍS 🌍 ────────────────────────────────
 // O "DDD" internacional = país + código de área. Tabela dos códigos
 // mais comuns na base (Angola, Brasil, Portugal, etc.).
+// v12.9.36: 66 países REAIS (ddi correctos; 3-dígitos primeiro — o matching é startsWith)
+// Ordinais importam: nunca pôr '1' antes de '124…' etc. '35' genérico REMOVIDO (era falso).
 const PAISES = [
   { ddi: '244', pais: 'Angola', ddds: { '9': 'Móvel', '2': 'Fixo' } },
-  { ddi: '55', pais: 'Brasil', ddds: null }, // Brasil: 2 dígitos de DDD após o 55 (11–99)
+  { ddi: '55', pais: 'Brasil', ddds: null }, // 2 dígitos de DDD após o 55
   { ddi: '351', pais: 'Portugal', ddds: { '9': 'Móvel', '2': 'Fixo' } },
   { ddi: '243', pais: 'RD Congo', ddds: { '8': 'Móvel', '9': 'Móvel' } },
   { ddi: '242', pais: 'Congo', ddds: { '0': 'Móvel' } },
-  { ddi: '245', pais: 'Guiné-Bissau', ddds: { '9': 'Móvel' } },
+  { ddi: '245', pais: 'Guiné-Bissau', ddds: { '9': 'Móvel', '6': 'Móvel' } },
   { ddi: '238', pais: 'Cabo Verde', ddds: { '9': 'Móvel', '2': 'Fixo' } },
   { ddi: '258', pais: 'Moçambique', ddds: { '8': 'Móvel', '2': 'Fixo' } },
-  { ddi: '239', pais: 'S. Tomé e Príncipe', ddds: null },
+  { ddi: '239', pais: 'S. Tomé e Príncipe', ddds: { '9': 'Móvel' } },
+  { ddi: '264', pais: 'Namíbia', ddds: { '8': 'Móvel' } },
+  { ddi: '27', pais: 'África do Sul', ddds: null },
+  { ddi: '234', pais: 'Nigéria', ddds: { '7': 'Móvel', '8': 'Móvel', '9': 'Móvel' } },
+  { ddi: '233', pais: 'Gana', ddds: { '2': 'Móvel', '5': 'Móvel' } },
+  { ddi: '225', pais: 'Costa do Marfim', ddds: { '0': 'Móvel' } },
+  { ddi: '221', pais: 'Senegal', ddds: { '7': 'Móvel' } },
+  { ddi: '237', pais: 'Camarões', ddds: { '6': 'Móvel' } },
+  { ddi: '241', pais: 'Gabão', ddds: { '6': 'Móvel', '7': 'Móvel' } },
+  { ddi: '212', pais: 'Marrocos', ddds: { '6': 'Móvel', '7': 'Móvel' } },
+  { ddi: '213', pais: 'Argélia', ddds: { '5': 'Móvel', '6': 'Móvel', '7': 'Móvel' } },
+  { ddi: '216', pais: 'Tunísia', ddds: { '2': 'Móvel', '9': 'Móvel' } },
+  { ddi: '20', pais: 'Egipto', ddds: { '1': 'Móvel' } },
+  { ddi: '254', pais: 'Quénia', ddds: { '7': 'Móvel', '1': 'Móvel' } },
+  { ddi: '255', pais: 'Tanzânia', ddds: { '6': 'Móvel', '7': 'Móvel' } },
+  { ddi: '256', pais: 'Uganda', ddds: { '7': 'Móvel' } },
+  { ddi: '251', pais: 'Etiópia', ddds: { '9': 'Móvel', '7': 'Móvel' } },
+  { ddi: '260', pais: 'Zâmbia', ddds: { '9': 'Móvel', '7': 'Móvel' } },
+  { ddi: '263', pais: 'Zimbabué', ddds: { '7': 'Móvel' } },
+  { ddi: '267', pais: 'Botswana', ddds: { '7': 'Móvel' } },
+  { ddi: '230', pais: 'Maurícias', ddds: { '5': 'Móvel' } },
+  { ddi: '223', pais: 'Mali', ddds: { '7': 'Móvel', '8': 'Móvel', '9': 'Móvel' } },
+  { ddi: '226', pais: 'Burquina Faso', ddds: { '6': 'Móvel', '7': 'Móvel' } },
+  { ddi: '227', pais: 'Níger', ddds: { '8': 'Móvel', '9': 'Móvel' } },
+  { ddi: '228', pais: 'Togo', ddds: { '9': 'Móvel' } },
+  { ddi: '229', pais: 'Benim', ddds: { '9': 'Móvel' } },
+  { ddi: '249', pais: 'Sudão', ddds: { '9': 'Móvel' } },
+  { ddi: '252', pais: 'Somália', ddds: { '6': 'Móvel', '7': 'Móvel' } },
   { ddi: '1', pais: 'EUA/Canadá', ddds: null },
-  { ddi: '33', pais: 'França', ddds: null },
-  { ddi: '35', pais: 'Europa (varios)', ddds: null },
+  { ddi: '44', pais: 'Reino Unido', ddds: { '7': 'Móvel' } },
+  { ddi: '33', pais: 'França', ddds: { '6': 'Móvel', '7': 'Móvel' } },
+  { ddi: '34', pais: 'Espanha', ddds: { '6': 'Móvel', '7': 'Móvel' } },
+  { ddi: '39', pais: 'Itália', ddds: { '3': 'Móvel' } },
+  { ddi: '49', pais: 'Alemanha', ddds: { '15': 'Móvel', '16': 'Móvel', '17': 'Móvel' } },
+  { ddi: '31', pais: 'Holanda', ddds: { '6': 'Móvel' } },
+  { ddi: '32', pais: 'Bélgica', ddds: { '4': 'Móvel' } },
+  { ddi: '352', pais: 'Luxemburgo', ddds: { '6': 'Móvel' } },
+  { ddi: '353', pais: 'Irlanda', ddds: { '8': 'Móvel' } },
+  { ddi: '358', pais: 'Finlândia', ddds: { '4': 'Móvel', '5': 'Móvel' } },
+  { ddi: '41', pais: 'Suíça', ddds: { '7': 'Móvel' } },
+  { ddi: '43', pais: 'Áustria', ddds: { '6': 'Móvel' } },
+  { ddi: '46', pais: 'Suécia', ddds: { '7': 'Móvel' } },
+  { ddi: '47', pais: 'Noruega', ddds: { '4': 'Móvel', '9': 'Móvel' } },
+  { ddi: '45', pais: 'Dinamarca', ddds: { '2': 'Móvel', '3': 'Móvel' } },
+  { ddi: '48', pais: 'Polónia', ddds: { '5': 'Móvel', '6': 'Móvel', '7': 'Móvel' } },
+  { ddi: '40', pais: 'Roménia', ddds: { '7': 'Móvel' } },
+  { ddi: '380', pais: 'Ucrânia', ddds: { '6': 'Móvel', '7': 'Móvel', '9': 'Móvel' } },
+  { ddi: '7', pais: 'Rússia/Cazaquistão', ddds: { '9': 'Móvel', '7': 'Móvel' } },
+  { ddi: '90', pais: 'Turquia', ddds: { '5': 'Móvel' } },
+  { ddi: '86', pais: 'China', ddds: { '1': 'Móvel' } },
+  { ddi: '91', pais: 'Índia', ddds: { '6': 'Móvel', '7': 'Móvel', '8': 'Móvel', '9': 'Móvel' } },
+  { ddi: '92', pais: 'Paquistão', ddds: { '3': 'Móvel' } },
+  { ddi: '971', pais: 'E.A.U.', ddds: { '5': 'Móvel' } },
+  { ddi: '966', pais: 'Arábia Saudita', ddds: { '5': 'Móvel' } },
+  { ddi: '974', pais: 'Catar', ddds: { '3': 'Móvel', '6': 'Móvel', '7': 'Móvel' } },
+  { ddi: '52', pais: 'México', ddds: null },
+  { ddi: '54', pais: 'Argentina', ddds: { '9': 'Móvel' } },
+  { ddi: '57', pais: 'Colômbia', ddds: { '3': 'Móvel' } },
+  { ddi: '56', pais: 'Chile', ddds: { '9': 'Móvel' } },
+  { ddi: '51', pais: 'Perú', ddds: { '9': 'Móvel' } },
+  { ddi: '58', pais: 'Venezuela', ddds: { '4': 'Móvel' } },
+  { ddi: '593', pais: 'Equador', ddds: { '9': 'Móvel' } },
+  { ddi: '61', pais: 'Austrália', ddds: { '4': 'Móvel' } },
+  { ddi: '65', pais: 'Singapura', ddds: { '8': 'Móvel', '9': 'Móvel' } },
+  { ddi: '60', pais: 'Malásia', ddds: { '1': 'Móvel' } },
+  { ddi: '62', pais: 'Indonésia', ddds: { '8': 'Móvel' } },
+  { ddi: '66', pais: 'Tailândia', ddds: { '6': 'Móvel', '8': 'Móvel', '9': 'Móvel' } },
+  { ddi: '81', pais: 'Japão', ddds: { '7': 'Móvel', '8': 'Móvel', '9': 'Móvel' } },
+  { ddi: '82', pais: 'Coreia do Sul', ddds: { '1': 'Móvel' } },
+  { ddi: '852', pais: 'Hong Kong', ddds: { '5': 'Móvel', '6': 'Móvel', '9': 'Móvel' } },
 ];
 function dddDe(num) {
   const s = String(num || '').replace(/\D/g, '');
@@ -62,9 +188,9 @@ function dddDe(num) {
       if (!resto) continue;
       let area = '';
       if (p.ddi === '55' && resto.length >= 2) area = resto.slice(0, 2);            // Brasil: DDD de 2 dígitos
-      else if (p.ddis) {
+      else if (p.ddds) {
         const primeiro = resto[0];
-        if (!p.ddis[primeiro]) area = resto.slice(0, 2);
+        if (!p.ddds[primeiro]) area = resto.slice(0, 2);
         else area = (primeiro === '9' && p.ddi === '244' && resto.length >= 2) ? resto.slice(0, 2) : primeiro; // AO móvel: 9 + operador (92=Unitel, 99=Africell…)
       }
       else area = resto.slice(0, 2);
@@ -101,6 +227,7 @@ function capturarGrupo(jid, meta, { fonte = '', slot = null, persistir = true } 
     } else {
       novos++;
       state.contactos[num] = { nome: nomeP, jid: jidP, grupos: { [jid]: nome }, addedAt: Date.now(), ts: Date.now(), ddd: dddDe(num), ...(slot ? { slots: { [slot]: Date.now() } } : {}) };
+      _marcarSujo(num);
     }
   }
   guardar();
@@ -110,11 +237,14 @@ function capturarGrupo(jid, meta, { fonte = '', slot = null, persistir = true } 
 function stats() {
   carregar();
   const nGrupos = Object.keys(state.grupos).length;
+  // v12.9.36: porGrupo numa ÚNICA passada (antes: 1 scan completo POR GRUPO
+  // = 1e9 operações com 1M contactos × 1000 grupos)
+  const _porGrupoTally = {};
+  for (const c of Object.values(state.contactos)) {
+    for (const jid of Object.keys(c.grupos || {})) _porGrupoTally[jid] = (_porGrupoTally[jid] || 0) + 1;
+  }
   const porGrupo = Object.entries(state.grupos)
-    .map(([jid, g]) => {
-      const membros = Object.values(state.contactos).filter(c => c.grupos && c.grupos[jid]).length;
-      return { jid, nome: g.nome, membros, capturados: membros, ts: g.ts };
-    })
+    .map(([jid, g]) => ({ jid, nome: g.nome, membros: _porGrupoTally[jid] || 0, capturados: _porGrupoTally[jid] || 0, ts: g.ts }))
     .sort((a, b) => b.capturados - a.capturados);
   // v12.9.23: resumo por DDD/país + por slot de captura
   const _ddd = {};
@@ -146,7 +276,8 @@ function fonteParaAdd(filtroJid) {
  * v12.9.24: captura DIRECTA de números (passiva — entrada/saída em grupos).
  * Igual ao capturarGrupo mas recebe os números prontos.
  */
-function capturarContactos(nums, jidGrupo, nomeGrupo, { slot = null } = {}) {
+function capturarContactos(nums, jidGrupo, nomeGrupo, opts = {}) {
+  const { slot = null } = opts || {};   // v12.9.36: tolera opts=null (era crash silencioso)
   carregar();
   let novos = 0, duplicados = 0;
   state.grupos[jidGrupo] = state.grupos[jidGrupo] || { nome: String(nomeGrupo || '').slice(0, 120), membros: 0, nomeFonte: 'passiva', ts: Date.now() };
@@ -164,9 +295,12 @@ function capturarContactos(nums, jidGrupo, nomeGrupo, { slot = null } = {}) {
     } else {
       novos++;
       state.contactos[num] = { nome: '', jid: num + '@s.whatsapp.net', grupos: { [jidGrupo]: state.grupos[jidGrupo].nome }, addedAt: Date.now(), ts: Date.now(), ddd: dddDe(num), ...(slot ? { slots: { [slot]: Date.now() } } : {}) };
+      _marcarSujo(num);
     }
   }
-  state.grupos[jidGrupo].membros = Object.values(state.contactos).filter(c => c.grupos && c.grupos[jidGrupo]).length;
+  // v12.9.36: membros INCREMENTAL — o scan completo da base por chamada
+  // custava O(base) POR LOTE (250M operações a 500k contactos!)
+  state.grupos[jidGrupo].membros = (state.grupos[jidGrupo].membros || 0) + novos;
   guardar();
   return { novos, duplicados };
 }
@@ -213,4 +347,4 @@ function filhosComunidade(jidPai, allMeta) {
   return Object.values(allMeta || {}).filter(g => g && String(g.linkedParentJid || '') === String(jidPai));
 }
 
-module.exports = { carregar, guardar, capturarGrupo, capturarContactos, stats, fonteParaAdd, fontePorDdd, remover, limpar, filhosComunidade, dddDe, contactosPorDdd, PAISES };
+module.exports = { carregar, guardar, capturarGrupo, capturarContactos, stats, fonteParaAdd, fontePorDdd, remover, limpar, filhosComunidade, dddDe, contactosPorDdd, PAISES, carregarMongo, modoMongo };

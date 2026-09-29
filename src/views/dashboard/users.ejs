@@ -11,6 +11,7 @@
       <div class="flex gap-2">
         <span class="chip chip-info"><%= users.length %> total</span>
         <span class="chip chip-premium"><%= users.filter(u=>u.role==='premium').length %> premium</span>
+        <button class="btn btn-sm btn-primary" onclick="openModal('criarModal')">➕ Adicionar usuário</button>
       </div>
     </header>
 
@@ -94,6 +95,45 @@
       </div>
     </div>
 
+    <!-- MODAL v12.9.36: Criar usuário -->
+    <div class="modal" id="criarModal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>➕ Adicionar usuário do bot</h3>
+          <button class="modal-close" onclick="closeModal('criarModal')">✕</button>
+        </div>
+        <p class="muted" style="margin-bottom:1rem">Cria a conta do bot para um número — ou usa a Central de Contactos → botão <b>👤+</b> para criar directo da base capturada.</p>
+        <div class="form-group">
+          <label>Username (letras/números/_)</label>
+          <input type="text" id="criarUsername" placeholder="ex: 244912345678" />
+        </div>
+        <div class="form-group">
+          <label>Senha</label>
+          <input type="text" id="criarSenha" placeholder="mín. 4 caracteres (vazio = gero uma)" />
+        </div>
+        <div class="form-group">
+          <label>Nome (opcional)</label>
+          <input type="text" id="criarNome" placeholder="nome da pessoa" />
+        </div>
+        <div class="form-group">
+          <label>WhatsApp (opcional — com DDI)</label>
+          <input type="text" id="criarWa" placeholder="244912345678" />
+        </div>
+        <div class="form-group">
+          <label>Papel</label>
+          <select id="criarRole">
+            <option value="free">Free</option>
+            <option value="premium">Premium</option>
+          </select>
+        </div>
+        <div class="button-row">
+          <button class="btn btn-primary" onclick="criarUsuario(this)">Criar usuário</button>
+          <button class="btn btn-ghost" onclick="closeModal('criarModal')">Cancelar</button>
+        </div>
+        <pre id="criarResult" style="display:none;margin-top:1rem"></pre>
+      </div>
+    </div>
+
     <!-- MODAL: Set Premium -->
     <div class="modal" id="premiumModal">
       <div class="modal-content">
@@ -138,6 +178,28 @@
     });
   }
 
+  // v12.9.36: criar usuário do bot no dashboard
+  async function criarUsuario(btn) {
+    btn.disabled = true;
+    try {
+      const r = await fetch('/api/users/criar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+        username: document.getElementById('criarUsername').value,
+        password: document.getElementById('criarSenha').value,
+        name: document.getElementById('criarNome').value,
+        whatsappNumber: document.getElementById('criarWa').value,
+        role: document.getElementById('criarRole').value,
+      }) }).then(x => x.json());
+      const out = document.getElementById('criarResult');
+      if (!r.ok) { out.style.display = 'block'; out.textContent = '❌ ' + (r.erro || 'falhou'); }
+      else {
+        out.style.display = 'block';
+        out.textContent = '✅ Criado!\nusername: ' + r.username + (document.getElementById('criarSenha').value ? '' : '\n(enviei a senha que definiste)');
+        toast('✅ Usuário criado: ' + r.username, 'success', 5000);
+        setTimeout(() => location.reload(), 1500);
+      }
+    } catch (e) { toast('❌ ' + e.message, 'error'); }
+    btn.disabled = false;
+  }
   function openModal(id) { document.getElementById(id).classList.add('open'); }
   function closeModal(id) { document.getElementById(id).classList.remove('open'); selectedUserId = null; }
 
