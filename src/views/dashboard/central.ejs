@@ -249,7 +249,7 @@ function lidsInfo(n) {
   const el = document.getElementById('lidsBox');
   if (!el) return;
   el.innerHTML = _lids > 0
-    ? '⚠️ <b>' + _lids.toLocaleString('pt-PT') + '</b> contactos são LIDs (identificadores internos do WhatsApp, <i>não</i> servem para adicionar em grupos — capturados antes da correcção). <button class="btn btn-sm btn-danger" onclick="lidsLimpar(this)">🧹 Remover LIDs</button>'
+    ? '⚠️ <b>' + _lids.toLocaleString('pt-PT') + '</b> contactos são LIDs (identificadores internos do WhatsApp, <i>não</i> servem para adicionar em grupos — capturados antes da correcção). <button class="btn btn-sm btn-danger" onclick="lidsLimpar(this)">🧹 Remover LIDs</button> <small class="muted">→ depois RE-CAPTURA os grupos (Grupos do bot ↑) para trazer os números reais.</small>'
     : '';
 }
 async function lidsLimpar(btn) {

@@ -1048,7 +1048,10 @@ module.exports = function (io) {
   router.get('/central/state', requireApiOwner, (req, res) => {
     const cb = centralBase(); cb.carregar();
     const s = cb.stats();
-    const busca = String(req.query.busca || '').toLowerCase().trim();
+    const buscaRaw = String(req.query.busca || '').toLowerCase().trim();
+    // v12.9.38: pesquisa tolerante — "+244 945 280 380", "244945280380" e "50380"
+    // (parcial) encontram o mesmo contacto: comparar por DÍGITOS + nome
+    const buscaDig = buscaRaw.replace(/\D/g, '');
     const pais = String(req.query.pais || '').trim();
     const dddF = String(req.query.ddd || '').trim();
     const porPagina = Math.min(500, Math.max(10, Number(req.query.porPagina) || 100));
@@ -1058,7 +1061,7 @@ module.exports = function (io) {
       if (pais && d.pais !== pais) continue;
       const rotulo = `+${d.ddi} ${d.ddd}`.trim();
       if (dddF && rotulo !== dddF) continue;
-      if (busca && !(num.includes(busca) || String(c.nome || '').toLowerCase().includes(busca))) continue;
+      if (buscaRaw && !(String(num).includes(buscaDig) || String(c.nome || '').toLowerCase().includes(buscaRaw))) continue;
       lista.push({ num, nome: c.nome || '', grupos: Object.values(c.grupos || {}).slice(0, 3).join(', '), nGrupos: Object.keys(c.grupos || {}).length, ts: c.ts || c.addedAt || 0, ddi: d.ddi, pais: d.pais, ddd: d.ddd, dddRotulo: rotulo, slots: Object.keys(c.slots || {}) });
     }
     lista.sort((a, b) => b.ts - a.ts);
