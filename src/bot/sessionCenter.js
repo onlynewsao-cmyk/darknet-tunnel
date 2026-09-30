@@ -713,6 +713,22 @@ function arrancarVigia(intervaloMs = 30 * 60 * 1000) {
   if (_timer.unref) _timer.unref();
 }
 
+/** v12.9.42: pool de socks VIVOS p/ serviços (slots ativos/guardados que abrirem). */
+async function socksVivos() {
+  const out = [];
+  const mapa = await _mapa();
+  for (const d of mapa) {
+    if (d.estado !== 'ativa' && d.estado !== 'guardada') continue;
+    const pref = d.prefixo != null ? d.prefixo : _prefixo(d.slot);
+    try {
+      const { sock } = await _novoSock(pref);
+      const aberto = await _esperaAbertura(sock, PROBE_TIMEOUT_MS);
+      if (aberto) out.push({ slot: d.slot, numero: String(sock?.user?.id || '').split('@')[0].replace(/\D/g, ''), sock });
+    } catch {}
+  }
+  return out;
+}
+
 module.exports = {
   on: (...a) => eventos.on(...a),
   slotAtual, estadoDetalhado, registarSucesso, falhou,

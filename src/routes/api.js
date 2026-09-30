@@ -1085,6 +1085,11 @@ module.exports = function (io) {
     });
   });
   // v12.9.36: países REAIS da base com totais (p/ cartão Países e addcentral de pais:X)
+  // v12.9.42: serviço de crescimento (divulgação/convites c/ rodízio de números)
+  router.get('/crescimento', requireApiOwner, (req, res) => {
+    try { res.json(require('../bot/crescimento').estado()); }
+    catch (e) { res.json({ erro: e.message }); }
+  });
   router.get('/central/paises', requireApiOwner, (req, res) => {
     const cb = centralBase(); cb.carregar();
     const contagem = {};

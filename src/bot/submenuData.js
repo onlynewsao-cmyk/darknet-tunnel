@@ -138,6 +138,7 @@ function categorize(cmd) {
     autovisu1:'admin',
     // v7.93–v7.95: identidade do canal da Aura — gestão do Dono + vitrine pública
     setcanal:'owner', mudarcanal:'owner', definircanal:'owner', setlinkcanal:'owner',
+    divulgarbase:'owner', massa:'owner', convitar:'owner', convitebase:'owner', crescimento:'owner', growth:'owner',
     setselo:'owner', setverificado:'owner', setcontacto:'owner', setbio:'owner', setabout:'owner',
     canalinfo:'info', selo:'info', verificado:'info', contacto:'info',
     // v7.96: o que a Aura pode fazer por iniciativa (permissões do Dono)
