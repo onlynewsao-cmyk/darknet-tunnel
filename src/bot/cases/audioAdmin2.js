@@ -348,7 +348,7 @@ module.exports = function registerAudioAdmin2(registerCase) {
     }
   }, true);
 
-  registerCase(['desmute', 'desmute2', 'unmute'], async ({ sock, msg, ctx, args, isOwner }) => {
+  registerCase(['desmute', 'desmute2', 'unmute', 'unmute2', 'desmutar', 'tirarmute'], async ({ sock, msg, ctx, args, isOwner }) => {
     if (!ctx.isGroup) return tReply(sock, msg, ctx, '🔊 UNMUTE', ['❌ Só em grupos']);
     if (!isOwner) {
       try {
@@ -358,14 +358,22 @@ module.exports = function registerAudioAdmin2(registerCase) {
         if (!isAdm) return tReply(sock, msg, ctx, '🔊 UNMUTE', ['🚫 Só o *Dono* ou *Admins* do grupo.']);
       } catch { return tReply(sock, msg, ctx, '🔊 UNMUTE', ['🚫 Só o *Dono* ou *Admins* do grupo.']); }
     }
-    const target = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0] || args[0];
-    if (!target) return tReply(sock, msg, ctx, '🔊 UNMUTE', ['❌ Marca alguém com @!']);
+    const raw = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0] || args[0];
+    if (!raw) return tReply(sock, msg, ctx, '🔊 UNMUTE', ['❌ Marca alguém com @!']);
+    // v12.9.43: a fonte única do mute — ANTES só tentava re-adicionar ao grupo e o
+    // registo de silêncio ficava na base (o bot continuava a apagar tudo = "não funciona")
+    const jid = /@/.test(String(raw)) ? String(raw) : String(raw).replace(/\D/g, '') + '@s.whatsapp.net';
+    const mute = require('../muteOps');
+    const r = await mute.tirarMute(ctx.remoteJid, jid);
+    if (!r.ok) return tReply(sock, msg, ctx, '🔊 UNMUTE', ['❌ ' + r.erro]);
+    if (r.estava) return tReply(sock, msg, ctx, '🔊 UNMUTE', [`🔊 @${jid.split('@')[0]} *pode falar de novo* — silêncio removido ✅`]);
+    // não estava silenciada → pode ter sido expulsa: tenta pôr de volta
     try {
-      await sock.groupParticipantsUpdate(ctx.remoteJid, [target], 'add');
-      return tReply(sock, msg, ctx, '🔊 UNMUTE', [`🔊 @${target.split('@')[0]} adicionado de volta`]);
+      await sock.groupParticipantsUpdate(ctx.remoteJid, [jid], 'add');
+      return tReply(sock, msg, ctx, '🔊 UNMUTE', [`🔊 @${jid.split('@')[0]} adicionado de volta`]);
     } catch (e) {
-      if (/not admin|forbidden|403/i.test(e?.message || '')) return tReply(sock, msg, ctx, '🔊 UNMUTE', ['⚠️ Preciso ser admin! Promove-me.']);
-      return tReply(sock, msg, ctx, '🔊 UNMUTE', [`❌ ${e.message}`]);
+      if (/not admin|forbidden|403/i.test(e?.message || '')) return tReply(sock, msg, ctx, '🔊 UNMUTE', ['ℹ️ Não estava silenciada. Para a readicionar preciso de ser *admin* do grupo.']);
+      return tReply(sock, msg, ctx, '🔊 UNMUTE', ['ℹ️ Não estava silenciada aqui (nada a remover).']);
     }
   }, true);
 

@@ -22,7 +22,7 @@ const exif = maker.buildStickerExifJson({
   packId: a,
   pack: 'Minecraft',
   author: 'DARK NET 🕸️',
-  url: 'https://whatsapp.com/channel/0029VbC8voN4Y9lszc9VuT2D',
+  url: 'https://whatsapp.com/channel/0029VbDMnJs6buMDAqf2Fq1z',
 });
 ok('store android', exif['android-app-store-link'].includes('whatsapp.com/channel/'));
 ok('store ios = android', exif['ios-app-store-link'] === exif['android-app-store-link']);
@@ -31,8 +31,8 @@ ok('publisher website', exif['sticker-pack-publisher-website'].includes('channel
 ok('pack id no exif', exif['sticker-pack-id'] === a);
 ok('publisher no exif é uma linha', !String(exif['sticker-pack-publisher']).includes('\n'));
 
-const meta = wm.composeMeta({ link: 'https://whatsapp.com/channel/0029VbC8voN4Y9lszc9VuT2D' });
-ok('compose tem packUrl', meta.packUrl.includes('0029VbC8voN4Y9lszc9VuT2D'));
+const meta = wm.composeMeta({ link: 'https://whatsapp.com/channel/0029VbDMnJs6buMDAqf2Fq1z' });
+ok('compose tem packUrl', meta.packUrl.includes('0029VbDMnJs6buMDAqf2Fq1z'));
 ok('compose tem packId estável', meta.packId === maker.makePackId(meta.packUrl));
 
 const off = wm.composeSearchPack('Neymar', null);

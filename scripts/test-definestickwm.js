@@ -10,8 +10,8 @@ function ok(name, cond, extra = '') {
 
 console.log('test-definestickwm');
 
-const a = wm.parseChannelLink('https://whatsapp.com/channel/0029VbC8voN4Y9lszc9VuT2D');
-ok('parse https channel', a && a.type === 'channel' && a.code === '0029VbC8voN4Y9lszc9VuT2D');
+const a = wm.parseChannelLink('https://whatsapp.com/channel/0029VbDMnJs6buMDAqf2Fq1z');
+ok('parse https channel', a && a.type === 'channel' && a.code === '0029VbDMnJs6buMDAqf2Fq1z');
 
 const b = wm.parseChannelLink('https://www.whatsapp.com/channel/0029VbC8voN4Y9lszc9VuT2D/123');
 ok('parse www + msg id', b && b.code === '0029VbC8voN4Y9lszc9VuT2D');
@@ -22,7 +22,7 @@ ok('detecta canal no meio do texto', c && c.type === 'channel' && c.code === '00
 const g = wm.parseGroupLink('https://chat.whatsapp.com/AbCdEfGhIjKl');
 ok('parse grupo', g && g.type === 'group' && g.code === 'AbCdEfGhIjKl');
 
-ok('canal não é grupo', !wm.parseGroupLink('https://whatsapp.com/channel/0029VbC8voN4Y9lszc9VuT2D'));
+ok('canal não é grupo', !wm.parseGroupLink('https://whatsapp.com/channel/0029VbDMnJs6buMDAqf2Fq1z'));
 ok('texto sem link', !wm.parseAnyLink('DARK NET stickers'));
 
 const html = `
@@ -32,12 +32,12 @@ const html = `
 ok('og:title limpa WhatsApp', wm.extractChannelNameFromHtml(html) === 'Stickers DARK NET');
 
 const meta = wm.composeMeta({
-  link: 'https://whatsapp.com/channel/0029VbC8voN4Y9lszc9VuT2D',
+  link: 'https://whatsapp.com/channel/0029VbDMnJs6buMDAqf2Fq1z',
   channelName: 'DARK NET Oficial',
 });
 ok('título = nome do canal', meta.packName === 'DARK NET Oficial');
-ok('publisher é o site (liberta Ver pacote)', meta.authorName === 'whatsapp.com/channel/0029VbC8voN4Y9lszc9VuT2D');
-ok('packUrl completo', meta.packUrl === 'https://whatsapp.com/channel/0029VbC8voN4Y9lszc9VuT2D');
+ok('publisher é o site (liberta Ver pacote)', meta.authorName === 'whatsapp.com/channel/0029VbDMnJs6buMDAqf2Fq1z');
+ok('packUrl completo', meta.packUrl === 'https://whatsapp.com/channel/0029VbDMnJs6buMDAqf2Fq1z');
 ok('sem nome usa a marca', wm.composeMeta({ link: meta.packUrl }).packName === 'DARK NET 🕸️');
 ok('descrição guarda o bloco', meta.description.includes('O melhor canal do mundo') && meta.description.includes('Siga o canal'));
 

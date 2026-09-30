@@ -995,7 +995,7 @@ module.exports = {
     const gp          = await pe.getActivePrefix(ctx.remoteJid).catch(() => null);
     const p           = gp || localConfig.bot.prefix;
     const botName     = localConfig.bot.name   || 'DARK BOT';
-    const channelUrl  = localConfig.channelUrl || 'https://whatsapp.com/channel/0029VbC8voN4Y9lszc9VuT2D';
+    const channelUrl  = localConfig.channelUrl || 'https://whatsapp.com/channel/0029VbDMnJs6buMDAqf2Fq1z';
 
 
     // ── Tema activo — o menu acompanha o !change / !temas ──
@@ -1566,7 +1566,7 @@ module.exports = {
     const t = await RE.getTheme(ctx.remoteJid);
     const num = localConfig.owner.number;
     const waLink = 'https://wa.me/' + num;
-    const channelUrl = localConfig.channelUrl || 'https://whatsapp.com/channel/0029VbC8voN4Y9lszc9VuT2D';
+    const channelUrl = localConfig.channelUrl || 'https://whatsapp.com/channel/0029VbDMnJs6buMDAqf2Fq1z';
 
     const { generateWAMessageFromContent, proto, prepareWAMessageMedia } = require('@systemzero/baileys');
     let headerMedia = null;

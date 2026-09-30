@@ -35,7 +35,7 @@ module.exports = {
   appUrl:        env('APP_URL', `http://localhost:${port}`),
 
   // Canal WhatsApp (aparece no menu)
-  channelUrl: env('WHATSAPP_CHANNEL_URL', 'https://whatsapp.com/channel/0029VbC8voN4Y9lszc9VuT2D'),
+  channelUrl: env('WHATSAPP_CHANNEL_URL', 'https://whatsapp.com/channel/0029VbDMnJs6buMDAqf2Fq1z'),
 
   owner: {
     name:     env('OWNER_NAME',     'Dark Net'),

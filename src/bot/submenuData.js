@@ -63,7 +63,7 @@ function categorize(cmd) {
     vip:'info', assinar:'info',
     cmdsocultos:'owner', portal18:'owner',
     copilot:'ia', chat:'ia', ask:'ia',
-    unmute:'admin', unadmin:'admin', calar:'admin',
+    unmute:'admin', unadmin:'admin', calar:'admin', desmute:'admin', desmute2:'admin', desmutar:'admin', tirarmute:'admin',
     fechar:'admin', 'fechar-grupo':'admin', abrir:'admin', 'abrir-grupo':'admin',
     everyone:'admin', all:'admin', whitelist:'admin',
     facebook:'downloads', tt:'downloads', tw:'downloads',

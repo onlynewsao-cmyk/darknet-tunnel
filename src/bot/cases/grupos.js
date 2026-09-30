@@ -284,9 +284,12 @@ module.exports = function registerGroupCases(registerCase) {
       gs.mutedUsers = (gs.mutedUsers || []).filter(mu => mu.jid !== target);
 
       if (isUn) {
-        await gs.save();
-        try { require('../../bot/messageListener').mutedCacheUpdate(ctx.remoteJid, target, -1); } catch {}
-        await reply(`🔊 ${mentionTag(target)} *pode falar de novo!* Mute removido com decisão ✅`);
+        // v12.9.43: mesma fonte única do .desmute (muteOps)
+        const rr = await require('../muteOps').tirarMute(ctx.remoteJid, target);
+        if (!rr.ok) return reply('❌ ' + rr.erro);
+        await reply(rr.estava
+          ? `🔊 ${mentionTag(target)} *pode falar de novo!* Mute removido com decisão ✅`
+          : `ℹ️ ${mentionTag(target)} não estava silenciado aqui.`);
         return;
       }
 

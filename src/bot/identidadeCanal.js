@@ -9,7 +9,7 @@
 
 const config = require('../config');
 
-const CANAL_DEF = 'https://whatsapp.com/channel/0029VbC8voN4Y9lszc9VuT2D';
+const CANAL_DEF = 'https://whatsapp.com/channel/0029VbDMnJs6buMDAqf2Fq1z';
 const SELO_DEF = { nome: 'DARK BOT ✓', numero: '244949926074' };
 
 function _cache() { return require('./botConfigCache'); }

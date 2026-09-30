@@ -25,7 +25,7 @@ ok('packbusca usa searchQuery', native.includes('searchQuery: nome'));
 ok('pack18 usa searchQuery', native.includes('searchQuery: tags'));
 ok('helper stickerPack existe', require('fs').existsSync(require('path').join(__dirname, '../src/bot/stickerPack.js')));
 
-const meta = wm.composeMeta({ link: 'https://whatsapp.com/channel/0029VbC8voN4Y9lszc9VuT2D' });
+const meta = wm.composeMeta({ link: 'https://whatsapp.com/channel/0029VbDMnJs6buMDAqf2Fq1z' });
 ok('WM pack name não é o nome do canal', meta.packName === 'DARK NET 🕸️');
 ok('WM description 4 linhas', meta.description.split('\n').length === 4);
 ok('publisher do pack = brand', meta.brand === 'DARK NET 🕸️');
@@ -33,9 +33,12 @@ ok('publisher do pack = brand', meta.brand === 'DARK NET 🕸️');
 try {
   const stickerMaker = require('../src/bot/stickerMaker');
   const a = stickerMaker.makePackId('Neymar');
-  const b = stickerMaker.makePackId('Neymar');
+  const b = stickerMaker.makePackId('Cristiano');
   ok('makePackId formato', /^com\.darkbot\.pack\.[a-f0-9]{16}$/.test(a), a);
-  ok('makePackId único por pack', a !== b);
+  // o packId tem de ser ESTÁVEL para o mesmo pack (senão o WhatsApp trata como
+  // pacote novo a cada sticker) e DIFERENTE entre packs distintos
+  ok('makePackId estável no mesmo pack', a === stickerMaker.makePackId('Neymar'));
+  ok('makePackId difere entre packs', a !== b);
 } catch (e) {
   ok('makePackId runtime (deps)', /Cannot find module/.test(String(e.message)), String(e.message).slice(0, 80));
 }

@@ -226,7 +226,7 @@ function ctxFactory({ isOwner = true, isGroup = false, admin = false } = {}) {
   // ══════════════════════════════════════════════════════════
   {
     const grp = ctxFactory({ isOwner: true, isGroup: true });
-    await handler(grp.args(['link', 'https://whatsapp.com/channel/0029VbC8voN4Y9lszc9VuT2D']));
+    await handler(grp.args(['link', 'https://whatsapp.com/channel/0029VbDMnJs6buMDAqf2Fq1z']));
     t('link de canal guardado no grupo', (fakeWm._groups.get(grp.ctx.remoteJid)?.channelUrl || '').includes('channel/'), String(fakeWm._groups.get(grp.ctx.remoteJid)?.channelUrl));
 
     const inv = ctxFactory({ isOwner: true });

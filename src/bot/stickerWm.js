@@ -18,7 +18,7 @@ const DEFAULT_BRAND = 'DARK NET 🕸️';
 const DEFAULT_PACK = 'DARK NET 🕸️';
 const DEFAULT_SLOGAN = 'O melhor canal do mundo';
 const DEFAULT_CTA = 'Siga o canal';
-const DEFAULT_PACK_URL = 'https://whatsapp.com/channel/0029VbC8voN4Y9lszc9VuT2D';
+const DEFAULT_PACK_URL = 'https://whatsapp.com/channel/0029VbDMnJs6buMDAqf2Fq1z';
 
 function stablePackId(seed = '') {
   try {
