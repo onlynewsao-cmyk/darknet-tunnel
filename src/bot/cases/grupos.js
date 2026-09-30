@@ -175,10 +175,21 @@ module.exports = function registerGroupCases(registerCase) {
   // ══════════════════════════════════════════════════════════════════
   // !add — Adiciona membro
   // ══════════════════════════════════════════════════════════════════
-  registerCase(['add', 'adicionar', 'addmembro'], async ({ m, sock, ctx, args, isOwner, reply }) => {
+  // v12.9.44: 'add'/'adicionar' são da CENTRAL (centralGrupos.js) — aqui fica só o
+  // add clássico de 1 número para admins do grupo. Antes este handler GANHAVA o
+  // nome 'add' (carrega depois) e a central nunca corria: ".add 1 de todos"
+  // respondia "Usa: .add 244XXXXXXXXX".
+  registerCase(['addmembro', 'addpessoa', 'addnumero'], async ({ m, sock, ctx, args, isOwner, reply }) => {
     if (!await requireSenderAdmin(sock, ctx, reply)) return;
     const num = args[0]?.replace(/\D/g, '');
-    if (!num || num.length < 8) return reply(`❌ Usa: \`${ctx.prefix}add 244XXXXXXXXX\``);
+    if (!num || num.length < 8) return reply(`❌ Usa: \`${ctx.prefix}addmembro 244XXXXXXXXX\``);
+    const meta = await getGroupMeta(sock, ctx);
+    const participantes = meta?.participants || [];
+    if (meta?.isParentGroup || /comunity|comunidade/i.test(meta?.subject || '')) {
+      return reply('🏘️ Este é o grupo de anúncios de uma *COMUNIDADE*. Usa um subgrupo para adicionar membros.');
+    }
+    if (participantes.length >= 1024) return reply('🚫 Este grupo está CHEIO (' + participantes.length + '/1024).');
+    if (participantes.some(p => String(p.id || '').split('@')[0].replace(/\D/g, '') === num)) return reply('ℹ️ +' + num + ' já é membro deste grupo.');
     await tryAdminAction(sock, ctx, async () => {
       const jid = num + '@s.whatsapp.net';
       await sock.groupParticipantsUpdate(ctx.remoteJid, [jid], 'add');

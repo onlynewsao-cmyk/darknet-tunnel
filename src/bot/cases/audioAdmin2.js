@@ -400,18 +400,9 @@ module.exports = function registerAudioAdmin2(registerCase) {
   }, true);
 
   // ═══ ADMIN: ADD (v6.39 — com permissão) ═══
-  registerCase(['add', 'adicionar', 'addmembro'], async ({ sock, msg, ctx, args, isOwner }) => {
-    if (!await _admGuard(sock, msg, ctx, isOwner, '➕ ADD')) return;
-    const num = args[0]?.replace(/\D/g, '');
-    if (!num) return tReply(sock, msg, ctx, '➕ ADD', ['❌ Uso: !add 244923000000']);
-    try {
-      await sock.groupParticipantsUpdate(ctx.remoteJid, [num + '@s.whatsapp.net'], 'add');
-      return tReply(sock, msg, ctx, '➕ ADD', [`✅ +${num} adicionado!`]);
-    } catch (e) {
-      if (/not admin|forbidden|403/i.test(e?.message || '')) return tReply(sock, msg, ctx, '➕ ADD', ['⚠️ Preciso ser admin! Promove-me.']);
-      return tReply(sock, msg, ctx, '➕ ADD', [`❌ ${e.message}`]);
-    }
-  }, true);
+  // v12.9.44: o 'add' duplicado saiu daqui — registava 'add'/'adicionar' ANTES da
+  // central (ordem alfabética) e, como a central usa onlyIfNew, ela nunca ganhava.
+  // Add de 1 número: .addmembro (grupos.js) · puxar a base: .add (Central, só dono).
 
   registerCase(['kick', 'ban', 'ban2', 'bam', 'tempban', 'tempkick', 'kicktemp'], async ({ sock, msg, ctx, args, isOwner }) => {
     if (!await _admGuard(sock, msg, ctx, isOwner, '🚫 KICK')) return;

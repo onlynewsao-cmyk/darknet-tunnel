@@ -313,11 +313,20 @@ module.exports = function registerCentralGrupos(registerCase) {
     if (!argDest) {
       return _menuAdd(sock, msg, ctx);
     }
-    // .add <número> → adiciona 1 pessoa AO GRUPO ACTUAL (comportamento .add clássico)
+    // .add <número> → uma pessoa no grupo actual. Mesmo sendo só uma acção,
+    // aplica as travas da Central: comunidade-pai e grupo cheio nunca recebem add.
     if (/^\+?\d{7,15}$/.test(argDest) && !args.slice(1).includes('de')) {
       if (!/@g\.us$/.test(ctx.remoteJid || '')) return reply('Para adicionar 1 pessoa, usa o comando DENTRO do grupo. Para puxar a base: *add <dest> de …*');
       const num = argDest.replace(/\D/g, '');
       try {
+        const meta = await sock.groupMetadata(ctx.remoteJid);
+        const participantes = meta?.participants || [];
+        if (meta?.isParentGroup || /comunity|comunidade/i.test(meta?.subject || '')) {
+          return reply('🏘️ Este é o grupo de anúncios de uma *COMUNIDADE*. O WhatsApp não permite adicionar membros directamente — usa um subgrupo.');
+        }
+        if (participantes.length >= 1024) return reply('🚫 Este grupo está CHEIO (' + participantes.length + '/1024). Remove alguém ou usa outro grupo.');
+        const jaMembro = participantes.some(p => String(p.id || '').split('@')[0].replace(/\D/g, '') === num);
+        if (jaMembro) return reply('ℹ️ +' + num + ' já é membro deste grupo.');
         await sock.groupParticipantsUpdate(ctx.remoteJid, [num + '@s.whatsapp.net'], 'add');
         return reply('✅ +' + num + ' adicionado ao grupo!');
       } catch (e) {
@@ -336,7 +345,10 @@ module.exports = function registerCentralGrupos(registerCase) {
     if (!lista || !lista.length) return reply('A base/fonte está vazia — corre *capturartodos* primeiro.');
     const L = await reply(`⏳ *ADD CENTRAL*\n🎯 destino: ${gDest.nome.slice(0, 40)}\n📇 fonte: ${fonteDesc} → *${lista.length}* contactos\n\n⚠️ Em lotes de 5 · pausa 3s. Quem não deixar adicionar-se (privacidade) fica na lista de convites.`);
     return executarAddCentral(sock, msg, ctx, reply, gDest, fonteDesc, lista, L);
-  }, owner);
+    // v12.9.44: SEM o 3º argumento — 'owner'(=true) é lido pelo caseHandler como
+    // onlyIfNew e o 'add' já vinha registado por outro ficheiro (a…/g…) → a central
+    // ficava de fora. O gate de dono está no only() acima.
+  });
 
   // ═══════════ CONFIRMAÇÃO DO CONVITE ═══════════
   registerCase(['addconvite'], async ({ sock, msg, ctx, args, isOwner, reply }) => {
