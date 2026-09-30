@@ -14,9 +14,11 @@ const SELO_DEF = { nome: 'DARK BOT ✓', numero: '244949926074' };
 
 function _cache() { return require('./botConfigCache'); }
 
-/** Link do canal actual (DB > env > padrão). */
+/** Link do canal actual — v12.9.41: 'off' APAGA a sério (devolve '')
+ *  em vez de repor o link padrão do env. */
 async function canalLink() {
   try {
+    if (await _cache().get('channel_off', false)) return '';
     const v = await _cache().get('channel_url', '');
     if (v) return v;
   } catch {}
@@ -24,7 +26,14 @@ async function canalLink() {
 }
 
 async function setCanal(url) {
-  await _cache().set('channel_url', String(url || '').trim());
+  const v = String(url || '').trim();
+  if (!v) {   // OFF = apagar: não volta ao padrão
+    await _cache().set('channel_off', true);
+    await _cache().set('channel_url', '');
+    return;
+  }
+  await _cache().set('channel_off', false);
+  await _cache().set('channel_url', v);
 }
 
 /** Selo de contacto verificado { nome, numero } (DB > padrão). */
@@ -57,4 +66,13 @@ function seloMsg(nome, numero) {
   };
 }
 
-module.exports = { canalLink, setCanal, selo, setSelo, seloMsg, CANAL_DEF, SELO_DEF };
+// v12.9.41: envia o contacto verificado como CARTÃO REAL (o quote fake de
+// status@broadcast deixou de renderizar nos clientes novos do WhatsApp)
+async function enviarSelo(sock, jid, nome, numero, quoted = null) {
+  const num = String(numero || '').replace(/\D/g, '');
+  const env = { contacts: { displayName: nome, contacts: [{ vcard: `BEGIN:VCARD\nVERSION:3.0\nN:;${nome};;;\nFN:${nome}\nitem1.TEL;waid=${num}:${num}\nitem1.X-ABLabel:Celular\nEND:VCARD` }] } };
+  if (quoted && quoted.key) env.quoted = quoted;
+  return sock.sendMessage(jid, env);
+}
+
+module.exports = { canalLink, setCanal, selo, setSelo, seloMsg, enviarSelo, CANAL_DEF, SELO_DEF };

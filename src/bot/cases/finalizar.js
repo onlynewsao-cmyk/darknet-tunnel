@@ -344,7 +344,8 @@ const infoHandlers = {
     return reply(sock, msg, ctx, `💤 *BOT EM DESCANSO?*\n\nO bot continua online 24/7. Para desligar a AURA num grupo: *auraoff*`);
   },
   async ca({ sock, msg, ctx }) {
-    return reply(sock, msg, ctx, `📡 *CANAL DARK NET*\n\n${await require('../identidadeCanal').canalLink()}`);
+    const _link = await require('../identidadeCanal').canalLink();
+    return reply(sock, msg, ctx, _link ? `📡 *CANAL DARK NET*\n\n${_link}` : '📡 Sem canal configurado.\n> O Dono põe com `!setcanal <link>`');
   },
   async menualt({ sock, msg, ctx }) { return reply(sock, msg, ctx, `📋 Menu completo: *menu*\nDono: *menudono* · 18+: *menu18*`); },
   async menubn({ sock, msg, ctx }) { return reply(sock, msg, ctx, `🔘 Modo de botões: *buttonmode*\nVisual: *menustyle*`); },

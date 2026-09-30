@@ -403,6 +403,28 @@ async function bootstrap() {
   });
 
   app.use('/', authRoutes);
+  // v12.9.41: STATUSPG — página pública de estado (/status, sem login, sem dados sensíveis)
+  app.get('/status', async (req, res) => {
+    let st = {}, slots = [], contactos = 0, grupos = 0;
+    try { st = getBot().getStatus() || {}; } catch {}
+    try { slots = await require('./bot/sessionCenter').estadoDetalhado(); } catch { slots = []; }
+    try { const s = require('./bot/centralBase').stats(); contactos = s.total || 0; grupos = s.nGrupos || 0; } catch {}
+    const fmtU = (s) => { const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60); return (d ? d + 'd ' : '') + h + 'h ' + m + 'm'; };
+    let versao = '?';
+    try { versao = require('../package.json').version || '?'; } catch {}
+    let ram = 0; try { ram = Math.round(process.memoryUsage().rss / 1048576); } catch {}
+    res.render('status', {
+      nome: config.bot?.name || 'DARK BOT',
+      dono: config.owner?.name || 'Dark',
+      numero: String(st.user?.id || '').split('@')[0].replace(/D/g, ''),
+      online: /connected/i.test(st.status || ''),
+      uptime: fmtU(st.uptime || 0),
+      mensagens: st.messageCount || 0,
+      sessoes: slots.filter(x => x.emUso || x.estado === 'ativa').length,
+      slots: slots.length,
+      contactos, grupos, ram, versao,
+    });
+  });
   app.use('/dashboard', dashboardRoutes);
   app.use('/api', apiRoutes(io));
 

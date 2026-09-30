@@ -108,9 +108,16 @@ async function parseFonte(sock, chatId, argDeRaw) {
 
 // motor do ADD (addcentral e addgo partilham): admin check → lotes de 5 →
 // resultado com PERGUNTA de convite (nunca automático)
+// ═══ v12.9.41: motor do ADD À PROVA DE BAN ═══
+// • respeita o LIMITE do grupo (1024 membros) e as vagas reais
+// • NÃO tenta adicionar quem já é membro (menos acções = menos risco)
+// • comunidade PAI não aceita add directo (avisar em vez de falhar)
+// • ritmo HUMANO: lotes de 3–5 + pausas aleatórias 3–8s (nada mecânico)
+// • DISJUNTOR: 15 recusas seguidas → para o número e devolve o parcial
 async function executarAddCentral(sock, msg, ctx, reply, gDest, fonteDesc, lista, L) {
+  let metaDest = null;
   try {
-    const metaDest = await sock.groupMetadata(gDest.jid);
+    metaDest = await sock.groupMetadata(gDest.jid);
     const meuNum = String((sock.user?.id || '')).split('/')[0].split(':')[0].split('@')[0].replace(/\D/g, '');
     const souAdm = (metaDest.participants || []).some(p => {
       const num = String(p.id || '').split('@')[0].replace(/\D/g, '');
@@ -120,25 +127,60 @@ async function executarAddCentral(sock, msg, ctx, reply, gDest, fonteDesc, lista
       '⚠️ Preciso ser *admin* de *' + String(gDest.nome).slice(0, 40) + '* para adicionar pessoas.', 'Central',
       [{ id: ctx.prefix + 'gruposbot', text: '📋 Ver grupos' }], msg);
   } catch (e) { return reply('❌ Não consegui ler o grupo destino: ' + (e.message || '').slice(0, 80)); }
+
+  // comunidade PAI (grupo de anúncios) não aceita add directo
+  if (metaDest.isParentGroup || /comunity|comunidade/i.test(metaDest.subject || '')) {
+    const filhos = (metaDest.participants || []).length;
+    return buttonHandler.sendButtons(sock, ctx.remoteJid,
+      '🏘️ *' + String(gDest.nome).slice(0, 40) + '* é uma COMUNIDADE (grupo de anúncios) — o WhatsApp não deixa adicionar membros directamente.\n\n👉 Usa um dos *subgrupos* como destino: `gruposbot` e vê os ↳ filhos.', 'Central',
+      [{ id: ctx.prefix + 'gruposbot', text: '📋 Ver grupos' }], msg);
+  }
+
+  // quem JÁ é membro fica fora (poupa acções = menos risco de ban)
+  const jaMembros = new Set((metaDest.participants || []).map(p => String(p.id || '').split('@')[0].replace(/\D/g, '')));
+  const unicos = new Set();
+  const fila = (lista || []).filter(x => !unicos.has(x.num) && unicos.add(x.num)).filter(x => !jaMembros.has(x.num));
+  const jaMembrosN = (lista || []).length - fila.length;
+
+  // LIMITE do grupo (WhatsApp: 1024 membros)
+  const MAX_GRUPO = 1024;
+  const atuais = (metaDest.participants || []).length;
+  const vagas = Math.max(0, MAX_GRUPO - atuais);
+  if (!vagas) return reply('🚫 *' + String(gDest.nome).slice(0, 40) + '* está CHEIO (' + atuais + '/' + MAX_GRUPO + '). O WhatsApp não deixa passar de ' + MAX_GRUPO + ' membros.');
+  const alvo = fila.slice(0, vagas);
+  if (!alvo.length) return reply('✅ Ninguém a adicionar — todos os ' + (lista || []).length + ' contactos da fonte já são membros deste grupo.');
+
+  const est = '👥 ' + atuais + '/' + MAX_GRUPO + ' · vagas: ' + vagas + (jaMembrosN ? ' · já membros: ' + jaMembrosN : '');
+  if (fila.length > vagas) await reply('⚠️ Base tem *' + fila.length + '* mas o grupo só tem *' + vagas + ' vagas* — adiciono ' + vagas + ' agora (o resto fica para quando houver espaço).');
   const okN = [], falharam = [];
-  for (let i = 0; i < lista.length; i += 5) {
-    const lote = lista.slice(i, i + 5);
+  let recusasSeguidas = 0, abortado = false;
+  for (let i = 0; i < alvo.length;) {   // lotes de 3–5 (tamanho sorteado 1× por lote!)
+    const tamLote = 3 + Math.floor(Math.random() * 3);
+    if (recusasSeguidas >= 15) {
+      abortado = true;
+      await reply('🛑 *PAREI por segurança:* ' + recusasSeguidas + ' recusas seguidas. Continuar pode queimar o número — espera umas horas ou usa `addconvite` (link no PV).');
+      break;
+    }
+    const lote = alvo.slice(i, i + tamLote);
+    i += lote.length;
     try {
       const res = await sock.groupParticipantsUpdate(gDest.jid, lote.map(x => x.jid), 'add');
       for (const r of (res || [])) {
-        const info = lista.find(x => x.jid === r.jid || x.num === String(r.jid || '').split('@')[0]);
-        if (!r || !r.status || r.status === '200') okN.push(info || { nome: r.jid });
-        else falharam.push({ jid: r.jid, nome: (info && info.nome) || '', status: r.status });
+        const info = alvo.find(x => x.jid === r.jid || x.num === String(r.jid || '').split('@')[0]);
+        if (!r || !r.status || r.status === '200') { okN.push(info || { nome: r.jid }); recusasSeguidas = 0; }
+        else { falharam.push({ jid: r.jid, nome: (info && info.nome) || '', status: r.status }); recusasSeguidas++; }
       }
     } catch (e) {
       const msg403 = /403|forbidden|not-authorized|conflict/i.test(e.message || '');
       for (const x of lote) falharam.push({ jid: x.jid, nome: x.nome, status: msg403 ? '403' : 'erro' });
+      if (msg403) recusasSeguidas += lote.length; else recusasSeguidas += 1;
     }
-    if (i % 20 === 15 && L && L.key) { try { await sock.sendMessage(ctx.remoteJid, { edit: L.key, text: '⏳ ' + Math.min(i + 5, lista.length) + '/' + lista.length + '… ✅ ' + okN.length + ' · ❌ ' + falharam.length }); } catch {} }
-    await new Promise(r => setTimeout(r, 3000));
+    if (i % 20 === 15 && L && L.key) { try { await sock.sendMessage(ctx.remoteJid, { edit: L.key, text: '⏳ ' + Math.min(i + 5, alvo.length) + '/' + alvo.length + '… ✅ ' + okN.length + ' · ❌ ' + falharam.length + '\n' + est }); } catch {} }
+    await new Promise(r => setTimeout(r, 3000 + Math.floor(Math.random() * 5000)));   // 3–8s humano
   }
   _pend.set(ctx.remoteJid, { dest: gDest.jid, destNome: gDest.nome, falhados: falharam, ts: Date.now() });
-  let texto = '✅ *ADD CENTRAL CONCLUÍDO*\n\n🎯 ' + String(gDest.nome).slice(0, 40) + '\n✅ adicionados: *' + okN.length + '*\n❌ não deixaram (privacidade/erro): *' + falharam.length + '*';
+  let texto = '✅ *ADD CENTRAL CONCLUÍDO*' + (abortado ? ' (parcial — parado por segurança)' : '') + '\n\n🎯 ' + String(gDest.nome).slice(0, 40) + '\n👥 ' + (atuais + okN.length) + '/' + MAX_GRUPO + ' membros\n✅ adicionados: *' + okN.length + '*' + (jaMembrosN ? '\n♻️ já eram membros: ' + jaMembrosN : '') + '\n❌ não deixaram (privacidade/erro): *' + falharam.length + '*';
+  if (fila.length > vagas + okN.length) texto += '\n📦 restaram na fila: ' + (fila.length - okN.length - falharam.length) + ' (sem vagas — corre de novo depois)';
   if (falharam.length) texto += '\n\n📨 Queres que eu mande o *convite no PV* dos ' + falharam.length + '?';
   const bts = falharam.length
     ? [{ id: ctx.prefix + 'addconvite sim', text: '📨 Convite PV (' + falharam.length + ')' }, { id: ctx.prefix + 'addconvite nao', text: '❌ Não enviar' }]

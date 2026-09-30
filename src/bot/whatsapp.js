@@ -374,6 +374,9 @@ class WhatsAppBot {
           try { require('./sessionCenter').registarSucesso(this.user?.id).catch(() => {}); } catch {}
           // v12.9.3: GUARDAR SESSÃO — snapshot diário automático (protege contra perder o pareamento)
           try { require('./sessionBackup').abrir(); } catch {}
+          // v12.9.41: IDENTIDADE VERIFICADA — ✓ na etiqueta (nome do perfil)
+          // + mensagem de status (About) com o dono verificado (1ª vez apenas)
+          try { setTimeout(() => { require('./identidadeViva').aplicar(this.sock).catch(() => {}); require('./identidadeViva').aplicarBioUmaVez(this.sock).catch(() => {}); }, 8000).unref?.(); } catch {}
           startKeepAlive(config.appUrl);
 
           // v6.79 — o Dono quer que o telemóvel dele toque assim que o bot

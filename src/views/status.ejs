@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="refresh" content="30">
+  <title><%= nome %> — Status</title>
+  <style>
+    :root { --bg: #0a0a0f; --card: #12121c; --border: #23233a; --text: #e8e8f0; --muted: #8a8a9e; --verde: #22c55e; --vermelho: #ef4444; --roxo: #a855f7; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 1.5rem; }
+    .wrap { width: 100%; max-width: 560px; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 1.6rem; margin-bottom: 1rem; }
+    .topo { text-align: center; margin-bottom: 1.4rem; }
+    .topo h1 { font-size: 1.5rem; letter-spacing: .04em; }
+    .ponto { display: inline-block; width: 11px; height: 11px; border-radius: 50%; margin-right: .45rem; vertical-align: baseline; }
+    .on { background: var(--verde); box-shadow: 0 0 10px var(--verde); animation: pulso 2s infinite; }
+    .off { background: var(--vermelho); box-shadow: 0 0 10px var(--vermelho); }
+    @keyframes pulso { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
+    .estado-grande { font-size: 1.15rem; font-weight: 700; margin-top: .5rem; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: .8rem; }
+    .item { background: rgba(255,255,255,.02); border: 1px solid var(--border); border-radius: 10px; padding: .85rem 1rem; }
+    .item .k { color: var(--muted); font-size: .74rem; text-transform: uppercase; letter-spacing: .08em; margin-bottom: .3rem; }
+    .item .v { font-size: 1.05rem; font-weight: 600; font-family: 'JetBrains Mono', ui-monospace, monospace; }
+    .verif { color: var(--roxo); }
+    .rodape { text-align: center; color: var(--muted); font-size: .78rem; margin-top: .8rem; }
+    .rodape a { color: var(--roxo); text-decoration: none; }
+    .uptime { text-align: center; color: var(--muted); font-size: .85rem; margin-top: .4rem; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topo">
+      <h1>🛡️ <%= nome %> <span class="verif">✓</span></h1>
+      <div class="estado-grande">
+        <span class="ponto <%= online ? 'on' : 'off' %>"></span><%= online ? 'ONLINE' : 'OFFLINE' %>
+      </div>
+      <div class="uptime">⏱️ uptime: <%= uptime %><% if (numero) { %> · 📱 +<%= numero %><% } %></div>
+    </div>
+    <div class="card">
+      <div class="grid">
+        <div class="item"><div class="k">Mensagens</div><div class="v"><%= mensagens %></div></div>
+        <div class="item"><div class="k">Sessões activas</div><div class="v"><%= sessoes %>/<%= slots %></div></div>
+        <div class="item"><div class="k">Contactos na base</div><div class="v"><%= contactos %></div></div>
+        <div class="item"><div class="k">Grupos</div><div class="v"><%= grupos %></div></div>
+        <div class="item"><div class="k">RAM</div><div class="v"><%= ram %> MB</div></div>
+        <div class="item"><div class="k">Versão</div><div class="v"><%= versao %></div></div>
+      </div>
+    </div>
+    <div class="rodape">
+      👑 Dono: <span class="verif">✓ <%= dono %></span> · actualiza sozinho a cada 30s
+    </div>
+  </div>
+</body>
+</html>

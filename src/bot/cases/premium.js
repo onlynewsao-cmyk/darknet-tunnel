@@ -70,7 +70,7 @@ module.exports = function registerPremiumCases(registerCase) {
         desc:    'Tudo do Premium 30 dias\n+Prioridade máxima\n+Sem limites em grupos\n+Suporte 24/7\n+Planos de alugar incluídos',
         btns:    [
           { text: '📲 Contratar', id: `PREMIUM_90_${ctx.senderNumber}` },
-          { text: '🔗 Canal',     id: `CTA_URL_${channelUrl}` },
+          ...(channelUrl ? [{ text: '🔗 Canal', id: `CTA_URL_${channelUrl}` }] : []),
         ],
       },
     ];
