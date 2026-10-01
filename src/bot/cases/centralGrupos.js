@@ -20,6 +20,74 @@ const _pend = new Map();   // chatId → { dest, falhados: [{jid,nome}], envJid,
 
 const only = (isOwner, reply) => isOwner ? true : (reply('👑 A Central é *SÓ DO DONO*.'), false);
 const fmtN = n => n >= 1000 ? (n / 1000).toFixed(1) + 'K' : String(n);
+const _addsEmCurso = new Set(); // destino → impede duas campanhas simultâneas e tentativas duplicadas
+
+// O WhatsApp recente pode devolver um participante pelo número normal, por
+// JID multi-device (244…:12@s.whatsapp.net) ou por LID (…@lid). Centralizar
+// isto evita tanto um falso "não sou admin" como tentar re-adicionar alguém.
+const numJid = (v) => String(v || '').split(':')[0].split('@')[0].replace(/\D/g, '');
+const ehLid = (v) => /@lid$/i.test(String(v || ''));
+const camposParticipante = (p) => p && typeof p === 'object'
+  ? [p.id, p.jid, p.lid, p.phoneNumber, p.pn].filter(Boolean)
+  : [p].filter(Boolean);
+const eAdmin = (p) => p?.admin === 'admin' || p?.admin === 'superadmin' || p?.isAdmin === true;
+
+/** Resolve um LID para número sem depender de uma única versão do Baileys. */
+async function numeroDoLid(sock, lid) {
+  if (!lid) return '';
+  try {
+    const ident = require('../../aura/auraIdentidade');
+    const doCache = ident.pnDoLid?.(lid);
+    if (doCache) return numJid(doCache);
+  } catch {}
+  try {
+    const repo = sock?.signalRepository;
+    const mapa = repo?.lidMapping || repo?.getLIDMappingStore?.();
+    const pn = await mapa?.getPNForLID?.(ehLid(lid) ? lid : (numJid(lid) + '@lid'));
+    if (pn) return numJid(pn);
+  } catch {}
+  return '';
+}
+
+/** Números que já pertencem ao grupo, mesmo quando a metadata vier por LID. */
+async function numerosNoGrupo(sock, participantes) {
+  const nums = new Set();
+  const lids = new Set();
+  try { require('../../aura/auraIdentidade').aprenderDoGrupo?.({ participants: participantes }); } catch {}
+  for (const p of participantes || []) {
+    for (const campo of camposParticipante(p)) {
+      if (ehLid(campo)) lids.add(String(campo));
+      else { const n = numJid(campo); if (n) nums.add(n); }
+    }
+  }
+  // Só resolve LIDs sem número explícito. O mapeamento fica no cache do socket;
+  // Promise.all não faz chamadas de rede e impede atrasar uma base grande.
+  const resolvidos = await Promise.all([...lids].map(lid => numeroDoLid(sock, lid)));
+  for (const n of resolvidos) if (n) nums.add(n);
+  return nums;
+}
+
+/** Confirma que ESTE bot, não outro participante, é admin no destino. */
+async function botEhAdmin(sock, meta) {
+  const meu = camposParticipante(sock?.user || {});
+  const meusBrutos = new Set(meu.map(v => String(v).toLowerCase()));
+  const meuNum = meu.map(numJid).find(Boolean) || '';
+  if (!meuNum && !meusBrutos.size) return false;
+  try { require('../../aura/auraIdentidade').aprenderDoGrupo?.(meta); } catch {}
+
+  for (const p of meta?.participants || []) {
+    if (!eAdmin(p)) continue;
+    const campos = camposParticipante(p);
+    // Igualdade exacta cobre LID do próprio bot e JID normal.
+    if (campos.some(v => meusBrutos.has(String(v).toLowerCase()))) return true;
+    // Nunca compara o número cru de um LID (não é um telefone).
+    if (campos.some(v => !ehLid(v) && numJid(v) === meuNum)) return true;
+    for (const lid of campos.filter(ehLid)) {
+      if ((await numeroDoLid(sock, lid)) === meuNum) return true;
+    }
+  }
+  return false;
+}
 
 async function listarGrupos(sock) {
   const all = await sock.groupFetchAllParticipating();
@@ -65,13 +133,14 @@ async function _menuAdd(sock, msg, ctx) {
   let txt = '➕ *ADD CENTRAL — contactos → grupos/comunidades*\n\n📇 ' + fmtN(s.total) + ' contactos · 📋 ' + s.nGrupos + ' grupos';
   if ((s.paises || []).length) txt += '\n🌐 ' + (s.paises || []).slice(0, 4).map(p => p.pais + ' ' + fmtN(p.total)).join(' · ');
   txt += '\n\n• \`' + ctx.prefix + 'add <dest> de todos\` — a base TODA'
+    + '\n• \`' + ctx.prefix + 'add <dest> 20 de todos\` — só 20 elegíveis (ex.: grupo 10: \`add 10 20 de todos\`)'
     + '\n• \`' + ctx.prefix + 'add <dest> de 3\` — de 1 grupo'
     + '\n• \`' + ctx.prefix + 'add <dest> de 3 5\` — de 2 grupos'
     + '\n• \`' + ctx.prefix + 'add <dest> de pais:angola\` — de 1 país'
     + '\n• \`' + ctx.prefix + 'add <dest> de pais:angola+brasil\` — de 2 países'
     + '\n• \`' + ctx.prefix + 'add <dest> de ddd:244 9\` — por operadora'
     + '\n• \`' + ctx.prefix + 'add 244912345678\` — adiciona 1 pessoa AQUI'
-    + '\n\n⚠️ O bot precisa de ser *admin* no grupo destino.'
+    + '\n\n🔎 Antes de cada add, o bot confirma admin, ignora repetidos da base e quem já está no grupo.'
     + (ehGrupo ? '\n💡 Os botões adicionam a ESTE grupo (pedem confirmação).' : '\n👉 Usa o comando DENTRO do grupo destino para ver os botões rápidos.');
   return buttonHandler.sendButtons(sock, ctx.remoteJid, txt, 'Central · só dono', bts, msg);
 }
@@ -114,17 +183,25 @@ async function parseFonte(sock, chatId, argDeRaw) {
 // • comunidade PAI não aceita add directo (avisar em vez de falhar)
 // • ritmo HUMANO: lotes de 3–5 + pausas aleatórias 3–8s (nada mecânico)
 // • DISJUNTOR: 15 recusas seguidas → para o número e devolve o parcial
-async function executarAddCentral(sock, msg, ctx, reply, gDest, fonteDesc, lista, L) {
+async function executarAddCentral(sock, msg, ctx, reply, gDest, fonteDesc, lista, L, opcoes = {}) {
+  const destino = String(gDest?.jid || '');
+  if (!destino) return reply('❌ Grupo destino inválido. Corre `gruposbot` e usa o número da lista.');
+  if (_addsEmCurso.has(destino)) return reply('⏳ Já há uma adição em curso para *' + String(gDest.nome || 'este grupo').slice(0, 40) + '*. Aguarda terminar para não duplicar tentativas.');
+  _addsEmCurso.add(destino);
+  try {
+    return await _executarAddCentral(sock, msg, ctx, reply, gDest, fonteDesc, lista, L, opcoes);
+  } finally {
+    _addsEmCurso.delete(destino);
+  }
+}
+
+async function _executarAddCentral(sock, msg, ctx, reply, gDest, fonteDesc, lista, L, opcoes = {}) {
   let metaDest = null;
   try {
     metaDest = await sock.groupMetadata(gDest.jid);
-    const meuNum = String((sock.user?.id || '')).split('/')[0].split(':')[0].split('@')[0].replace(/\D/g, '');
-    const souAdm = (metaDest.participants || []).some(p => {
-      const num = String(p.id || '').split('@')[0].replace(/\D/g, '');
-      return num === meuNum && (p.admin === 'admin' || p.admin === 'superadmin');
-    });
+    const souAdm = await botEhAdmin(sock, metaDest);
     if (!souAdm) return buttonHandler.sendButtons(sock, ctx.remoteJid,
-      '⚠️ Preciso ser *admin* de *' + String(gDest.nome).slice(0, 40) + '* para adicionar pessoas.', 'Central',
+      '⚠️ Não consegui confirmar que este número é *admin* de *' + String(gDest.nome).slice(0, 40) + '*.\n\n🔎 Verifiquei número normal, JID multi-dispositivo e LID. Promove o bot a admin e tenta de novo — não fiz nenhuma tentativa de add.', 'Central',
       [{ id: ctx.prefix + 'gruposbot', text: '📋 Ver grupos' }], msg);
   } catch (e) { return reply('❌ Não consegui ler o grupo destino: ' + (e.message || '').slice(0, 80)); }
 
@@ -136,22 +213,38 @@ async function executarAddCentral(sock, msg, ctx, reply, gDest, fonteDesc, lista
       [{ id: ctx.prefix + 'gruposbot', text: '📋 Ver grupos' }], msg);
   }
 
-  // quem JÁ é membro fica fora (poupa acções = menos risco de ban)
-  const jaMembros = new Set((metaDest.participants || []).map(p => String(p.id || '').split('@')[0].replace(/\D/g, '')));
+  // Primeiro lê TODA a metadata e monta a fila segura. Assim, contactos que
+  // estão na Central MAS já pertencem ao destino nunca chegam ao WhatsApp em
+  // groupParticipantsUpdate. Suporta id normal, multi-dispositivo e LID.
+  const jaMembros = await numerosNoGrupo(sock, metaDest.participants || []);
   const unicos = new Set();
-  const fila = (lista || []).filter(x => !unicos.has(x.num) && unicos.add(x.num)).filter(x => !jaMembros.has(x.num));
-  const jaMembrosN = (lista || []).length - fila.length;
+  const baseUnica = [];
+  let repetidosNaBase = 0;
+  for (const contacto of (lista || [])) {
+    const num = numJid(contacto?.num || contacto?.jid || '');
+    if (!num || unicos.has(num)) { repetidosNaBase++; continue; }
+    unicos.add(num);
+    // Nunca usa um @lid como alvo do add; o WhatsApp recebe sempre o número.
+    baseUnica.push({ ...contacto, num, jid: num + '@s.whatsapp.net' });
+  }
+  const jaMembrosLista = baseUnica.filter(x => jaMembros.has(x.num));
+  const fila = baseUnica.filter(x => !jaMembros.has(x.num));
+  const jaMembrosN = jaMembrosLista.length;
 
   // LIMITE do grupo (WhatsApp: 1024 membros)
   const MAX_GRUPO = 1024;
   const atuais = (metaDest.participants || []).length;
   const vagas = Math.max(0, MAX_GRUPO - atuais);
   if (!vagas) return reply('🚫 *' + String(gDest.nome).slice(0, 40) + '* está CHEIO (' + atuais + '/' + MAX_GRUPO + '). O WhatsApp não deixa passar de ' + MAX_GRUPO + ' membros.');
-  const alvo = fila.slice(0, vagas);
-  if (!alvo.length) return reply('✅ Ninguém a adicionar — todos os ' + (lista || []).length + ' contactos da fonte já são membros deste grupo.');
+  const limitePedido = Math.max(0, Number(opcoes.limite) || 0);
+  const limiteReal = limitePedido ? Math.min(limitePedido, vagas) : vagas;
+  const alvo = fila.slice(0, limiteReal);
+  if (!alvo.length) return reply('✅ Ninguém a adicionar — dos *' + (lista || []).length + '* contactos da fonte, *' + jaMembrosN + '* já são membros' + (repetidosNaBase ? ' e *' + repetidosNaBase + '* são repetidos na base' : '') + '. Não fiz nenhuma tentativa de add.');
 
-  const est = '👥 ' + atuais + '/' + MAX_GRUPO + ' · vagas: ' + vagas + (jaMembrosN ? ' · já membros: ' + jaMembrosN : '');
-  if (fila.length > vagas) await reply('⚠️ Base tem *' + fila.length + '* mas o grupo só tem *' + vagas + ' vagas* — adiciono ' + vagas + ' agora (o resto fica para quando houver espaço).');
+  const est = '👥 ' + atuais + '/' + MAX_GRUPO + ' · vagas: ' + vagas + (jaMembrosN ? ' · já membros: ' + jaMembrosN : '') + (repetidosNaBase ? ' · repetidos base: ' + repetidosNaBase : '');
+  const plano = '⏳ *ADD CENTRAL — FILA SEGURA*\n🎯 destino: ' + String(gDest.nome).slice(0, 40) + '\n📇 fonte: ' + fonteDesc + ' → ' + (lista || []).length + ' na base\n♻️ já estavam no grupo: *' + jaMembrosN + '*' + (repetidosNaBase ? '\n🧹 repetidos da base ignorados: *' + repetidosNaBase + '*' : '') + '\n✅ elegíveis: *' + fila.length + '* → vou tentar: *' + alvo.length + '*' + (limitePedido ? ' (limite pedido: ' + limitePedido + ')' : '') + '\n🚦 lotes humanos de 3–5 · pausa 3–8s';
+  if (L?.key) { try { await sock.sendMessage(ctx.remoteJid, { edit: L.key, text: plano }); } catch {} }
+  if (fila.length > limiteReal) await reply('⚠️ Há *' + fila.length + '* elegíveis, mas vou tentar só *' + alvo.length + '*' + (limitePedido ? ' pelo limite pedido' : ' pelas vagas do grupo') + '.');
   const okN = [], falharam = [];
   let recusasSeguidas = 0, abortado = false;
   for (let i = 0; i < alvo.length;) {   // lotes de 3–5 (tamanho sorteado 1× por lote!)
@@ -179,8 +272,8 @@ async function executarAddCentral(sock, msg, ctx, reply, gDest, fonteDesc, lista
     await new Promise(r => setTimeout(r, 3000 + Math.floor(Math.random() * 5000)));   // 3–8s humano
   }
   _pend.set(ctx.remoteJid, { dest: gDest.jid, destNome: gDest.nome, falhados: falharam, ts: Date.now() });
-  let texto = '✅ *ADD CENTRAL CONCLUÍDO*' + (abortado ? ' (parcial — parado por segurança)' : '') + '\n\n🎯 ' + String(gDest.nome).slice(0, 40) + '\n👥 ' + (atuais + okN.length) + '/' + MAX_GRUPO + ' membros\n✅ adicionados: *' + okN.length + '*' + (jaMembrosN ? '\n♻️ já eram membros: ' + jaMembrosN : '') + '\n❌ não deixaram (privacidade/erro): *' + falharam.length + '*';
-  if (fila.length > vagas + okN.length) texto += '\n📦 restaram na fila: ' + (fila.length - okN.length - falharam.length) + ' (sem vagas — corre de novo depois)';
+  let texto = '✅ *ADD CENTRAL CONCLUÍDO*' + (abortado ? ' (parcial — parado por segurança)' : '') + '\n\n🎯 ' + String(gDest.nome).slice(0, 40) + '\n👥 ' + (atuais + okN.length) + '/' + MAX_GRUPO + ' membros\n✅ adicionados: *' + okN.length + '*' + (jaMembrosN ? '\n♻️ já eram membros (nem tentei): *' + jaMembrosN + '*' : '') + (repetidosNaBase ? '\n🧹 repetidos na base ignorados: ' + repetidosNaBase : '') + '\n❌ não deixaram (privacidade/erro): *' + falharam.length + '*';
+  if (fila.length > alvo.length) texto += '\n📦 ficaram *' + (fila.length - alvo.length) + '* elegíveis sem tentar (limite/vagas) — corre de novo quando quiseres continuar.';
   if (falharam.length) texto += '\n\n📨 Queres que eu mande o *convite no PV* dos ' + falharam.length + '?';
   const bts = falharam.length
     ? [{ id: ctx.prefix + 'addconvite sim', text: '📨 Convite PV (' + falharam.length + ')' }, { id: ctx.prefix + 'addconvite nao', text: '❌ Não enviar' }]
@@ -314,8 +407,9 @@ module.exports = function registerCentralGrupos(registerCase) {
       return _menuAdd(sock, msg, ctx);
     }
     // .add <número> → uma pessoa no grupo actual. Mesmo sendo só uma acção,
-    // aplica as travas da Central: comunidade-pai e grupo cheio nunca recebem add.
-    if (/^\+?\d{7,15}$/.test(argDest) && !args.slice(1).includes('de')) {
+    // aplica as travas da Central: comunidade-pai, grupo cheio, membro existente
+    // e reconhecimento robusto de admin (número/JID multi-device/LID).
+    if (/^\+?\d{7,15}$/.test(argDest) && !args.slice(1).map(x => String(x).toLowerCase()).includes('de')) {
       if (!/@g\.us$/.test(ctx.remoteJid || '')) return reply('Para adicionar 1 pessoa, usa o comando DENTRO do grupo. Para puxar a base: *add <dest> de …*');
       const num = argDest.replace(/\D/g, '');
       try {
@@ -325,8 +419,8 @@ module.exports = function registerCentralGrupos(registerCase) {
           return reply('🏘️ Este é o grupo de anúncios de uma *COMUNIDADE*. O WhatsApp não permite adicionar membros directamente — usa um subgrupo.');
         }
         if (participantes.length >= 1024) return reply('🚫 Este grupo está CHEIO (' + participantes.length + '/1024). Remove alguém ou usa outro grupo.');
-        const jaMembro = participantes.some(p => String(p.id || '').split('@')[0].replace(/\D/g, '') === num);
-        if (jaMembro) return reply('ℹ️ +' + num + ' já é membro deste grupo.');
+        if (!await botEhAdmin(sock, meta)) return reply('⚠️ Não consegui confirmar que sou *admin* neste grupo (verifiquei número, JID multi-dispositivo e LID). Promove-me e tenta de novo — não fiz tentativa de add.');
+        if ((await numerosNoGrupo(sock, participantes)).has(num)) return reply('ℹ️ +' + num + ' já é membro deste grupo — não tentei adicionar de novo.');
         await sock.groupParticipantsUpdate(ctx.remoteJid, [num + '@s.whatsapp.net'], 'add');
         return reply('✅ +' + num + ' adicionado ao grupo!');
       } catch (e) {
@@ -336,15 +430,26 @@ module.exports = function registerCentralGrupos(registerCase) {
     }
     const gDest = await pickGrupo(sock, ctx.remoteJid, argDest);
     if (!gDest) return reply(`Destino "${argDest}" não encontrado — corre *gruposbot* para ver a lista.`);
-    // fonte — v12.9.40: 1/2 grupos · 1/2 países · ddd · todos
-    const argDeRaw = args.length >= 3 && String(args[1]).toLowerCase() === 'de' ? args.slice(2).join(' ').trim() : 'todos';
+    // Sintaxe de limite: .add <grupo> <quantidade> de <fonte>
+    // Ex.: .add 10 20 de todos = grupo #10, no máximo 20 elegíveis.
+    const indiceDe = args.findIndex(a => String(a).toLowerCase() === 'de');
+    let limite = 0;
+    if (indiceDe > 1) {
+      if (!/^\d{1,4}$/.test(String(args[1] || ''))) return reply('❌ Quantidade inválida. Usa: `' + ctx.prefix + 'add <grupo> <1–1024> de todos`\nEx.: `' + ctx.prefix + 'add 10 20 de todos`');
+      limite = Number(args[1]);
+      if (limite < 1 || limite > 1024) return reply('❌ A quantidade deve ficar entre *1 e 1024*.');
+    } else if (args.length > 1 && indiceDe < 0) {
+      return reply('Uso: `' + ctx.prefix + 'add <grupo> [quantidade] de <fonte>`\nEx.: `' + ctx.prefix + 'add 10 20 de todos`');
+    }
+    // fonte — 1/2 grupos · 1/2 países · ddd · todos
+    const argDeRaw = indiceDe >= 0 ? args.slice(indiceDe + 1).join(' ').trim() : 'todos';
     const _fonte = await parseFonte(sock, ctx.remoteJid, argDeRaw);
     if (_fonte.erro) return reply(_fonte.erro);
     const fonteDesc = _fonte.desc;
     const lista = _fonte.lista;
     if (!lista || !lista.length) return reply('A base/fonte está vazia — corre *capturartodos* primeiro.');
-    const L = await reply(`⏳ *ADD CENTRAL*\n🎯 destino: ${gDest.nome.slice(0, 40)}\n📇 fonte: ${fonteDesc} → *${lista.length}* contactos\n\n⚠️ Em lotes de 5 · pausa 3s. Quem não deixar adicionar-se (privacidade) fica na lista de convites.`);
-    return executarAddCentral(sock, msg, ctx, reply, gDest, fonteDesc, lista, L);
+    const L = await reply(`🔎 *A VERIFICAR ADD CENTRAL*\n🎯 destino: ${gDest.nome.slice(0, 40)}\n📇 fonte: ${fonteDesc} → *${lista.length}* contactos${limite ? `\n🎚️ limite pedido: *${limite}* elegíveis` : ''}\n\nA confirmar primeiro: se sou admin, membros actuais, repetidos da base e vagas. Só depois tento adicionar.`);
+    return executarAddCentral(sock, msg, ctx, reply, gDest, fonteDesc, lista, L, { limite });
     // v12.9.44: SEM o 3º argumento — 'owner'(=true) é lido pelo caseHandler como
     // onlyIfNew e o 'add' já vinha registado por outro ficheiro (a…/g…) → a central
     // ficava de fora. O gate de dono está no only() acima.
