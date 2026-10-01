@@ -26,7 +26,8 @@ const LIVRE_TUDO = new Set([
 
 // Vitrine: vê o mundo/criações/rankings sem personagem (mas o grupo precisa do modo).
 const LIVRE_CHAR = new Set([
-  'criarpersonagem', 'newchar', 'rpgstart',
+  // Criação guiada: pedir nome → escolhas. Não exige personagem já criada.
+  'criarpersonagem', 'newchar', 'rpgstart', 'rpgnome', 'rpgname', 'rpgselecionar', 'rpgcr',
   'racas', 'classes', 'rpginfo',
   'rankrpg', 'toprpg', 'rankglobal', 'ranking', 'leaderboard',
   'mundial', 'rankmundial', 'worldrank', 'rankingmundial',
@@ -65,7 +66,7 @@ function rapido(pr, ms = 250) {
 }
 
 const MSG_MODO = '🎮 *O mundo RPG está fechado neste grupo.*\nUm admin abre com *!modorpg on* — e a aventura começa. 🌍';
-const MSG_CHAR = '🧙 *Ainda não tens personagem neste mundo.*\nCria o teu com *!rpgstart* — escolhe raça, classe e nome.';
+const MSG_CHAR = '🧙 *Ainda não tens personagem neste mundo.*\nCria o teu com *!rpgstart* → define o nome com *!rpgnome <nome>* e segue as escolhas.';
 
 /** @returns {Promise<string|null>} mensagem de bloqueio, ou null = deixa jogar */
 async function verificar(cmd, ctx = {}) {

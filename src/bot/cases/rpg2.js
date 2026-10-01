@@ -50,12 +50,14 @@ async function tReply(sock, msg, ctx, title, lines) {
 module.exports = function registerRPG2(registerCase) {
 
   // ═══ CRIAR PERSONAGEM ═══
-  // v6.89: por SELECÇÃO — !rpgstart abre lista clicável de RAÇAS →
-  // CLASSES → ficha pronta. O caminho escrito continua a funcionar:
-  // !rpgstart Nome raça classe (agora cria mesmo, antes só listava).
+  // v12.9.47: !rpgstart pergunta PRIMEIRO o nome por comando; só depois
+  // abre género → idade → raça → classe por botões/listas/carrosséis.
   registerCase(['criarpersonagem', 'newchar', 'rpgstart'], async ({ sock, msg, ctx, args }) => {
     const createFlow = require('../rpg/createFlow');
     return createFlow.start({ sock, msg, ctx, args });
+  }, true);
+  registerCase(['rpgnome', 'rpgname'], async ({ sock, msg, ctx, args }) => {
+    return require('../rpg/createFlow').definirNome({ sock, msg, ctx, args });
   }, true);
 
   // ═══ POINT-BUY STATS (v9.23) ═══
@@ -517,8 +519,19 @@ module.exports = function registerRPG2(registerCase) {
     require('../rpg/ui').decidirPorTexto(sock, msg, ctx, true), true);
   registerCase(['rpgnao', 'rpgnão'], async ({ sock, msg, ctx }) =>
     require('../rpg/ui').decidirPorTexto(sock, msg, ctx, false), true);
-  registerCase(['rpgescolher'], async ({ sock, msg, ctx, args }) =>
-    require('../rpg/ui').escolherPorTexto(sock, msg, ctx, args[0]), true);
+  registerCase(['rpgselecionar'], async ({ sock, msg, ctx, args }) => {
+    const flow = require('../rpg/createFlow');
+    const ok = await flow.escolherNumero(sock, msg, ctx, args[0]);
+    if (!ok) await sock.sendMessage(ctx.remoteJid, { text: '🤔 Não tens criação pendente. Começa com `!rpgstart`.' }, { quoted: msg }).catch(() => {});
+    return true;
+  }, true);
+  // Compatibilidade: durante a criação, rpgescolher também resolve a lista
+  // do wizard; fora dela continua a pertencer às listas genéricas do RPG.
+  registerCase(['rpgescolher'], async ({ sock, msg, ctx, args }) => {
+    const flow = require('../rpg/createFlow');
+    if (await flow.escolherNumero(sock, msg, ctx, args[0])) return true;
+    return require('../rpg/ui').escolherPorTexto(sock, msg, ctx, args[0]);
+  }, true);
 
   // ═══ GUILDA ═══
   registerCase(['guilda', 'guild', 'criarguilda'], async ({ sock, msg, ctx, args }) => {

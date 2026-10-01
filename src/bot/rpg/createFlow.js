@@ -14,9 +14,47 @@ const rpg = require('./engine');
 const ui = require('./ui');
 const rpgTheme = require('./rpgTheme');
 
-/** Criações em curso: senderNumber → { step, name, gender, age, race, class, bio, appearance, stats, pointsLeft } */
+/** Criações em curso: senderNumber → { step, name, gender, age, race, class, bio, appearance, stats, pointsLeft, expira } */
 const _pendentes = new Map();
 const TTL = 5 * 60 * 1000; // 5 minutos para completar
+
+// Uma criação abandonada não pode aceitar um botão velho horas depois.
+setInterval(() => {
+  const agora = Date.now();
+  for (const [num, pend] of _pendentes) if (!pend?.expira || agora > pend.expira) _pendentes.delete(num);
+}, 60 * 1000).unref?.();
+
+const _prefixo = (ctx) => ctx?.prefix || '!';
+
+async function _avisar(sock, msg, ctx, texto) {
+  return sock.sendMessage(ctx.remoteJid, { text: texto }, { quoted: msg }).catch(() => {});
+}
+
+/** Sessão válida e na etapa certa; evita cliques antigos saltarem/repetirem etapas. */
+async function _pendente(sock, msg, ctx, etapa) {
+  const pend = _pendentes.get(ctx.senderNumber);
+  if (!pend || !pend.expira || Date.now() > pend.expira) {
+    _pendentes.delete(ctx.senderNumber);
+    await _avisar(sock, msg, ctx, '⌛ Esta criação expirou. Recomeça com *' + _prefixo(ctx) + 'rpgstart*.');
+    return null;
+  }
+  if (pend.chatJid && pend.chatJid !== ctx.remoteJid) {
+    await _avisar(sock, msg, ctx, '⚠️ A criação está a decorrer noutro chat. Continua lá ou recomeça aqui com *' + _prefixo(ctx) + 'rpgstart*.');
+    return null;
+  }
+  if (etapa && pend.step !== etapa) {
+    await _avisar(sock, msg, ctx, '⚠️ Esta escolha já não é da etapa actual (*' + pend.step + '*). Usa os botões/lista mais recentes ou *' + _prefixo(ctx) + 'rpgselecionar <número>*.');
+    return null;
+  }
+  pend.expira = Date.now() + TTL; // cada acção válida renova os 5 min
+  return pend;
+}
+
+function _nomeValido(valor) {
+  const nome = String(valor || '').replace(/\s+/g, ' ').trim();
+  if (nome.length < 2 || nome.length > 24 || /[\r\n]/.test(nome)) return '';
+  return nome;
+}
 
 function _norm(s) {
   return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
@@ -81,17 +119,29 @@ const STAT_NAMES = { str: '⚔️ Força (STR)', dex: '🏃 Destreza (DEX)', int
 // ENVIO DE LISTAS
 // ══════════════════════════════════════════════════════════════
 async function _enviarLista(sock, msg, ctx, titulo, subtitulo, corpo, rows, rodape, cards) {
-  // Carrossel com fotos
+  // Toda interface tem plano B escrito. Antes, quando a lista/carrossel não
+  // renderizava, só saía o texto da pergunta — sem opções nem comando para avançar.
+  const numeradas = (rows || []).map((r, i) => `${i + 1}. ${r.title}${r.description ? ` — ${r.description}` : ''}`).join('\n');
+  const corpoComFallback = [
+    corpo,
+    '',
+    numeradas,
+    '',
+    `👇 Toca numa opção. Se não aparecer botão/lista, escreve *${_prefixo(ctx)}rpgselecionar <número>*`,
+  ].filter(Boolean).join('\n');
+
+  // Carrossel com fotos. O corpo leva as opções numeradas para continuar a
+  // funcionar em clientes que exibem o carrossel mas não devolvem o clique.
   if (Array.isArray(cards) && cards.length && sock.waUploadToServer) {
     try {
-      const ok = await require('./carousel').enviarCarrossel(sock, msg, ctx, { corpo, rodape, cards });
+      const ok = await require('./carousel').enviarCarrossel(sock, msg, ctx, { corpo: corpoComFallback, rodape, cards });
       if (ok) return 'carousel';
     } catch {}
   }
 
   // Lista single_select — com TEMA RPG independente
   try {
-    const corpoTema = rpgTheme.rpgRender('', [corpo]);
+    const corpoTema = rpgTheme.rpgRender('', [corpoComFallback]);
     const { generateWAMessageFromContent, proto } = require('@systemzero/baileys');
     const m = generateWAMessageFromContent(ctx.remoteJid, {
       interactiveMessage: proto.Message.InteractiveMessage.fromObject({
@@ -119,8 +169,8 @@ async function _enviarLista(sock, msg, ctx, titulo, subtitulo, corpo, rows, roda
     return true;
   } catch (_) {}
 
-  // Fallback texto
-  await sock.sendMessage(ctx.remoteJid, { text: corpo }, { quoted: msg }).catch(() => {});
+  // Fallback texto realmente seleccionável por .rpgselecionar <número>.
+  await sock.sendMessage(ctx.remoteJid, { text: corpoComFallback }, { quoted: msg }).catch(() => {});
   return false;
 }
 
@@ -128,45 +178,61 @@ async function _enviarLista(sock, msg, ctx, titulo, subtitulo, corpo, rows, roda
 // WIZARD STEPS
 // ══════════════════════════════════════════════════════════════
 
-/** STEP 1: Pede o nome */
-async function _stepNome(sock, msg, ctx, args) {
-  const name = (args || []).join(' ').trim() || ctx.pushName || 'Aventureiro';
-  const pend = { step: 'genero', name, stats: { str: 6, dex: 6, int: 6, vit: 6, luk: 6 }, pointsLeft: POINT_BUY_TOTAL };
+/** STEP 1: pede explicitamente o nome — nunca usa o pushName sem consentimento. */
+async function _pedirNome(sock, msg, ctx) {
+  const pend = { step: 'nome', chatJid: ctx.remoteJid, expira: Date.now() + TTL };
   _pendentes.set(ctx.senderNumber, pend);
+  const p = _prefixo(ctx);
+  return _avisar(sock, msg, ctx, [
+    '🎭 *CRIAÇÃO DE PERSONAGEM — PASSO 1/7*',
+    '',
+    '🌌 Antes das listas, botões e carrosséis, escolhe o nome da tua personagem.',
+    'O teu nome do WhatsApp não será usado automaticamente.',
+    '',
+    `Escreve: *${p}rpgnome <teu nome>*`,
+    `Exemplo: *${p}rpgnome Kael Storm*`,
+    '',
+    '⌛ Tens 5 minutos para continuar.',
+  ].join('\n'));
+}
+
+/** Nome recebido por comando → só agora abre a primeira lista (género). */
+async function _stepNome(sock, msg, ctx, nome) {
+  const pend = await _pendente(sock, msg, ctx, 'nome');
+  if (!pend) return false;
+  const name = _nomeValido(nome);
+  if (!name) {
+    await _avisar(sock, msg, ctx, '❌ O nome deve ter entre *2 e 24 caracteres*. Usa: *' + _prefixo(ctx) + 'rpgnome <nome>*.');
+    return false;
+  }
+  pend.name = name;
+  pend.stats = { str: 6, dex: 6, int: 6, vit: 6, luk: 6 };
+  pend.pointsLeft = POINT_BUY_TOTAL;
+  pend.step = 'genero';
 
   const corpo = [
-    `🎭 *CRIAÇÃO DE PERSONAGEM*`,
-    ``,
-    `🌌 *O Multiverso RPG*`,
-    `Aqui não copias nenhum herói de anime —`,
-    `tu és *ALGUÉM NOVO*. O teu nome, o teu rosto,`,
-    `a tua história. Os Naruto, Luffy, Gojo e Goku`,
-    `deste universo vão cruzar o teu caminho…`,
-    `e o QUÊ que tu ficas depende só de ti:`,
-    `treina, luta, aprende técnicas, segue o teu rumo.`,
-    ``,
+    '🎭 *CRIAÇÃO DE PERSONAGEM — PASSO 2/7*',
+    '',
     `📝 Nome: *${name}*`,
-    ``,
-    `Escolhe o teu género:`,
+    '',
+    'Escolhe o teu género:',
   ].join('\n');
-
   const rows = GENEROS.map(g => ({
     title: `${g.emoji} ${g.label}`,
     description: g.desc.slice(0, 72),
     id: `RPGCR_G_${g.key}`,
   }));
-
   return _enviarLista(sock, msg, ctx, '👨 GÉNERO', 'GÉNERO', corpo, rows, `🎭 ${config.bot.name} · RPG`);
 }
 
 /** STEP 2: Género escolhido → pede idade */
 async function _stepGenero(sock, msg, ctx, generoKey) {
-  const pend = _pendentes.get(ctx.senderNumber);
-  if (!pend) return _stepNome(sock, msg, ctx, []);
+  const pend = await _pendente(sock, msg, ctx, 'genero');
+  if (!pend) return false;
+  const g = GENEROS.find(x => x.key === generoKey);
+  if (!g) { await _avisar(sock, msg, ctx, '❌ Género inválido. Usa a lista mais recente.'); return false; }
   pend.gender = generoKey;
   pend.step = 'idade';
-
-  const g = GENEROS.find(x => x.key === generoKey) || GENEROS[0];
   const corpo = [
     `🎭 *CRIAÇÃO DE PERSONAGEM*`,
     ``,
@@ -187,14 +253,15 @@ async function _stepGenero(sock, msg, ctx, generoKey) {
 
 /** STEP 3: Idade escolhida → pede raça */
 async function _stepIdade(sock, msg, ctx, idadeKey) {
-  const pend = _pendentes.get(ctx.senderNumber);
-  if (!pend) return _stepNome(sock, msg, ctx, []);
+  const pend = await _pendente(sock, msg, ctx, 'idade');
+  if (!pend) return false;
+  const bonusIdade = IDADES.find(i => i.key === idadeKey);
+  if (!bonusIdade) { await _avisar(sock, msg, ctx, '❌ Faixa etária inválida. Usa a lista mais recente.'); return false; }
   pend.ageKey = idadeKey;
   pend.age = idadeKey === 'jovem' ? 17 : idadeKey === 'adulto' ? 25 : idadeKey === 'maduro' ? 45 : 60;
   pend.step = 'raca';
 
-  // Aplicar bónus de idade
-  const bonusIdade = IDADES.find(i => i.key === idadeKey);
+  // Aplicar bónus de idade UMA vez; clique velho não passa da guarda de etapa.
   if (bonusIdade) {
     if (idadeKey === 'jovem') { pend.stats.dex += 2; pend.stats.luk += 1; }
     else if (idadeKey === 'adulto') { pend.stats.str += 2; pend.stats.vit += 1; }
@@ -231,8 +298,9 @@ async function _stepIdade(sock, msg, ctx, idadeKey) {
 
 /** STEP 4: Raça escolhida → pede classe */
 async function _stepRaca(sock, msg, ctx, raceKey) {
-  const pend = _pendentes.get(ctx.senderNumber);
-  if (!pend) return _stepNome(sock, msg, ctx, []);
+  const pend = await _pendente(sock, msg, ctx, 'raca');
+  if (!pend) return false;
+  if (!rpg.RACES[raceKey]) { await _avisar(sock, msg, ctx, '❌ Raça inválida. Usa a lista/carrossel mais recente.'); return false; }
   pend.race = raceKey;
   pend.step = 'classe';
 
@@ -275,8 +343,9 @@ async function _stepRaca(sock, msg, ctx, raceKey) {
 
 /** STEP 5: Classe escolhida → pede bio */
 async function _stepClasse(sock, msg, ctx, classKey) {
-  const pend = _pendentes.get(ctx.senderNumber);
-  if (!pend) return _stepNome(sock, msg, ctx, []);
+  const pend = await _pendente(sock, msg, ctx, 'classe');
+  if (!pend) return false;
+  if (!rpg.CLASSES[classKey]) { await _avisar(sock, msg, ctx, '❌ Classe inválida. Usa a lista/carrossel mais recente.'); return false; }
   pend.class = classKey;
   pend.step = 'bio';
 
@@ -306,10 +375,11 @@ async function _stepClasse(sock, msg, ctx, classKey) {
 
 /** STEP 6: Bio escolhida → point-buy stats */
 async function _stepBio(sock, msg, ctx, bioKey) {
-  const pend = _pendentes.get(ctx.senderNumber);
-  if (!pend) return _stepNome(sock, msg, ctx, []);
+  const pend = await _pendente(sock, msg, ctx, 'bio');
+  if (!pend) return false;
 
   const bioInfo = BIOS.find(b => b.key === bioKey);
+  if (!bioInfo) { await _avisar(sock, msg, ctx, '❌ História inválida. Usa a lista mais recente.'); return false; }
   pend.bioKey = bioKey;
   pend.bio = bioInfo ? bioInfo.label : 'Aventureiro';
   pend.step = 'stats';
@@ -360,8 +430,8 @@ async function _mostrarPointBuy(sock, msg, ctx, pend) {
 
 /** STEP 7: Stats confirmados → ficha final */
 async function _stepFinalizar(sock, msg, ctx) {
-  const pend = _pendentes.get(ctx.senderNumber);
-  if (!pend) return;
+  const pend = await _pendente(sock, msg, ctx, 'stats');
+  if (!pend) return false;
 
   const p = await rpg.getPlayer(ctx.senderNumber);
   p.name = pend.name;
@@ -475,7 +545,14 @@ async function start({ sock, msg, ctx, args, _forcar = false }) {
     } catch {}
   }
 
-  return _stepNome(sock, msg, ctx, args);
+  // O primeiro passo é sempre explícito: o jogador escolhe o nome num comando
+  // próprio, antes de receber listas, botões ou carrosséis.
+  return _pedirNome(sock, msg, ctx);
+}
+
+/** Comando !rpgnome <nome> — recebe o primeiro dado do wizard. */
+async function definirNome({ sock, msg, ctx, args }) {
+  return _stepNome(sock, msg, ctx, (args || []).join(' '));
 }
 
 /** Processa cliques dos botões/listas */
@@ -523,11 +600,14 @@ async function pick({ sock, msg, ctx, token }) {
   m = tk.match(/^RPGCR_S_(.+)$/i);
   if (m) {
     const statKey = m[1].toLowerCase();
-    const pend = _pendentes.get(ctx.senderNumber);
-    if (!pend) return false;
-
     if (statKey === 'confirm') {
       await _stepFinalizar(sock, msg, ctx);
+      return true;
+    }
+    const pend = await _pendente(sock, msg, ctx, 'stats');
+    if (!pend) return true;
+    if (!Object.prototype.hasOwnProperty.call(STAT_NAMES, statKey)) {
+      await _avisar(sock, msg, ctx, '❌ Esse atributo não existe. Usa a lista de stats actual.');
       return true;
     }
 
@@ -537,9 +617,7 @@ async function pick({ sock, msg, ctx, token }) {
       pend.pointsLeft--;
       await _mostrarPointBuy(sock, msg, ctx, pend);
     } else {
-      await sock.sendMessage(ctx.remoteJid, {
-        text: pend.pointsLeft <= 0 ? '❌ Sem pontos livres!' : `❌ ${STAT_NAMES[statKey]} já está no máximo (${STAT_MAX})!`,
-      }, { quoted: msg }).catch(() => {});
+      await _avisar(sock, msg, ctx, pend.pointsLeft <= 0 ? '❌ Sem pontos livres!' : `❌ ${STAT_NAMES[statKey]} já está no máximo (${STAT_MAX})!`);
     }
     return true;
   }
@@ -547,13 +625,63 @@ async function pick({ sock, msg, ctx, token }) {
   return false;
 }
 
+/** Fallback escrito das listas/carrosséis: !rpgselecionar <número>. */
+async function escolherNumero(sock, msg, ctx, numero) {
+  // Se não há wizard deste jogador, deixa o !rpgescolher normal do RPG UI agir.
+  if (!_pendentes.has(ctx.senderNumber)) return false;
+  const pend = await _pendente(sock, msg, ctx);
+  if (!pend) return true;
+  const idx = Number(numero) - 1;
+  if (!Number.isInteger(idx) || idx < 0) {
+    await _avisar(sock, msg, ctx, '❌ Escolhe um número válido da lista actual.');
+    return true;
+  }
+
+  if (pend.step === 'nome') {
+    await _avisar(sock, msg, ctx, '📝 Primeiro define o nome: *' + _prefixo(ctx) + 'rpgnome <nome>*.');
+    return true;
+  }
+  if (pend.step === 'genero') {
+    if (!GENEROS[idx]) { await _avisar(sock, msg, ctx, '❌ Género inválido — escolhe entre 1 e ' + GENEROS.length + '.'); return true; }
+    await _stepGenero(sock, msg, ctx, GENEROS[idx].key);
+    return true;
+  }
+  if (pend.step === 'idade') {
+    if (!IDADES[idx]) { await _avisar(sock, msg, ctx, '❌ Idade inválida — escolhe entre 1 e ' + IDADES.length + '.'); return true; }
+    await _stepIdade(sock, msg, ctx, IDADES[idx].key);
+    return true;
+  }
+  if (pend.step === 'raca') {
+    const keys = Object.keys(rpg.RACES);
+    if (!keys[idx]) { await _avisar(sock, msg, ctx, '❌ Raça inválida — escolhe entre 1 e ' + keys.length + '.'); return true; }
+    await _stepRaca(sock, msg, ctx, keys[idx]);
+    return true;
+  }
+  if (pend.step === 'classe') {
+    const keys = Object.keys(rpg.CLASSES);
+    if (!keys[idx]) { await _avisar(sock, msg, ctx, '❌ Classe inválida — escolhe entre 1 e ' + keys.length + '.'); return true; }
+    await _stepClasse(sock, msg, ctx, keys[idx]);
+    return true;
+  }
+  if (pend.step === 'bio') {
+    if (!BIOS[idx]) { await _avisar(sock, msg, ctx, '❌ História inválida — escolhe entre 1 e ' + BIOS.length + '.'); return true; }
+    await _stepBio(sock, msg, ctx, BIOS[idx].key);
+    return true;
+  }
+  if (pend.step === 'stats') {
+    const stats = Object.keys(STAT_NAMES);
+    if (idx === stats.length) { await _stepFinalizar(sock, msg, ctx); return true; }
+    if (!stats[idx]) { await _avisar(sock, msg, ctx, '❌ Escolhe 1–' + (stats.length + 1) + ' na lista de stats.'); return true; }
+    return pick({ sock, msg, ctx, token: 'RPGCR_S_' + stats[idx] });
+  }
+  await _avisar(sock, msg, ctx, '⚠️ Não reconheci a etapa actual. Recomeça com *' + _prefixo(ctx) + 'rpgstart*.');
+  return true;
+}
+
 /** Comando escrito: !rpgcr +str / !rpgcr -dex */
 async function ajustarStat(sock, msg, ctx, args) {
-  const pend = _pendentes.get(ctx.senderNumber);
-  if (!pend || pend.step !== 'stats') {
-    await sock.sendMessage(ctx.remoteJid, { text: '🤔 Não estás na fase de stats. Usa !rpgstart primeiro.' }, { quoted: msg }).catch(() => {});
-    return;
-  }
+  const pend = await _pendente(sock, msg, ctx, 'stats');
+  if (!pend) return;
 
   const arg = (args[0] || '').toLowerCase();
   const match = arg.match(/^([+-])(str|dex|int|vit|luk)$/);
@@ -581,4 +709,4 @@ async function ajustarStat(sock, msg, ctx, args) {
 
 function pendentes() { return _pendentes; }
 
-module.exports = { start, pick, ajustarStat, pendentes };
+module.exports = { start, definirNome, pick, escolherNumero, ajustarStat, pendentes };

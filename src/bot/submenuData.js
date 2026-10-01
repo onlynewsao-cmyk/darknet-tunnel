@@ -149,6 +149,7 @@ function categorize(cmd) {
     permissoes:'owner', minhaspermissoes:'owner', aurapode:'owner', aurapermissoes:'owner', permitir:'owner', permit:'owner',
     // v7.87: decisão rápida do RPG por mim (gate modorpg)
     rpgsim:'economia', rpgnao:'economia', 'rpgnão':'economia', rpgescolher:'economia',
+    rpgnome:'economia', rpgname:'economia', rpgselecionar:'economia', rpgcr:'economia',
     aceitar:'interacoes', aceitarinvocacao:'interacoes', ameme:'interacoes',
     cat:'interacoes', dog:'interacoes', fofocar:'interacoes', hallobat:'interacoes',
     mata:'interacoes', paparico:'interacoes', pet:'interacoes', pickup:'interacoes',

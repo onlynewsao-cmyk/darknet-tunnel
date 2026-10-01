@@ -45,7 +45,7 @@ module.exports = function registerRPGCommunity(registerCase) {
       ...(r.acoes.length ? r.acoes.map(a => '▸ ' + a) : ['▸ Nada por fazer — já estava tudo certo']),
       '',
       '🎮 *O RPG já funciona neste grupo.* Comandos:',
-      '• !rpgstart <nome> <raça> <classe> — criar personagem',
+      '• !rpgstart → !rpgnome <nome> — criar personagem passo a passo',
       '• !rg — ficha · !lutar — batalha · !explorar — explorar',
     ];
     return tReply(sock, msg, ctx, def.emoji + ' GRUPO DEFINIDO', linhas);
@@ -438,7 +438,7 @@ module.exports = function registerRPGCommunity(registerCase) {
     const seccoes = [];
     if (!temChar) {
       seccoes.push({ title: '🌀 PORTAL DE ENTRADA', rows: [
-        R('rpgstart', 'Criar a tua personagem — raça + classe + nome'),
+        R('rpgstart', 'Criar personagem — primeiro escolhe o nome, depois as opções'),
         R('racas', 'Raças e classes disponíveis'),
         R('rpginfo', 'Como funciona o mundo'),
       ]});

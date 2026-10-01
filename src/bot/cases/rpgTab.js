@@ -131,7 +131,7 @@ module.exports = function registerRpgTab(registerCase) {
     const p = await rpg.getPlayer(ctx.senderNumber);
     if (!p?.started) {
       return sock.sendMessage(ctx.remoteJid, {
-        text: '📑 Ainda não tens abas — cria o teu personagem com `!rpgstart` (toca na lista de raças ou escreve nome + raça + classe).',
+        text: '📑 Ainda não tens abas — começa com `!rpgstart`, define o nome com `!rpgnome <nome>` e segue as escolhas.',
       }, { quoted: msg }).catch(() => {});
     }
     const pedido = String(args?.[0] || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');

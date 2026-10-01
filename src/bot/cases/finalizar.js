@@ -353,7 +353,7 @@ const infoHandlers = {
   async stickers({ sock, msg, ctx }) { return reply(sock, msg, ctx, `🎨 Stickers: *sticker* · *sfull* · *attp* · *ttp*\nPacks: *stickerly* · *pinpacks*`); },
   async mm({ sock, msg, ctx }) { return reply(sock, msg, ctx, `💬 Comandos de mensagem: *editarmsg* · *apagar* · *citar* · *copymsg*`); },
   async mp4({ sock, msg, ctx }) { return reply(sock, msg, ctx, `🎬 Vídeo: *video* · *gyt* · *pinmp4*\nReels: *tiktok* · *instagram*`); },
-  async qg({ sock, msg, ctx }) { return reply(sock, msg, ctx, `🏰 *QG DO RPG*\n\nComeça: *rpgstart <nome> <raça> <classe>*\nRaças/classes: *rpginfo*`); },
+  async qg({ sock, msg, ctx }) { return reply(sock, msg, ctx, `🏰 *QG DO RPG*\n\nComeça: *rpgstart* → depois *rpgnome <nome>*\nRaças/classes: *rpginfo*`); },
   async gear({ sock, msg, ctx }) { return reply(sock, msg, ctx, `⚙️ Equipamento: *equipamentos*\nForja: *forge* · Materiais: *materiais*`); },
   async list({ sock, msg, ctx }) { return reply(sock, msg, ctx, `📋 Listas: *listmods* · *listblacklist* · *listamute*\nComandos: *menu*`); },
   async infoff({ sock, msg, ctx }) { return reply(sock, msg, ctx, `ℹ️ Info resumida: *info*\nStatus: *statusbot* · *diagnostico*`); },

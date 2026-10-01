@@ -477,7 +477,9 @@ async function _handleInner(sock, msg) {
   }
 
   // ── v9.23: RPG CREATE — botões de criação (RPGCR_) ─────────────────
-  if (/^RPGCR_[A-Z]_[a-z0-9]+$/i.test(text.split(/\s+/)[0] || '')) {
+  // Aceita IDs de quick-reply, lista e carrossel; chaves de raça/classe podem
+  // conter _ ou -. Antes esses cliques eram ignorados silenciosamente.
+  if (/^RPGCR_[A-Z]_[a-z0-9_-]+$/i.test(text.split(/\s+/)[0] || '')) {
     try {
       const createFlow = require('./rpg/createFlow');
       if (await createFlow.pick({ sock, msg, ctx, token: text.split(/\s+/)[0] })) return true;
