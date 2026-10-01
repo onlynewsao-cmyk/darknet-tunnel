@@ -296,21 +296,37 @@ async function _filaEquilibrada() {
     .sort((a, b) => ((a.ultimaProva?.getTime?.() || 0) - (b.ultimaProva?.getTime?.() || 0)));
 }
 
+/** Há uma credencial principal que já foi dada como morta? */
+async function _principalEstaMorta() {
+  const principal = (await _mapa()).find((x) => x.prefixo === '');
+  return principal?.estado === 'morta';
+}
+
+// Há vários caminhos que podem pedir a troca (403, vigia, pairing novo).
+// Uma única sonda/promoção de cada vez evita duas trocas de credenciais em paralelo.
+let _failoverEmCurso = null;
+
 /** Percurso: a EM USO morreu → sonda a fila equilibrada e promove a 1ª viva. */
 async function tentarFailover() {
-  for (const d of await _filaEquilibrada()) {
-    const p = await _provar(d.prefixo != null ? d.prefixo : _prefixo(d.slot));
-    if (p.ok) {
-      await _gravarSlot(d.slot, { ultimaProva: _agora(), numero: d.numero || p.numero, tentativas: 0, motivo: '' });
-      const r = await promover(d.slot, { apagarAtual: true });
-      if (r.ok) return { ok: true, promovida: d.slot, numero: r.numero };
-    } else {
-      // 2 dias de insistência: dentro da janela segue comatosa, fora morre
-      const morta = !!(d.retryAte && d.retryAte.getTime() < Date.now());
-      await _gravarSlot(d.slot, { ultimaProva: _agora(), tentativas: (d.tentativas || 0) + 1, ...(morta ? { estado: 'morta', motivo: 'probe falhou após 2 dias' } : {}) });
+  if (_failoverEmCurso) return _failoverEmCurso;
+  const corrida = (async () => {
+    for (const d of await _filaEquilibrada()) {
+      const p = await _provar(d.prefixo != null ? d.prefixo : _prefixo(d.slot));
+      if (p.ok) {
+        await _gravarSlot(d.slot, { ultimaProva: _agora(), numero: d.numero || p.numero, tentativas: 0, motivo: '' });
+        const r = await promover(d.slot, { apagarAtual: true });
+        if (r.ok) return { ok: true, promovida: d.slot, numero: r.numero };
+      } else {
+        // 2 dias de insistência: dentro da janela segue comatosa, fora morre
+        const morta = !!(d.retryAte && d.retryAte.getTime() < Date.now());
+        await _gravarSlot(d.slot, { ultimaProva: _agora(), tentativas: (d.tentativas || 0) + 1, ...(morta ? { estado: 'morta', motivo: 'probe falhou após 2 dias' } : {}) });
+      }
     }
-  }
-  return { ok: false, motivo: 'sem-suplente' };
+    return { ok: false, motivo: 'sem-suplente' };
+  })();
+  _failoverEmCurso = corrida;
+  try { return await corrida; }
+  finally { if (_failoverEmCurso === corrida) _failoverEmCurso = null; }
 }
 
 /**
@@ -643,6 +659,19 @@ async function _vigiarPair(slotN, sock, codigoFmt) {
     log(`✅ EMPARELHADO (${numeroFinal || 'número?'}) — sessão GUARDADA no slot ${slotN} (reserva p/ failover)`);
     await _gravarSlot(slotN, { estado: 'guardada', numero: numeroFinal, ultimaViva: _agora(), motivo: '', retryAte: null, tentativas: 0 });
     try { eventos.emit('guardada', { slot: slotN, numero: numeroFinal }); } catch {}
+
+    // O principal pode ter morrido ANTES de esta reserva existir (ex.: 403
+    // ontem e novo pairing agora). Nesse caso não há motivo para esperar a
+    // ronda de manutenção: testa a reserva acabada de validar e promove-a.
+    // Em qualquer outro cenário ela continua apenas GUARDADA, como prometido.
+    try {
+      if (await _principalEstaMorta()) {
+        log(`⚡ principal morta — a validar slot ${slotN} para assumir já…`);
+        const r = await tentarFailover();
+        if (r?.ok) log(`🔁 FAILOVER IMEDIATO: slot ${r.promovida} (${r.numero || '?'}) assumiu.`);
+        else log('⚠️ reserva emparelhada, mas a prova para failover não abriu. Ficou na fila.');
+      }
+    } catch (e) { log('verificação de failover pós-pair falhou: ' + String(e?.message || e).slice(0, 50)); }
   } else {
     log('❌ ' + razaoFinal);
     await _gravarSlot(slotN, { estado: 'vazia', numero: '', retryAte: null, tentativas: 0, motivo: 'pairing não concluído: ' + String(razaoFinal).slice(0, 60) });
@@ -672,6 +701,17 @@ async function remover(slotN) {
 // há mais de 10 min, tenta a rotação SOZINHO — a slot guardada viva
 // assume e o evento 'promover' reinicia o socket principal.
 let _botCaidoDesde = null;
+
+// Se o processo reiniciar DEPOIS da queda, o evento 403 original já passou.
+// Reconciliamos a falha persistida logo no arranque para não deixar uma reserva
+// viva parada até ao próximo ciclo de saúde.
+async function _recuperarFalhaPendente() {
+  if (!await _principalEstaMorta()) return { ok: false, motivo: 'principal-nao-morta' };
+  const r = await tentarFailover();
+  if (r?.ok) console.log(`[Sessões] FAILOVER PENDENTE: slot ${r.promovida} (${r.numero || '?'}) assumiu no arranque.`);
+  return r;
+}
+
 async function _vigiarBotCaido() {
   try {
     const { getBot } = require('./whatsapp');
@@ -706,11 +746,19 @@ async function _ronda() {
   }
 }
 let _timer = null;
+let _timerSaude = null;
 function arrancarVigia(intervaloMs = 30 * 60 * 1000) {
   if (_timer) return;
   _varrerPresos().catch(() => {});   // v12.9.28: limpar 'A LIGAR' preso no arranque
+  _recuperarFalhaPendente().catch(() => {}); // 403 antigo + reserva já ligada
+  // A ronda pesada mantém as reservas vivas a cada 30 min. A saúde do bot
+  // é leve e precisa ser observada em separado, senão o limiar de 10 min
+  // podia na prática demorar até 40 min a disparar.
+  _vigiarBotCaido().catch(() => {});
+  _timerSaude = setInterval(() => _vigiarBotCaido().catch(() => {}), 60 * 1000);
   _timer = setInterval(() => _ronda().catch(() => {}), intervaloMs);
   if (_timer.unref) _timer.unref();
+  if (_timerSaude.unref) _timerSaude.unref();
 }
 
 /** v12.9.42: pool de socks VIVOS p/ serviços (slots ativos/guardados que abrirem). */
