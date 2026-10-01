@@ -243,6 +243,10 @@ const CATALOG = [
 
   // ===== DONO =====
   { name: 'menudono', category: 'dono', emoji: '👑', description: 'Menu do dono', native: true, ownerOnly: true },
+  { name: 'perfilbot', category: 'dono', emoji: '🪪', description: 'Painel do perfil WhatsApp: nome, foto, bio e etiqueta ✓', ownerOnly: true },
+  { name: 'nomebot', category: 'dono', emoji: '👤', description: 'Muda o nome do perfil WhatsApp do bot e mantém a etiqueta ✓', ownerOnly: true },
+  { name: 'fotobot', category: 'dono', emoji: '📷', description: 'Usa a foto citada/enviada como foto do perfil do bot', ownerOnly: true },
+  { name: 'biobot', category: 'dono', emoji: '✍️', description: 'Muda a descrição/About do perfil WhatsApp do bot', ownerOnly: true },
   { name: 'prefixos', category: 'dono', emoji: '⌨️', description: 'Configura multiprefixo', native: true, ownerOnly: true },
   { name: 'setprefix', category: 'dono', emoji: '⌨️', description: 'Alias para prefixos', native: true, ownerOnly: true },
   { name: 'broadcast', category: 'dono', emoji: '📢', description: 'Broadcast pra todos grupos', native: true, ownerOnly: true },

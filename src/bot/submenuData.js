@@ -140,6 +140,10 @@ function categorize(cmd) {
     setcanal:'owner', mudarcanal:'owner', definircanal:'owner', setlinkcanal:'owner',
     divulgarbase:'owner', massa:'owner', convitar:'owner', convitebase:'owner', crescimento:'owner', growth:'owner',
     setselo:'owner', setverificado:'owner', setcontacto:'owner', setbio:'owner', setabout:'owner',
+    // Perfil WhatsApp: operações reais do perfil, restritas ao Dono.
+    perfilbot:'owner', waperfil:'owner', certificado:'owner', certificadobot:'owner',
+    nomebot:'owner', setnomebot:'owner', mudarnomebot:'owner', fotobot:'owner', setfotobot:'owner', perfilfoto:'owner',
+    biobot:'owner', sobremimbot:'owner', aboutbot:'owner', removerfotobot:'owner', apagarfotobot:'owner', delfotobot:'owner',
     canalinfo:'info', selo:'info', verificado:'info', contacto:'info',
     // v7.96: o que a Aura pode fazer por iniciativa (permissões do Dono)
     permissoes:'owner', minhaspermissoes:'owner', aurapode:'owner', aurapermissoes:'owner', permitir:'owner', permit:'owner',
