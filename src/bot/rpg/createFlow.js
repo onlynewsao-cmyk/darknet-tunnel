@@ -119,29 +119,31 @@ const STAT_NAMES = { str: '⚔️ Força (STR)', dex: '🏃 Destreza (DEX)', int
 // ENVIO DE LISTAS
 // ══════════════════════════════════════════════════════════════
 async function _enviarLista(sock, msg, ctx, titulo, subtitulo, corpo, rows, rodape, cards) {
-  // Toda interface tem plano B escrito. Antes, quando a lista/carrossel não
-  // renderizava, só saía o texto da pergunta — sem opções nem comando para avançar.
+  // As opções pertencem à lista/carrossel. Só se escreve a lista numerada se
+  // o WhatsApp não conseguir renderizar o interactivo; antes o jogador via
+  // exactamente as mesmas opções duas vezes.
   const numeradas = (rows || []).map((r, i) => `${i + 1}. ${r.title}${r.description ? ` — ${r.description}` : ''}`).join('\n');
   const corpoComFallback = [
     corpo,
     '',
     numeradas,
     '',
-    `👇 Toca numa opção. Se não aparecer botão/lista, escreve *${_prefixo(ctx)}rpgselecionar <número>*`,
+    `👇 Se a lista não aparecer, escreve *${_prefixo(ctx)}rpgselecionar <número>*`,
   ].filter(Boolean).join('\n');
 
-  // Carrossel com fotos. O corpo leva as opções numeradas para continuar a
-  // funcionar em clientes que exibem o carrossel mas não devolvem o clique.
+  // No carrossel bem-sucedido fica apenas o contexto; as escolhas estão nas
+  // cartas e não são repetidas no texto.
   if (Array.isArray(cards) && cards.length && sock.waUploadToServer) {
     try {
-      const ok = await require('./carousel').enviarCarrossel(sock, msg, ctx, { corpo: corpoComFallback, rodape, cards });
+      const ok = await require('./carousel').enviarCarrossel(sock, msg, ctx, { corpo, rodape, cards });
       if (ok) return 'carousel';
     } catch {}
   }
 
-  // Lista single_select — com TEMA RPG independente
+  // Lista single_select — o menu já contém as opções, portanto o corpo só
+  // explica a etapa actual. O texto numerado existe exclusivamente no fallback.
   try {
-    const corpoTema = rpgTheme.rpgRender('', [corpoComFallback]);
+    const corpoTema = rpgTheme.rpgRender('', [corpo]);
     const { generateWAMessageFromContent, proto } = require('@systemzero/baileys');
     const m = generateWAMessageFromContent(ctx.remoteJid, {
       interactiveMessage: proto.Message.InteractiveMessage.fromObject({
@@ -434,22 +436,9 @@ async function definirBio({ sock, msg, ctx, args }) {
 
 /** Mostra a interface de point-buy */
 async function _mostrarPointBuy(sock, msg, ctx, pend) {
-  const statsTexto = Object.entries(pend.stats)
-    .map(([k, v]) => `${STAT_NAMES[k] || k}: *${v}*`)
-    .join('\n');
-
-  const corpo = [
-    `🎭 *ALOCAÇÃO DE STATS*`,
-    ``,
-    `📝 *${pend.name}* · ${pend.race} ${pend.class}`,
-    ``,
-    statsTexto,
-    ``,
-    `💎 Pontos livres: *${pend.pointsLeft}*`,
-    ``,
-    `> Usa: *${_prefixo(ctx)}rpgcr +str* / *${_prefixo(ctx)}rpgcr +dex* / *${_prefixo(ctx)}rpgcr -str* etc.`,
-    `> Ou toca numa opção abaixo para +1`,
-  ].join('\n');
+  // Os valores e as seis acções já aparecem no selector nativo. Fora dele
+  // deixamos apenas o saldo de pontos, sem repetir a lista inteira no chat.
+  const corpo = `💎 Pontos livres: *${pend.pointsLeft}*`;
 
   const rows = Object.entries(STAT_NAMES).map(([k, label]) => ({
     title: `${label}: ${pend.stats[k]}`,

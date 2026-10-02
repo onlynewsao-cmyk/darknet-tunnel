@@ -47,6 +47,106 @@ async function tReply(sock, msg, ctx, title, lines) {
   return rpgTheme.rpgReply(sock, msg, ctx, title, lines);
 }
 
+/**
+ * Mostra uma cena de quest: no cliente com interactivos, o corpo contém só a
+ * narrativa e as escolhas vivem nos botões. O texto numerado fica reservado
+ * para o fallback de clientes que não suportam native_flow.
+ */
+async function _mostrarQuest(sock, msg, ctx, quest, capitulo) {
+  const escolhas = (quest.escolhas || []).slice(0, 3);
+  const corpo = [
+    '📖 *' + quest.titulo + '*',
+    'Capítulo ' + capitulo(quest) + ' de ' + rpg.QUESTS.length,
+    '',
+    quest.texto,
+  ].join('\n');
+  const botoes = escolhas.map((choice, index) => ({
+    id: 'RPGQUEST_' + quest.id + '_' + (index + 1),
+    text: ((index + 1) + '️⃣ ' + choice.txt + (choice.xp ? ' · +' + choice.xp + ' XP' : '')).slice(0, 34),
+  }));
+
+  try {
+    const rpgTheme = require('../rpg/rpgTheme');
+    if (botoes.length && await rpgTheme.rpgBotoes(sock, msg, ctx, corpo, botoes)) return true;
+  } catch {}
+
+  // Plano B para WhatsApps que não renderizam botões nativos.
+  return tReply(sock, msg, ctx, quest.titulo, [
+    '📖 Capítulo ' + capitulo(quest) + ' de ' + rpg.QUESTS.length,
+    '', quest.texto, '',
+    ...escolhas.map((choice, index) => (index + 1) + '️⃣ ' + choice.txt + (choice.xp ? '  _(+' + choice.xp + ' XP)_' : '')),
+    '', '> Escolhe: ' + (ctx.prefix || '!') + 'quest <número>',
+  ]);
+}
+
+async function _avisoQuestAntiga(sock, msg, ctx) {
+  return tReply(sock, msg, ctx, '⌛ ESCOLHA ANTIGA', [
+    'Esta opção já não pertence à cena actual.',
+    'Usa *' + (ctx.prefix || '!') + 'quest* para continuares.',
+  ]);
+}
+
+/** Executa `!quest` e as escolhas recebidas pelos botões. */
+async function executarQuest(sock, msg, ctx, args = [], expectedQuestId = '') {
+  const p = await rpg.getPlayer(ctx.senderNumber);
+  if (!Array.isArray(p.inventory)) p.inventory = [];
+  if (!Number.isFinite(p.coins)) p.coins = 0;
+  const quest = rpg.QUESTS.find(q => q.id === (p.quest?.current || 'inicio')) || rpg.QUESTS[0];
+  const capitulo = (q) => Math.max(1, rpg.QUESTS.indexOf(q) + 1);
+
+  // Um botão de uma carta anterior nunca pode decidir a cena actual.
+  if (expectedQuestId && expectedQuestId !== quest.id) return _avisoQuestAntiga(sock, msg, ctx);
+
+  // Cooldown só protege o início de uma aventura. Não bloqueia o clique que
+  // acabou de ser feito num botão da história.
+  if (!p.quest?.current) {
+    const cd = checkCooldown(ctx.senderNumber, 'quest', 60);
+    if (cd.blocked) return tReply(sock, msg, ctx, '⏳ COOLDOWN', [cooldownMsg('quest', cd.remaining)]);
+    p.quest = { current: quest.id, step: 0, completed: p.quest?.completed || [] };
+    await rpg.savePlayer(p);
+    return _mostrarQuest(sock, msg, ctx, quest, capitulo);
+  }
+
+  const choiceIdx = parseInt(args[0], 10) - 1;
+  if (!Number.isInteger(choiceIdx) || choiceIdx < 0 || !quest.escolhas?.[choiceIdx]) {
+    return _mostrarQuest(sock, msg, ctx, quest, capitulo);
+  }
+
+  const choice = quest.escolhas[choiceIdx];
+  if (choice.xp) rpg.addXP(p, choice.xp);
+  if (choice.coins) p.coins += choice.coins;
+  if (choice.item && !p.inventory.includes(choice.item)) p.inventory.push(choice.item);
+  if (choice.title) p.title = choice.title;
+
+  p.quest.completed = [...(p.quest.completed || []), quest.id];
+  p.quest.current = choice.next || null;
+  p.quest.step = (p.quest.step || 0) + 1;
+  await rpg.savePlayer(p);
+
+  const next = choice.next ? rpg.QUESTS.find(q => q.id === choice.next) : null;
+  if (next) return _mostrarQuest(sock, msg, ctx, next, capitulo);
+
+  const ganhos = [
+    choice.xp ? '⭐ +' + choice.xp + ' XP' : '',
+    choice.coins ? '💰 +' + choice.coins + ' coins' : '',
+    choice.item ? '🎒 +' + choice.item : '',
+    choice.title ? '🏅 ' + choice.title : '',
+  ].filter(Boolean);
+  return tReply(sock, msg, ctx, quest.titulo, [
+    '🎉 *Capítulo terminado!*',
+    ...ganhos,
+    '', 'Usa *' + (ctx.prefix || '!') + 'quest* para uma nova história.',
+  ]);
+}
+
+/** Resolve o id seguro de um botão de quest. */
+async function resolverQuestClique(sock, msg, ctx, token) {
+  const match = String(token || '').match(/^RPGQUEST_([a-z0-9_]+)_(\d+)$/i);
+  if (!match) return false;
+  await executarQuest(sock, msg, ctx, [match[2]], match[1]);
+  return true;
+}
+
 module.exports = function registerRPG2(registerCase) {
 
   // ═══ CRIAR PERSONAGEM ═══
@@ -122,78 +222,10 @@ module.exports = function registerRPG2(registerCase) {
   }, true);
 
   // ═══ QUEST NARRATIVA ═══
-  // v7.47: 'aventura' saiu daqui — o ia2.js carrega primeiro e é o dono
-  // do nome; este alias estava morto e só confundia o catálogo.
+  // Escolhas aparecem em até três botões nativos; !quest <número> continua
+  // disponível somente como plano B para clientes sem interactivos.
   registerCase(['quest', 'historia'], async ({ sock, msg, ctx, args }) => {
-    // v6.90: este `if` tinha perdido as chavetas — o `return` corria SEMPRE
-    // e todo o sistema de quests era código morto (respondia "COOLDOWN" a
-    // toda a gente, com 0s). Pior: o `savePlayer(p)` estava ANTES do
-    // `const p`, pelo que com o cooldown activo rebentava com
-    // "Cannot access 'p' before initialization".
-    const p = await rpg.getPlayer(ctx.senderNumber);
-    const cd = checkCooldown(ctx.senderNumber, 'quest', 60);
-    if (cd.blocked) {
-      return tReply(sock, msg, ctx, '⏳ COOLDOWN', [cooldownMsg('quest', cd.remaining)]);
-    }
-    // v6.90: os campos reais do motor são titulo/texto/escolhas/txt/next/xp.
-    // Este código lia title/chapter/story/choices/text/reward — campos que
-    // NÃO existem no engine, pelo que mesmo sem o bug das chavetas o
-    // .quest rebentava em `q.choices.map`. E começava em 'prologo', um id
-    // que não existe (o primeiro é 'inicio'), o que o punha em loop.
-    const quest = rpg.QUESTS.find(q => q.id === (p.quest?.current || 'inicio'))
-      || rpg.QUESTS[0];
-    const capitulo = (q) => Math.max(1, rpg.QUESTS.indexOf(q) + 1);
-
-    const mostrar = (q) => tReply(sock, msg, ctx, q.titulo, [
-      `📖 Capítulo ${capitulo(q)} de ${rpg.QUESTS.length}`,
-      '',
-      q.texto,
-      '',
-      ...q.escolhas.map((c, i) => `${i + 1}️⃣ ${c.txt}${c.xp ? `  _(+${c.xp} XP)_` : ''}`),
-      '',
-      `> Escolhe: !quest <número>`,
-    ]);
-
-    // Sem quest activa → começa a primeira
-    if (!p.quest?.current) {
-      p.quest = { current: quest.id, step: 0, completed: p.quest?.completed || [] };
-      await rpg.savePlayer(p);
-      return mostrar(quest);
-    }
-
-    // Sem número (ou número inválido) → mostra a quest em que está
-    const choiceIdx = parseInt(args[0]) - 1;
-    if (Number.isNaN(choiceIdx) || choiceIdx < 0 || !quest.escolhas?.[choiceIdx]) {
-      return mostrar(quest);
-    }
-
-    const choice = quest.escolhas[choiceIdx];
-    const rewardText = [];
-    if (choice.xp) {
-      const leveled = rpg.addXP(p, choice.xp);
-      rewardText.push(`⭐ +${choice.xp} XP${leveled ? ' → NÍVEL ' + p.level + '!' : ''}`);
-    }
-    if (choice.coins) { p.coins += choice.coins; rewardText.push(`💰 +${choice.coins} coins`); }
-    if (choice.item) { p.inventory.push(choice.item); rewardText.push(`🎒 +${choice.item}`); }
-    if (choice.title) { p.title = choice.title; rewardText.push(`🏅 Título: ${choice.title}`); }
-
-    p.quest.completed = [...(p.quest.completed || []), quest.id];
-    p.quest.current = choice.next || null;
-    p.quest.step = (p.quest.step || 0) + 1;
-    await rpg.savePlayer(p);
-
-    const next = choice.next ? rpg.QUESTS.find(q => q.id === choice.next) : null;
-    const linhas = [`✅ Escolha: *${choice.txt}*`, ...rewardText];
-
-    if (next) {
-      linhas.push('', '─'.repeat(20), '', next.texto, '',
-        ...next.escolhas.map((c, i) => `${i + 1}️⃣ ${c.txt}`),
-        '', `> Escolhe: !quest <número>`);
-      return tReply(sock, msg, ctx, `${quest.titulo} → ${next.titulo}`, linhas);
-    }
-
-    linhas.push('', '🎉 *Capítulo terminado!* Usa !quest para uma nova história.');
-    return tReply(sock, msg, ctx, quest.titulo, linhas);
+    return executarQuest(sock, msg, ctx, args);
   }, true);
 
   // ═══ MODO HISTORIA v11 — COM CARROSSEL, TESTES, EVOLUCAO ═══
@@ -748,3 +780,5 @@ module.exports = function registerRPG2(registerCase) {
 // vivem num Map do módulo; sem forma de os limpar, a auditoria apanha os
 // cooldowns deixados pela passagem anterior e reporta "COOLDOWN" como bug.
 module.exports._resetCooldowns = () => _rpgCooldowns.clear();
+module.exports.resolverQuestClique = resolverQuestClique;
+module.exports.executarQuest = executarQuest;

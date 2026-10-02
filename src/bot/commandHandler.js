@@ -476,6 +476,14 @@ async function _handleInner(sock, msg) {
     } catch (e) { console.warn('[RPG combat]', e.message?.slice(0, 60)); }
   }
 
+  // ── RPG QUEST — escolhas narrativas em até três botões ─────────────
+  if (/^RPGQUEST_[a-z0-9_]+_\d+$/i.test(text.split(/\s+/)[0] || '')) {
+    try {
+      const rpg2 = require('./cases/rpg2');
+      if (await rpg2.resolverQuestClique(sock, msg, ctx, text.split(/\s+/)[0])) return true;
+    } catch (e) { console.warn('[RPG quest]', e.message?.slice(0, 60)); }
+  }
+
   // ── v9.23: RPG CREATE — botões de criação (RPGCR_) ─────────────────
   // Aceita IDs de quick-reply, lista e carrossel; chaves de raça/classe podem
   // conter _ ou -. Antes esses cliques eram ignorados silenciosamente.

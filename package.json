@@ -129,7 +129,8 @@
     "test:apagv": "node scripts/test-pagvida.js",
     "test:deepseek": "node scripts/test-deepseek.js",
     "test:rpgcreate": "node scripts/test-rpg-create-flow.js && node scripts/test-rpg-carousel.js",
-    "test:rpgstory": "node scripts/test-rpg-story-mode.js"
+    "test:rpgstory": "node scripts/test-rpg-story-mode.js",
+    "test:rpgquest": "node scripts/test-rpg-quest-buttons.js"
   },
   "engines": {
     "node": ">=18.0.0"

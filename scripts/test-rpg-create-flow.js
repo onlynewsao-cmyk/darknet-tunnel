@@ -1,6 +1,7 @@
 // E2E RPG creation — nome explícito, carrossel/lista, biografia e atributos
 const path = require('path');
 const fs = require('fs');
+const Module = require('module');
 const ROOT = path.resolve(__dirname, '..');
 const stub = (p, exp) => { const r = path.resolve(p); require.cache[r] = { id: r, filename: r, loaded: true, exports: exp }; };
 
@@ -59,7 +60,7 @@ stub(path.join(ROOT, 'src/bot/rpg/carousel.js'), {
   p = flow.pendentes().get(ctx.senderNumber);
   ok('botão idade avança para raça', p?.step === 'raca' && p?.age === 25);
   ok('idade adulto aplica bónus uma vez', p?.stats?.str === 8 && p?.stats?.vit === 7);
-  ok('raça abre carrossel com plano B escrito', /rpgselecionar <número>/.test(carouselCall?.corpo || ''));
+  ok('raça abre carrossel sem repetir escolhas no texto', /Escolhe a tua raça/.test(carouselCall?.corpo || '') && !/rpgselecionar <número>/.test(carouselCall?.corpo || ''));
   ok('cartas de raça têm título e consulta Pinterest', carouselCall?.cards?.every(c => c.titulo && c.pinterestQuery && c.botoes?.[0]?.id?.startsWith('RPGCR_R_')));
 
   // Clique repetido/velho de idade não reaplica +2 STR/+1 VIT nem retrocede.
@@ -98,7 +99,35 @@ stub(path.join(ROOT, 'src/bot/rpg/carousel.js'), {
   await flow.pick({ sock, msg, ctx, token: 'RPGCR_S_CONFIRM' });
   ok('confirmar stats grava a ficha e encerra wizard', !flow.pendentes().has(ctx.senderNumber) && playerSaved?.started === true && /salvar a minha irmã/.test(playerSaved?.bio || ''));
 
-  // 7 — sessão expirada não reinicia em "Aventureiro" nem aceita escolha.
+  // 7 — numa lista nativa, as linhas ficam só dentro do selector (não no corpo).
+  const originalRequire = Module.prototype.require;
+  const fromObject = { fromObject: (obj) => obj };
+  const fakeBaileys = {
+    proto: { Message: { InteractiveMessage: { fromObject: (obj) => obj, Body: fromObject, Footer: fromObject, Header: fromObject, NativeFlowMessage: fromObject } } },
+    generateWAMessageFromContent: (_jid, message) => ({ key: { id: 'point-buy' }, message }),
+  };
+  Module.prototype.require = function patchedRequire(id) {
+    if (id === '@systemzero/baileys') return fakeBaileys;
+    return originalRequire.apply(this, arguments);
+  };
+  const interactivos = [];
+  const ctxUI = { ...ctx, senderNumber: '244911100099', remoteJid: 'ui@g.us' };
+  const sockUI = { user: { id: 'bot@s.whatsapp.net' }, sendMessage: async () => ({}), relayMessage: async (_jid, message) => interactivos.push(message.interactiveMessage) };
+  await flow.start({ sock: sockUI, msg, ctx: ctxUI, args: [] });
+  await flow.definirNome({ sock: sockUI, msg, ctx: ctxUI, args: ['Mira'] });
+  await flow.pick({ sock: sockUI, msg, ctx: ctxUI, token: 'RPGCR_G_feminino' });
+  await flow.pick({ sock: sockUI, msg, ctx: ctxUI, token: 'RPGCR_I_adulto' });
+  await flow.pick({ sock: sockUI, msg, ctx: ctxUI, token: 'RPGCR_R_humano' });
+  await flow.pick({ sock: sockUI, msg, ctx: ctxUI, token: 'RPGCR_C_guerreiro' });
+  await flow.pick({ sock: sockUI, msg, ctx: ctxUI, token: 'RPGCR_B_orfao' });
+  Module.prototype.require = originalRequire;
+  const pointBuy = interactivos.at(-1);
+  const bodyPointBuy = pointBuy?.body?.text || '';
+  const pointRows = JSON.parse(pointBuy?.nativeFlowMessage?.buttons?.[0]?.buttonParamsJson || '{}').sections?.[0]?.rows || [];
+  ok('point-buy nativo não repete opções fora da lista', /Pontos livres/.test(bodyPointBuy) && !/Força \(STR\)|1\. .*Força|rpgselecionar <número>/.test(bodyPointBuy));
+  ok('point-buy mantém seis escolhas dentro da lista', pointRows.length === 6 && pointRows[0]?.id === 'RPGCR_S_str' && pointRows.at(-1)?.id === 'RPGCR_S_CONFIRM');
+
+  // 8 — sessão expirada não reinicia em "Aventureiro" nem aceita escolha.
   await flow.start({ sock, msg, ctx, args: [] });
   p = flow.pendentes().get(ctx.senderNumber);
   p.expira = Date.now() - 1;
