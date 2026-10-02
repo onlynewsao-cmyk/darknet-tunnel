@@ -17,6 +17,7 @@
  * ║     .pack on | off               → liga/desliga a marca        ║
  * ║     .pack visivel on | off       → texto visível no sticker    ║
  * ║     .pack global <sub> <valor>   → força o default global      ║
+ * ║     .packbot nome|autor|descricao → atalho global (só dono)   ║
  * ╚═══════════════════════════════════════════════════════════════╝
  */
 'use strict';
@@ -28,7 +29,7 @@ const STATUS_KEYS = new Set(['status', 'ver', 'info', 'mostrar']);
 const NOME_KEYS = new Set(['nome', 'name', 'titulo', 'título', 'canal']);
 const AUTOR_KEYS = new Set(['autor', 'author', 'marca', 'brand']);
 const TEXTO_KEYS = new Set(['texto', 'text', 'wm', 'marcavisivel']);
-const SLOGAN_KEYS = new Set(['slogan', 'frase']);
+const SLOGAN_KEYS = new Set(['slogan', 'frase', 'descricao', 'descrição', 'description']);
 const LINK_KEYS = new Set(['link', 'url']);
 
 /**
@@ -88,7 +89,11 @@ function packStatusText(prefix, glob, chat, isGroup) {
     `   ${p}pack link <link canal/grupo>\n` +
     `   ${p}pack on | off\n` +
     `   ${p}pack visivel on | off\n` +
-    `   ${p}pack global nome <Nome>  (só dono)\n`;
+    `   ${p}pack global nome <Nome>  (só dono)\n` +
+    `\n⚡ *Atalho global do dono:*\n` +
+    `   ${p}packbot nome <Nome>\n` +
+    `   ${p}packbot autor <Autor>\n` +
+    `   ${p}packbot descricao <Texto>\n`;
   return out;
 }
 
@@ -132,19 +137,21 @@ async function setChat(jid, patch) {
 
 async function setGlobalLink(url, name) {
   const wm = require('../stickerWm');
-  return wm.saveGlobalDefault({ link: url, channelName: name || '' });
+  // Se o WhatsApp não expôs o nome do canal, não apaga um título global que
+  // o dono já tenha configurado manualmente.
+  return wm.saveGlobalDefault({ link: url, ...(name ? { channelName: name } : {}) });
 }
 
-async function setGlobalSlogan(val) {
-  const BotConfig = require('../database/models/BotConfig');
-  await BotConfig.set('sticker_wm_slogan', val);
-  try { require('../botConfigCache').clear(); } catch {}
+async function saveGlobalPack(data) {
+  // Único caminho para nome, autor e descrição globais: mantém as chaves
+  // novas e legadas alinhadas e limpa o cache dentro de stickerWm.
+  return require('../stickerWm').saveGlobalDefault(data);
 }
 
 /* ══════════════════════════ Case ══════════════════════════ */
 
 module.exports = function registerPack(registerCase) {
-  registerCase(['pack', 'pacote'], async ({ sock, ctx, args, prefix, reply, react, isOwner, isAdminFn }) => {
+  const handlePack = async ({ sock, ctx, args, prefix, reply, react, isOwner, isAdminFn }) => {
     const p = prefix || '.';
     const jid = ctx.remoteJid || '';
     const isGroup = !!ctx.isGroup;
@@ -211,8 +218,8 @@ module.exports = function registerPack(registerCase) {
         await setChat(jid, { channelName: value });
         return reply(`✅ Título do pack *deste grupo*: *${value}*\n\n${require('../stickerWm').statusText(await chatSnapshot(jid), p)}`);
       }
-      await setGlobal('sticker_pack_name', value.slice(0, 80));
-      return reply(`✅ Nome do pack *global*: *${value.slice(0, 80)}*`);
+      const saved = await saveGlobalPack({ channelName: value.slice(0, 80) });
+      return reply(`✅ Nome do pack *global*: *${saved.packName}*`);
     }
 
     // ── AUTOR / MARCA ─────────────────────────────────────────
@@ -222,8 +229,8 @@ module.exports = function registerPack(registerCase) {
         await setChat(jid, { brand: value });
         return reply(`✅ Marca do pack *deste grupo*: *${value}*\n\n${require('../stickerWm').statusText(await chatSnapshot(jid), p)}`);
       }
-      await setGlobal('sticker_author_name', value.slice(0, 80));
-      return reply(`✅ Autor do pack *global*: *${value.slice(0, 80)}*`);
+      const saved = await saveGlobalPack({ brand: value.slice(0, 80), authorName: value.slice(0, 80) });
+      return reply(`✅ Autor do pack *global*: *${saved.authorName}*`);
     }
 
     // ── TEXTO VISÍVEL (marca no sticker) — global, dono ──────
@@ -241,8 +248,8 @@ module.exports = function registerPack(registerCase) {
         await setChat(jid, { slogan: value });
         return reply(`✅ Slogan do pack *deste grupo*: *${value}*\n\n${require('../stickerWm').statusText(await chatSnapshot(jid), p)}`);
       }
-      await setGlobalSlogan(value.slice(0, 80));
-      return reply(`✅ Slogan *global*: *${value.slice(0, 80)}*`);
+      const saved = await saveGlobalPack({ slogan: value.slice(0, 80) });
+      return reply(`✅ Descrição *global*: *${saved.slogan}*`);
     }
 
     // ── LINK ──────────────────────────────────────────────────
@@ -274,6 +281,13 @@ module.exports = function registerPack(registerCase) {
     }
 
     return reply(`❓ Subcomando desconhecido: *${sub}*\nUsa *${p}pack* para ver tudo o que podes mudar.`);
+  };
+
+  registerCase(['pack', 'pacote'], handlePack);
+  // Atalho simples, sempre global e sempre protegido por isOwner.
+  registerCase(['packbot', 'packglobal', 'setpackglobal'], (command) => {
+    if (!command.isOwner) return command.reply('🚫 Só o *Dono* pode alterar o pack global.');
+    return handlePack({ ...command, args: ['global', ...(command.args || [])] });
   });
 };
 

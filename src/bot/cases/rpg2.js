@@ -59,6 +59,10 @@ module.exports = function registerRPG2(registerCase) {
   registerCase(['rpgnome', 'rpgname'], async ({ sock, msg, ctx, args }) => {
     return require('../rpg/createFlow').definirNome({ sock, msg, ctx, args });
   }, true);
+  // Só aparece quando se escolhe "Escrever a minha" na etapa Biografia.
+  registerCase(['rpgbio', 'rpgbiografia'], async ({ sock, msg, ctx, args }) => {
+    return require('../rpg/createFlow').definirBio({ sock, msg, ctx, args });
+  }, true);
 
   // ═══ POINT-BUY STATS (v9.23) ═══
   registerCase(['rpgcr', 'rpgpoint', 'pointbuy'], async ({ sock, msg, ctx, args }) => {
@@ -67,7 +71,7 @@ module.exports = function registerRPG2(registerCase) {
       return createFlow.ajustarStat(sock, msg, ctx, args);
     }
     await sock.sendMessage(ctx.remoteJid, {
-      text: '❓ Usa: *!rpgcr +str* / *!rpgcr -dex* para distribuir pontos.\nOu toca nos botões na tela de stats.',
+      text: `❓ Usa: *${ctx.prefix || '!'}rpgcr +str* / *${ctx.prefix || '!'}rpgcr -dex* para distribuir pontos.\nOu toca nos botões na tela de stats.`,
     }, { quoted: msg }).catch(() => {});
   }, true);
   // ═══ PERFIL RPG COMPLETO ═══
@@ -522,7 +526,7 @@ module.exports = function registerRPG2(registerCase) {
   registerCase(['rpgselecionar'], async ({ sock, msg, ctx, args }) => {
     const flow = require('../rpg/createFlow');
     const ok = await flow.escolherNumero(sock, msg, ctx, args[0]);
-    if (!ok) await sock.sendMessage(ctx.remoteJid, { text: '🤔 Não tens criação pendente. Começa com `!rpgstart`.' }, { quoted: msg }).catch(() => {});
+    if (!ok) await sock.sendMessage(ctx.remoteJid, { text: `🤔 Não tens criação pendente. Começa com *${ctx.prefix || '!'}rpgstart*.` }, { quoted: msg }).catch(() => {});
     return true;
   }, true);
   // Compatibilidade: durante a criação, rpgescolher também resolve a lista

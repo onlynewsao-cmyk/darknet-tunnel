@@ -52,7 +52,7 @@
     "sim": "node src/sim/server.js",
     "test:aurabrain": "node scripts/test-aura-brain.js",
     "test:auravozreal": "node scripts/test-aura-voz-real.js",
-    "test:pack": "node scripts/test-pack.js",
+    "test:pack": "node scripts/test-pack.js && node scripts/test-sticker-global.js",
     "test:renomear": "node scripts/test-renomear.js",
     "test:callback": "node scripts/test-callback.js",
     "test:callseguro": "node scripts/test-callseguro.js",
@@ -127,7 +127,8 @@
     "test:aonda": "node scripts/test-ondatema.js",
     "test:ainvis": "node scripts/test-invisreal.js",
     "test:apagv": "node scripts/test-pagvida.js",
-    "test:deepseek": "node scripts/test-deepseek.js"
+    "test:deepseek": "node scripts/test-deepseek.js",
+    "test:rpgcreate": "node scripts/test-rpg-create-flow.js && node scripts/test-rpg-carousel.js"
   },
   "engines": {
     "node": ">=18.0.0"

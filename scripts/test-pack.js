@@ -18,6 +18,9 @@ process.env.BOT_PREFIX = '.';
 const path = require('path');
 const Module = require('module');
 const orig = Module.prototype.require;
+// O case lê ../../config ao montar o estado; isola o teste sem depender do .env.
+const configPath = path.join(__dirname, '..', 'src', 'config.js');
+require.cache[configPath] = { id: configPath, filename: configPath, loaded: true, exports: { bot: { name: 'DARK BOT' }, owner: { name: 'Dark Net' } } };
 
 // ── Fakes ──────────────────────────────────────────────────────────
 const STORE = {}; // BotConfig + cache partilhados
@@ -53,7 +56,21 @@ const fakeWm = {
   },
   async clearForJid(jid) { this._groups.set(jid, { enabled: false, channelUrl: '' }); return null; },
   async saveGlobalDefault(data) {
-    this._global = { packName: data.channelName || data.brand || 'GLOBAL', channelUrl: data.link || data.channelUrl || '' };
+    const prev = this._global || { packName: 'GLOBAL', authorName: 'DARK NET', brand: 'DARK NET', channelUrl: '' };
+    const packName = data.channelName ?? data.packName ?? prev.packName;
+    const authorName = data.authorName ?? data.brand ?? prev.authorName;
+    const brand = data.brand ?? prev.brand;
+    const channelUrl = data.link ?? data.channelUrl ?? data.packUrl ?? prev.channelUrl;
+    const slogan = data.slogan ?? prev.slogan ?? '';
+    this._global = { packName, channelName: packName, authorName, brand, channelUrl, slogan };
+    Object.assign(STORE, {
+      sticker_pack_name: packName,
+      sticker_pack_channel_name: packName,
+      sticker_author_name: authorName,
+      sticker_pack_brand: brand,
+      sticker_pack_url: channelUrl,
+      sticker_wm_slogan: slogan,
+    });
     return this._global;
   },
   async resolveAnyLink(text) {
@@ -77,8 +94,11 @@ Module.prototype.require = function (id) {
 const packModule = require(path.join(__dirname, '..', 'src', 'bot', 'cases', 'pack'));
 
 let handler = null;
+let packBotHandler = null;
 packModule((cmds, fn) => {
-  if (Array.isArray(cmds) && cmds.some(c => c === 'pack' || c === 'pacote')) handler = fn;
+  const names = [].concat(cmds);
+  if (names.some(c => c === 'pack' || c === 'pacote')) handler = fn;
+  if (names.includes('packbot')) packBotHandler = fn;
 });
 
 let ok = 0, fail = 0;
@@ -181,7 +201,24 @@ function ctxFactory({ isOwner = true, isGroup = false, admin = false } = {}) {
   }
 
   // ══════════════════════════════════════════════════════════
-  console.log('\n╔═══ 5. on/off + visivel ═══╗');
+  console.log('\n╔═══ 5. Atalho global owner-only ═══╗');
+  // ══════════════════════════════════════════════════════════
+  {
+    const owner = ctxFactory({ isOwner: true, isGroup: true });
+    await packBotHandler(owner.args(['nome', 'PACK BOT']));
+    t('packbot nome força o default global', STORE.sticker_pack_name === 'PACK BOT', String(STORE.sticker_pack_name));
+    await packBotHandler(owner.args(['autor', 'Autor do Bot']));
+    t('packbot autor actualiza autor global', STORE.sticker_author_name === 'Autor do Bot', String(STORE.sticker_author_name));
+    await packBotHandler(owner.args(['descricao', 'Descrição do pack']));
+    t('packbot descricao actualiza slogan global', STORE.sticker_wm_slogan === 'Descrição do pack', String(STORE.sticker_wm_slogan));
+
+    const other = ctxFactory({ isOwner: false, isGroup: true, admin: true });
+    await packBotHandler(other.args(['nome', 'NÃO PODE']));
+    t('packbot é owner-only inclusive para admin', STORE.sticker_pack_name === 'PACK BOT' && (other.out[0] || '').includes('Dono'), (other.out[0] || '').slice(0, 50));
+  }
+
+  // ══════════════════════════════════════════════════════════
+  console.log('\n╔═══ 6. on/off + visivel ═══╗');
   // ══════════════════════════════════════════════════════════
   {
     const pv = ctxFactory({ isOwner: true });
@@ -201,7 +238,7 @@ function ctxFactory({ isOwner = true, isGroup = false, admin = false } = {}) {
   }
 
   // ══════════════════════════════════════════════════════════
-  console.log('\n╔═══ 6. Permissões ═══╗');
+  console.log('\n╔═══ 7. Permissões ═══╗');
   // ══════════════════════════════════════════════════════════
   {
     const adm = ctxFactory({ isOwner: false, isGroup: true, admin: true });
@@ -222,7 +259,7 @@ function ctxFactory({ isOwner = true, isGroup = false, admin = false } = {}) {
   }
 
   // ══════════════════════════════════════════════════════════
-  console.log('\n╔═══ 7. Link + subcomando desconhecido ═══╗');
+  console.log('\n╔═══ 8. Link + subcomando desconhecido ═══╗');
   // ══════════════════════════════════════════════════════════
   {
     const grp = ctxFactory({ isOwner: true, isGroup: true });

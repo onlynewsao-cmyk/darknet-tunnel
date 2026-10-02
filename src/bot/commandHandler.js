@@ -448,10 +448,10 @@ async function _handleInner(sock, msg) {
 
   const prefixes = await prefixEngine.getAllActivePrefixes(ctx.remoteJid);
 
-  // ── v6.89: RPG — cliques das listas de criação de personagem ───────
-  // Chegam como selectedRowId (RPGPICK_R_<raça> / RPGPICK_C_<classe>),
-  // mesmo mecanismo do CHANGE_THEME_ — já provado em produção.
-  if (/^RPGPICK_[RC]_[a-z]+$/i.test(text.split(/\s+/)[0] || '')) {
+  // ── RPG CREATE legado — cliques de listas/carrosséis antigos ───────
+  // Algumas mensagens já entregues usam RPGPICK_. Aceita chaves com _/- e
+  // deixa createFlow normalizar para RPGCR_, sem inutilizar o carrossel antigo.
+  if (/^RPGPICK_[RC]_[a-z0-9_-]+$/i.test(text.split(/\s+/)[0] || '')) {
     try {
       const flow = require('./rpg/createFlow');
       if (await flow.pick({ sock, msg, ctx, token: text.split(/\s+/)[0] })) return true;

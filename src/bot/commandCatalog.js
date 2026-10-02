@@ -65,6 +65,7 @@ const CATALOG = [
   { name: 'defpack', category: 'stickers', emoji: '📦', description: 'Define o link do «Ver pacote de figurinhas» (canal/grupo). Se já tiver o pack, abre o pack; senão, o link', ownerOrAdmin: true },
   { name: 'definestickpack', category: 'stickers', emoji: '📦', description: 'Alias de defpack — link do Ver pacote', ownerOrAdmin: true },
   { name: 'pack', category: 'stickers', emoji: '📦', description: 'Muda nome/autor/slogan/link do pack de figurinhas (global ou do grupo)', ownerOrAdmin: true },
+  { name: 'packbot', category: 'stickers', emoji: '📦', description: 'Atalho do dono para definir nome, autor e descrição globais das figurinhas novas', ownerOnly: true, aliases: ['packglobal', 'setpackglobal'] },
   { name: 'stickerrename', category: 'stickers', emoji: '💧', description: 'Renomeia o pack/autor de QUALQUER sticker (responde a um sticker), preservando animação', aliases: ['renomear', 'rename', 'trocarnome', 'renamesticker'] },
   { name: 'figubug2', category: 'stickers', emoji: '🖼️', description: 'Gera imagem em sticker', native: true },
   { name: 'figubug', category: 'stickers', emoji: '👾', description: 'Sticker lendário por mídia', native: true },

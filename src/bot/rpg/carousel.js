@@ -47,8 +47,11 @@ async function _imagem(cacheKey, prompt, w, h, prazoMs = 3500) {
 async function enviarCarrossel(sock, msg, ctx, { corpo, rodape, cards, imgW = 768, imgH = 512 }) {
   if (!sock?.relayMessage || !Array.isArray(cards) || !cards.length) return false;
   try {
-    const { generateWAMessageFromContent, prepareWAMessageMedia } = require('@systemzero/baileys');
+    const { generateWAMessageFromContent, prepareWAMessageMedia, proto } = require('@systemzero/baileys');
 
+    // Os clientes recentes são exigentes: objectos JS crus até podem renderizar
+    // as cartas, mas o quick_reply pode chegar sem id (e a raça nunca avança).
+    // Constrói cada camada com os protobufs oficiais, como no Story Mode.
     const cartas = await Promise.all(cards.map(async (c) => {
       // imagem: gerada por IA (c/cache), com prazo — sem imagem a carta
       // continua a navegar, só sem capa.
@@ -63,24 +66,31 @@ async function enviarCarrossel(sock, msg, ctx, { corpo, rodape, cards, imgW = 76
         } catch {}
       }
 
-      const botoes = (c.botoes || []).map(b => b.url
-        ? { name: 'cta_url', buttonParamsJson: JSON.stringify({ display_text: b.texto, url: b.url, merchant_url: b.url }) }
-        : { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: b.texto, id: b.id }) });
+      const botoes = (c.botoes || [])
+        .filter((b) => b && (b.url || b.id))
+        .map((b) => b.url
+          ? { name: 'cta_url', buttonParamsJson: JSON.stringify({ display_text: String(b.texto || 'Abrir'), url: b.url, merchant_url: b.url }) }
+          : { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: String(b.texto || 'Escolher'), id: String(b.id) }) });
 
-      return {
-        header: imageMessage ? { hasMediaAttachment: true, imageMessage } : { hasMediaAttachment: false },
-        body:   { text: c.corpo || '' },
-        footer: { text: c.rodape || '' },
-        nativeFlowMessage: { buttons: botoes },
-      };
+      const header = proto.Message.InteractiveMessage.Header.fromObject(
+        imageMessage
+          ? { title: c.titulo || '', hasMediaAttachment: true, imageMessage }
+          : { title: c.titulo || '', hasMediaAttachment: false }
+      );
+      return proto.Message.InteractiveMessage.CarouselCard.fromObject({
+        header,
+        body: proto.Message.InteractiveMessage.Body.fromObject({ text: String(c.corpo || '') }),
+        footer: proto.Message.InteractiveMessage.Footer.fromObject({ text: String(c.rodape || '') }),
+        nativeFlowMessage: proto.Message.InteractiveMessage.NativeFlowMessage.fromObject({ buttons: botoes }),
+      });
     }));
 
     const msgObj = generateWAMessageFromContent(ctx.remoteJid, {
-      interactiveMessage: {
-        body:   { text: corpo || '' },
-        footer: { text: rodape || '' },
+      interactiveMessage: proto.Message.InteractiveMessage.fromObject({
+        body: proto.Message.InteractiveMessage.Body.fromObject({ text: String(corpo || '') }),
+        footer: proto.Message.InteractiveMessage.Footer.fromObject({ text: String(rodape || '') }),
         carouselMessage: { cards: cartas },
-      },
+      }),
     }, { userJid: sock.user?.id, quoted: msg });
 
     // o selo biz/native_flow que os clientes novos exigem para RENDERIZAR

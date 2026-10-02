@@ -334,37 +334,75 @@ function fromDoc(gs) {
   };
 }
 
+/**
+ * Default realmente usado por stickerMaker fora de grupos com pack próprio.
+ *
+ * sticker_pack_name/sticker_author_name foram as primeiras chaves do bot e
+ * ainda são usadas por comandos antigos. As chaves sticker_pack_* mais novas
+ * são mantidas em sincronia. Assim, qualquer caminho de criação recebe o
+ * mesmo nome e autor, em vez de ter dois "globais" diferentes.
+ */
 async function getGlobalDefault() {
   try {
     const botConfigCache = require('./botConfigCache');
-    const url = String(await botConfigCache.get('sticker_pack_url', DEFAULT_PACK_URL) || DEFAULT_PACK_URL).trim();
-    const brand = String(await botConfigCache.get('sticker_pack_brand', DEFAULT_BRAND) || DEFAULT_BRAND).trim();
-    const slogan = String(await botConfigCache.get('sticker_wm_slogan', DEFAULT_SLOGAN) || DEFAULT_SLOGAN).trim();
-    const cta = String(await botConfigCache.get('sticker_wm_cta', DEFAULT_CTA) || DEFAULT_CTA).trim();
-    const channelName = String(await botConfigCache.get('sticker_pack_channel_name', '') || '').trim();
-    return composeMeta({ brand, slogan, link: url || DEFAULT_PACK_URL, cta, channelName });
+    const get = (key, fallback) => botConfigCache.get(key, fallback);
+    const [urlRaw, brandRaw, sloganRaw, ctaRaw, channelRaw, legacyNameRaw, legacyAuthorRaw] = await Promise.all([
+      get('sticker_pack_url', DEFAULT_PACK_URL),
+      get('sticker_pack_brand', ''),
+      get('sticker_wm_slogan', DEFAULT_SLOGAN),
+      get('sticker_wm_cta', DEFAULT_CTA),
+      get('sticker_pack_channel_name', ''),
+      get('sticker_pack_name', ''),
+      get('sticker_author_name', ''),
+    ]);
+    const url = String(urlRaw || DEFAULT_PACK_URL).trim();
+    const legacyName = String(legacyNameRaw || '').trim();
+    const legacyAuthor = String(legacyAuthorRaw || '').trim();
+    const brand = String(brandRaw || legacyAuthor || DEFAULT_BRAND).trim();
+    const channelName = String(channelRaw || legacyName || '').trim();
+    const composed = composeMeta({
+      brand,
+      slogan: String(sloganRaw || DEFAULT_SLOGAN).trim(),
+      link: url || DEFAULT_PACK_URL,
+      cta: String(ctaRaw || DEFAULT_CTA).trim(),
+      channelName,
+    });
+    // O URL continua disponível em publisherSite/packUrl; mas o autor que o
+    // dono escolheu tem de ir para o EXIF sticker-pack-publisher.
+    return {
+      ...composed,
+      packName: legacyName || composed.packName,
+      authorName: legacyAuthor || composed.authorName,
+    };
   } catch {
     return composeMeta({ link: DEFAULT_PACK_URL });
   }
 }
 
+/** Atualiza parcialmente o pack global e espelha as chaves históricas. */
 async function saveGlobalDefault(data = {}) {
-  const composed = composeMeta({
-    brand: data.brand,
-    slogan: data.slogan,
-    link: data.channelUrl || data.link || data.packUrl,
-    cta: data.cta,
-    channelName: data.channelName,
-  });
+  const current = await getGlobalDefault();
+  const link = data.channelUrl ?? data.link ?? data.packUrl ?? current.channelUrl ?? DEFAULT_PACK_URL;
+  const brand = data.brand ?? current.brand ?? DEFAULT_BRAND;
+  const slogan = data.slogan ?? current.slogan ?? DEFAULT_SLOGAN;
+  const cta = data.cta ?? current.cta ?? DEFAULT_CTA;
+  const channelName = data.channelName ?? data.packName ?? current.channelName ?? current.packName ?? '';
+  const composed = composeMeta({ brand, slogan, link, cta, channelName });
+  const authorName = String(data.authorName ?? brand ?? '').trim().slice(0, 80) || composed.brand;
+  const packName = String(channelName || composed.packName).trim().slice(0, 80) || composed.packName;
+  const saved = { ...composed, packName, authorName, channelName: packName };
   const BotConfig = require('../database/models/BotConfig');
   await BotConfig.set('sticker_pack_url', composed.channelUrl);
   await BotConfig.set('sticker_pack_brand', composed.brand);
   await BotConfig.set('sticker_wm_slogan', composed.slogan);
   await BotConfig.set('sticker_wm_cta', composed.cta);
   await BotConfig.set('sticker_pack_id', composed.packId);
-  await BotConfig.set('sticker_pack_channel_name', composed.channelName || '');
+  await BotConfig.set('sticker_pack_channel_name', packName);
+  // Compatibilidade: handler e integrações antigas também lêem estas duas.
+  await BotConfig.set('sticker_pack_name', packName);
+  await BotConfig.set('sticker_author_name', authorName);
   try { require('./botConfigCache').clear(); } catch {}
-  return composed;
+  return saved;
 }
 
 /** Pack que o "Ver pacote" usa: grupo > global > canal default. Sempre tem URL. */
@@ -409,7 +447,7 @@ async function apply(opts = {}) {
   }
   const jid = opts.remoteJid || opts.jid || opts.ctx?.remoteJid || currentCtx()?.remoteJid;
   const search = opts.searchQuery || opts.packSearch || '';
-  if (!jid && !search) return opts;
+  // Mesmo chamadas internas sem ctx devem receber o default global.
   const saved = jid ? await getForJid(jid) : null;
   const pack = await resolvePack(jid).catch(() => composeMeta({ link: DEFAULT_PACK_URL }));
   if (search) {

@@ -99,7 +99,7 @@ const IDADES = [
 // ══════════════════════════════════════════════════════════════
 const BIOS = [
   { key: 'orfao', emoji: '💔', label: 'Órfão das Ruas', desc: 'Cresceu sozinho, aprendeu a sobreviver. +2 DEX, +1 LUK' },
-  { key: 'nobre', emoji: '👑', label: 'Nobre Caído', desc: 'Perdeu tudo, busca vingança ou redenção. +2 INT, +1 CHA' },
+  { key: 'nobre', emoji: '👑', label: 'Nobre Caído', desc: 'Perdeu tudo, busca vingança ou redenção. +2 INT' },
   { key: 'soldado', emoji: '🎖️', label: 'Veterano de Guerra', desc: 'Viu batalhas, cicatrizes contam histórias. +2 STR, +1 VIT' },
   { key: 'sabio', emoji: '📚', label: 'Erudito', desc: 'Passou a vida entre livros e pergaminhos. +3 INT' },
   { key: 'viajante', emoji: '🗺️', label: 'Viajante', desc: 'Conhece terras distantes e culturas. +1 em tudo' },
@@ -304,15 +304,15 @@ async function _stepRaca(sock, msg, ctx, raceKey) {
   pend.race = raceKey;
   pend.step = 'classe';
 
-  // Aplicar bónus de raça
-  const origem = rpg.ORIGINS?.[raceKey];
-  if (origem?.bonus) {
-    for (const [k, v] of Object.entries(origem.bonus)) {
-      pend.stats[k] = (pend.stats[k] || 6) + v;
+  // Aplicar bónus de raça. Algumas tabelas só expõem RACES.bonus;
+  // outras têm ORIGINS.bonus. Aceita ambas sem aplicar duas vezes.
+  const race = rpg.RACES[raceKey] || {};
+  const bonusRaca = race.bonus || rpg.ORIGINS?.[raceKey]?.bonus;
+  if (bonusRaca) {
+    for (const [k, v] of Object.entries(bonusRaca)) {
+      if (Object.prototype.hasOwnProperty.call(STAT_NAMES, k)) pend.stats[k] = (pend.stats[k] || 6) + Number(v || 0);
     }
   }
-
-  const race = rpg.RACES[raceKey] || {};
   const corpo = [
     `🎭 *CRIAÇÃO DE PERSONAGEM*`,
     ``,
@@ -380,8 +380,25 @@ async function _stepBio(sock, msg, ctx, bioKey) {
 
   const bioInfo = BIOS.find(b => b.key === bioKey);
   if (!bioInfo) { await _avisar(sock, msg, ctx, '❌ História inválida. Usa a lista mais recente.'); return false; }
+
+  // "Escrever a minha" antes avançava directamente com esse texto como bio,
+  // sem nunca dar ao jogador uma hipótese de a escrever.
+  if (bioKey === 'custom') {
+    pend.bioKey = 'custom';
+    pend.step = 'bio_custom';
+    const p = _prefixo(ctx);
+    await _avisar(sock, msg, ctx, [
+      '✏️ *A TUA BIOGRAFIA*',
+      '',
+      'Escreve uma história curta da tua personagem (4–260 caracteres).',
+      `Usa: *${p}rpgbio <a tua história>*`,
+      `Exemplo: *${p}rpgbio Fugi do reino e procuro a minha irmã perdida.*`,
+    ].join('\n'));
+    return true;
+  }
+
   pend.bioKey = bioKey;
-  pend.bio = bioInfo ? bioInfo.label : 'Aventureiro';
+  pend.bio = bioInfo.label;
   pend.step = 'stats';
 
   // Aplicar bónus de bio
@@ -392,6 +409,21 @@ async function _stepBio(sock, msg, ctx, bioKey) {
   else if (bioKey === 'viajante') { pend.stats.str += 1; pend.stats.dex += 1; pend.stats.int += 1; pend.stats.vit += 1; pend.stats.luk += 1; }
   else if (bioKey === 'ladrão') { pend.stats.dex += 2; pend.stats.luk += 1; }
 
+  return _mostrarPointBuy(sock, msg, ctx, pend);
+}
+
+/** Recebe a biografia que o jogador optou por escrever. */
+async function definirBio({ sock, msg, ctx, args }) {
+  const pend = await _pendente(sock, msg, ctx, 'bio_custom');
+  if (!pend) return false;
+  const bio = String((args || []).join(' ')).replace(/\s+/g, ' ').trim();
+  if (bio.length < 4 || bio.length > 260 || /[\r\n]/.test(bio)) {
+    await _avisar(sock, msg, ctx, '❌ A biografia deve ter entre *4 e 260 caracteres*. Usa: *' + _prefixo(ctx) + 'rpgbio <história>*.');
+    return false;
+  }
+  pend.bio = bio;
+  pend.bioKey = 'custom';
+  pend.step = 'stats';
   return _mostrarPointBuy(sock, msg, ctx, pend);
 }
 
@@ -410,7 +442,7 @@ async function _mostrarPointBuy(sock, msg, ctx, pend) {
     ``,
     `💎 Pontos livres: *${pend.pointsLeft}*`,
     ``,
-    `> Usa: *!rpgcr +str* / *!rpgcr +dex* / *!rpgcr -str* etc.`,
+    `> Usa: *${_prefixo(ctx)}rpgcr +str* / *${_prefixo(ctx)}rpgcr +dex* / *${_prefixo(ctx)}rpgcr -str* etc.`,
     `> Ou toca numa opção abaixo para +1`,
   ].join('\n');
 
@@ -443,7 +475,7 @@ async function _stepFinalizar(sock, msg, ctx) {
 
   // Bio
   const bioInfo = BIOS.find(b => b.key === pend.bioKey);
-  p.bio = bioInfo ? bioInfo.label : 'Aventureiro';
+  p.bio = pend.bio || (bioInfo ? bioInfo.label : 'Aventureiro');
 
   // Stats finais
   p.stats = { ...pend.stats };
@@ -502,12 +534,12 @@ async function _stepFinalizar(sock, msg, ctx) {
     '',
     `💰 ${p.coins} coins`,
     '',
-    '> 🎮 Usa *!status* para veres tudo.',
-    '> ⚔️ *!lutar* — combate! | 🗺️ *!viajar floresta* — explora!',
-    '> 🏋️ *!treinar* — fica mais forte',
-    '> 🌌 *!personagens* — os heróis do multiverso',
-    '> ✨ *!tecnicas* — aprende os poderes deles',
-    '> 📖 *!historia* — 8 mundos para viveres',
+    `> 🎮 Usa *${_prefixo(ctx)}status* para veres tudo.`,
+    `> ⚔️ *${_prefixo(ctx)}lutar* — combate! | 🗺️ *${_prefixo(ctx)}viajar floresta* — explora!`,
+    `> 🏋️ *${_prefixo(ctx)}treinar* — fica mais forte`,
+    `> 🌌 *${_prefixo(ctx)}personagens* — os heróis do multiverso`,
+    `> ✨ *${_prefixo(ctx)}tecnicas* — aprende os poderes deles`,
+    `> 📖 *${_prefixo(ctx)}historia* — 8 mundos para viveres`,
   ];
 
   await rpgTheme.rpgReply(sock, msg, ctx, '🎭 PERSONAGEM CRIADO', linhas);
@@ -557,7 +589,9 @@ async function definirNome({ sock, msg, ctx, args }) {
 
 /** Processa cliques dos botões/listas */
 async function pick({ sock, msg, ctx, token }) {
-  const tk = String(token || '');
+  // Alguns clientes ainda devolvem IDs dos primeiros carrosséis
+  // (RPGPICK_R_/RPGPICK_C_). Normaliza-os antes de processar os IDs actuais.
+  const tk = String(token || '').trim().split(/\s+/)[0].replace(/^RPGPICK_/, 'RPGCR_');
 
   // Género
   let m = tk.match(/^RPGCR_G_(.+)$/i);
@@ -668,6 +702,10 @@ async function escolherNumero(sock, msg, ctx, numero) {
     await _stepBio(sock, msg, ctx, BIOS[idx].key);
     return true;
   }
+  if (pend.step === 'bio_custom') {
+    await _avisar(sock, msg, ctx, '✏️ Escreve a tua história com *' + _prefixo(ctx) + 'rpgbio <história>*.');
+    return true;
+  }
   if (pend.step === 'stats') {
     const stats = Object.keys(STAT_NAMES);
     if (idx === stats.length) { await _stepFinalizar(sock, msg, ctx); return true; }
@@ -686,7 +724,7 @@ async function ajustarStat(sock, msg, ctx, args) {
   const arg = (args[0] || '').toLowerCase();
   const match = arg.match(/^([+-])(str|dex|int|vit|luk)$/);
   if (!match) {
-    await sock.sendMessage(ctx.remoteJid, { text: '❓ Usa: !rpgcr +str / !rpgcr -dex / etc.' }, { quoted: msg }).catch(() => {});
+    await sock.sendMessage(ctx.remoteJid, { text: '❓ Usa: ' + _prefixo(ctx) + 'rpgcr +str / ' + _prefixo(ctx) + 'rpgcr -dex / etc.' }, { quoted: msg }).catch(() => {});
     return;
   }
 
@@ -709,4 +747,4 @@ async function ajustarStat(sock, msg, ctx, args) {
 
 function pendentes() { return _pendentes; }
 
-module.exports = { start, definirNome, pick, escolherNumero, ajustarStat, pendentes };
+module.exports = { start, definirNome, definirBio, pick, escolherNumero, ajustarStat, pendentes };
