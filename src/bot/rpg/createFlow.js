@@ -286,11 +286,14 @@ async function _stepIdade(sock, msg, ctx, idadeKey) {
 
   // Cards para carrossel
   const cards = Object.entries(rpg.RACES).map(([k, v]) => ({
+    titulo: `${v.emoji} ${(k.replace(/_/g, ' ')).replace(/^./, ch => ch.toUpperCase())}`,
     corpo: `${v.emoji} *${k.toUpperCase()}*\n${v.desc || ''}\n\n> Bónus: STR+${v.bonus?.str || 0} DEX+${v.bonus?.dex || 0} INT+${v.bonus?.int || 0} VIT+${v.bonus?.vit || 0} LUK+${v.bonus?.luk || 0}`,
     rodape: `🎭 ${config.bot.name} · RPG`,
+    // Mesma origem e mesmo upload do carrossel !pinterest; IA é só fallback.
+    pinterestQuery: `${k.replace(/_/g, ' ')} fantasy RPG race portrait`,
     promptImg: `${k} fantasy RPG race portrait, dark epic anime style`,
     cacheKey: `race_${k}`,
-    botoes: [{ texto: `${v.emoji} Ser ${k}`, id: `RPGCR_R_${k}` }],
+    botoes: [{ texto: `${v.emoji} Ser ${k.replace(/_/g, ' ')}`, id: `RPGCR_R_${k}` }],
   }));
 
   return _enviarLista(sock, msg, ctx, '🧬 RAÇA', 'RAÇAS', corpo, rows, `🎭 ${config.bot.name} · RPG`, cards);
@@ -331,11 +334,13 @@ async function _stepRaca(sock, msg, ctx, raceKey) {
   }));
 
   const cards = Object.entries(rpg.CLASSES).map(([k, v]) => ({
+    titulo: `${v.emoji} ${(k.replace(/_/g, ' ')).replace(/^./, ch => ch.toUpperCase())}`,
     corpo: `${v.emoji} *${k.toUpperCase()}*\n${v.desc || ''}\n\n> Stat principal: ${STAT_NAMES[v.primary] || v.primary}`,
     rodape: `🎭 ${config.bot.name} · RPG`,
+    pinterestQuery: `${k.replace(/_/g, ' ')} fantasy RPG hero class`,
     promptImg: `${k} fantasy RPG hero class, dark epic anime style`,
     cacheKey: `classe_${k}`,
-    botoes: [{ texto: `${v.emoji} Ser ${k}`, id: `RPGCR_C_${k}` }],
+    botoes: [{ texto: `${v.emoji} Ser ${k.replace(/_/g, ' ')}`, id: `RPGCR_C_${k}` }],
   }));
 
   return _enviarLista(sock, msg, ctx, '⚔️ CLASSE', 'CLASSES', corpo, rows, `🎭 ${config.bot.name} · RPG`, cards);

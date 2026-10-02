@@ -16,6 +16,9 @@ const images = require('./images');
 
 /** Cache de imagens geradas: cacheKey → Buffer (vive na sessão do bot). */
 const _imgCache = new Map();
+/** Cache de capas Pinterest: cacheKey → URL de imagem (vive na sessão do bot). */
+const _pinCache = new Map();
+const PINTEREST_SEARCH_ENDPOINT = 'https://api.siputzx.my.id/api/s/pinterest?query=';
 
 /**
  * Gera (ou devolve do cache) a imagem da carta.
@@ -37,10 +40,40 @@ async function _imagem(cacheKey, prompt, w, h, prazoMs = 3500) {
 }
 
 /**
+ * Obtém uma capa do mesmo endpoint usado pelo comando !pinterest. A URL é
+ * entregue directamente ao Baileys, como no carrossel Pinterest, por isso a
+ * carta de raça não depende de a IA externa responder a tempo.
+ */
+async function _imagemPinterest(cacheKey, query, prazoMs = 4000) {
+  if (!query) return null;
+  if (cacheKey && _pinCache.has(cacheKey)) return _pinCache.get(cacheKey);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), prazoMs);
+  try {
+    const response = await fetch(PINTEREST_SEARCH_ENDPOINT + encodeURIComponent(query), {
+      signal: controller.signal,
+      headers: { 'User-Agent': 'DarkNet-RPG/1.0' },
+    });
+    if (!response.ok) return null;
+    const data = await response.json();
+    const results = data?.data || data?.result || data?.results || [];
+    const first = Array.isArray(results) ? results.find((item) => {
+      const url = typeof item === 'string' ? item : (item?.image_url || item?.image || item?.url || item?.src);
+      return /^https?:\/\//i.test(String(url || ''));
+    }) : null;
+    const url = typeof first === 'string' ? first : (first?.image_url || first?.image || first?.url || first?.src);
+    if (!/^https?:\/\//i.test(String(url || ''))) return null;
+    if (cacheKey) _pinCache.set(cacheKey, url);
+    return url;
+  } catch { return null; }
+  finally { clearTimeout(timer); }
+}
+
+/**
  * Envia um carrossel interactivo.
  * @param opts.corpo   texto acima das cartas (leva SEMPRE o plano-B numerado)
  * @param opts.rodape  rodapé da mensagem
- * @param opts.cards   [{ corpo, rodape, botoes[], promptImg|imagem, cacheKey, imgW, imgH }]
+ * @param opts.cards   [{ titulo, corpo, rodape, botoes[], pinterestQuery|promptImg|imagem, cacheKey, imgW, imgH }]
  *        botões: { texto, id } → quick_reply  |  { texto, url } → cta_url
  * @returns true se o carrossel saiu (mesmo com cartas sem imagem), false p/ fallback
  */
@@ -53,15 +86,21 @@ async function enviarCarrossel(sock, msg, ctx, { corpo, rodape, cards, imgW = 76
     // as cartas, mas o quick_reply pode chegar sem id (e a raça nunca avança).
     // Constrói cada camada com os protobufs oficiais, como no Story Mode.
     const cartas = await Promise.all(cards.map(async (c) => {
-      // imagem: gerada por IA (c/cache), com prazo — sem imagem a carta
-      // continua a navegar, só sem capa.
+      // Para raças/classes, a capa Pinterest segue exactamente o mesmo
+      // caminho de upload do comando !pinterest. A IA permanece como fallback.
       let imageMessage = null;
-      const buf = c.imagem || (c.promptImg
-        ? await _imagem(c.cacheKey || c.promptImg, c.promptImg, c.imgW || imgW, c.imgH || imgH, c.prazoMs)
+      const pinterestUrl = c.imagemUrl || (c.pinterestQuery
+        ? await _imagemPinterest('pin_' + (c.cacheKey || c.pinterestQuery), c.pinterestQuery, c.prazoMs)
         : null);
-      if (buf && sock.waUploadToServer) {
+      const buf = pinterestUrl ? null : (c.imagem || (c.promptImg
+        ? await _imagem(c.cacheKey || c.promptImg, c.promptImg, c.imgW || imgW, c.imgH || imgH, c.prazoMs)
+        : null));
+      if ((pinterestUrl || buf) && sock.waUploadToServer) {
         try {
-          const media = await prepareWAMessageMedia({ image: buf }, { upload: sock.waUploadToServer });
+          const media = await prepareWAMessageMedia(
+            pinterestUrl ? { image: { url: pinterestUrl } } : { image: buf },
+            { upload: sock.waUploadToServer }
+          );
           imageMessage = media?.imageMessage || null;
         } catch {}
       }
@@ -110,4 +149,4 @@ async function enviarCarrossel(sock, msg, ctx, { corpo, rodape, cards, imgW = 76
   }
 }
 
-module.exports = { enviarCarrossel, _imagem, _imgCache };
+module.exports = { enviarCarrossel, _imagem, _imagemPinterest, _imgCache, _pinCache };

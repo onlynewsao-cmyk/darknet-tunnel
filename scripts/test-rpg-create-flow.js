@@ -22,6 +22,10 @@ stub(path.join(ROOT, 'src/bot/rpg/engine.js'), {
 });
 stub(path.join(ROOT, 'src/bot/rpg/ui.js'), { confirmar: async () => {} });
 stub(path.join(ROOT, 'src/bot/rpg/rpgTheme.js'), { rpgRender: (_, xs) => xs.join('\n'), rpgReply: async () => {} });
+let carouselCall = null;
+stub(path.join(ROOT, 'src/bot/rpg/carousel.js'), {
+  enviarCarrossel: async (_sock, _msg, _ctx, options) => { carouselCall = options; return true; },
+});
 
 (async () => {
   const R = []; const ok = (n, c) => { R.push((c ? '✅' : '❌') + ' ' + n); if (!c) process.exitCode = 1; };
@@ -50,11 +54,13 @@ stub(path.join(ROOT, 'src/bot/rpg/rpgTheme.js'), { rpgRender: (_, xs) => xs.join
   await flow.pick({ sock, msg, ctx, token: 'RPGCR_G_masculino' });
   p = flow.pendentes().get(ctx.senderNumber);
   ok('botão género avança para idade', p?.step === 'idade' && p?.gender === 'masculino');
+  sock.waUploadToServer = async () => ({}); // força a via real de carrossel, mockada acima
   await flow.pick({ sock, msg, ctx, token: 'RPGCR_I_adulto' });
   p = flow.pendentes().get(ctx.senderNumber);
   ok('botão idade avança para raça', p?.step === 'raca' && p?.age === 25);
   ok('idade adulto aplica bónus uma vez', p?.stats?.str === 8 && p?.stats?.vit === 7);
-  ok('raça depois da idade tem fallback escrito', /rpgselecionar <número>/.test(ultima()));
+  ok('raça abre carrossel com plano B escrito', /rpgselecionar <número>/.test(carouselCall?.corpo || ''));
+  ok('cartas de raça têm título e consulta Pinterest', carouselCall?.cards?.every(c => c.titulo && c.pinterestQuery && c.botoes?.[0]?.id?.startsWith('RPGCR_R_')));
 
   // Clique repetido/velho de idade não reaplica +2 STR/+1 VIT nem retrocede.
   enviados.length = 0;
@@ -67,6 +73,7 @@ stub(path.join(ROOT, 'src/bot/rpg/rpgTheme.js'), { rpgRender: (_, xs) => xs.join
   p = flow.pendentes().get(ctx.senderNumber);
   ok('RPGPICK de raça com _ é normalizado e abre classe', p?.step === 'classe' && p?.race === 'elfo_sombrio');
   ok('raça aplica o bónus de RACES quando ORIGINS não o tem', p?.stats?.dex === 8);
+  ok('classes recebem o mesmo carrossel Pinterest', carouselCall?.cards?.every(c => c.titulo && c.pinterestQuery && c.botoes?.[0]?.id?.startsWith('RPGCR_C_')));
   await flow.escolherNumero(sock, msg, ctx, 2); // classe mago_negro — fallback textual
   p = flow.pendentes().get(ctx.senderNumber);
   ok('rpgselecionar escolhe classe e abre bio', p?.step === 'bio' && p?.class === 'mago_negro');
