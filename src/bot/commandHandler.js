@@ -486,8 +486,8 @@ async function _handleInner(sock, msg) {
     } catch (e) { console.warn('[RPG create]', e.message?.slice(0, 60)); }
   }
 
-  // ── v10.0: STORY MODE — botões de história (STORY_/STORYC_/STORYN_) ──
-  if (/^STORY[C]?_[a-z0-9_]+$/i.test(text.split(/\s+/)[0] || '')) {
+  // ── STORY MODE — mundo, testes, escolhas, próximos nós e bosses ─
+  if (/^(?:STORY(?:C|N|B)?_[a-z0-9_]+|STESTE_[a-z]+|STESTQ_[a-z]+_\d+|STESTA_[a-z]+_\d+_\d+|SINFO_[a-z]+)$/i.test(text.split(/\s+/)[0] || '')) {
     try {
       const storyMode = require('./rpg/storyMode');
       if (await storyMode.resolverClique(sock, msg, ctx, text.split(/\s+/)[0])) return true;

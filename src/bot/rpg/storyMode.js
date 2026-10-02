@@ -23,6 +23,21 @@ const IMAGES_DIR = path.join(__dirname, 'images');
 // CATÁLOGO DE MUNDOS — COM TESTES DE INICIANTE
 // ══════════════════════════════════════════════════════════════
 const WORLDS = {
+  ruptura: {
+    id: 'ruptura', emoji: '🌀', name: 'Crónicas da Ruptura',
+    desc: 'Uma aventura original do DarkNet RPG. A lua partiu-se, portais abriram e o teu destino acordou.',
+    cor: '#5C2D91', nivelMin: 1, capitulos: 0, acessoLivre: true,
+    recompensaFinal: { item: 'Coração da Ruptura', title: 'Guardião do Véu', xp: 2200, coins: 5000 },
+    // Sem trivia externa: é a campanha de entrada para qualquer jogador.
+    image: 'ruptura.jpg',
+    evolucoes: [
+      { nivel: 0, titulo: 'Desperto', emoji: '✨' },
+      { nivel: 1, titulo: 'Viajante do Véu', emoji: '🧭' },
+      { nivel: 2, titulo: 'Portador da Chave', emoji: '🗝️' },
+      { nivel: 3, titulo: 'Guardião da Ruptura', emoji: '🌀' },
+      { nivel: 4, titulo: 'Lenda do Véu', emoji: '👑' },
+    ],
+  },
   naruto: {
     id: 'naruto', emoji: '\u{1f363}', name: 'Naruto',
     desc: 'O mundo dos shinobis. Chakra, Jutsus e o Caminho Ninja.',
@@ -1480,6 +1495,72 @@ const BLEACH_CHAPTERS = [
 
 
 
+// ══════════════════════════════════════════════════════════════
+// CRÓNICAS DA RUPTURA — CAMPANHA ORIGINAL DE ENTRADA
+// Uma história própria, sem depender de conhecimento de anime. As escolhas
+// dão recompensas diferentes e deixam o jogador entrar no modo história logo
+// no nível 1.
+// ══════════════════════════════════════════════════════════════
+const RUPTURA_CHAPTERS = [
+  {
+    id: 'rt01', titulo: 'Capítulo 1: A Lua Partida',
+    descricao: 'Uma fenda abre-se sobre a tua aldeia.', nivel: 1, xp: 80, coins: 120,
+    nodes: [
+      { id: 'rta', texto: '🌙 *A LUA PARTIU-SE*\n\nÀ meia-noite, uma cicatriz violeta corta o céu. Fragmentos de luz caem sobre a aldeia e uma voz chama pelo teu nome.\n\nNo centro da praça, duas pessoas estão presas sob uma ponte de madeira em chamas.', escolhas: [
+        { txt: '🛡️ Salvar as pessoas', next: 'rtb', xp: 25, item: 'Fragmento de Âmbar' },
+        { txt: '👁️ Seguir a voz do portal', next: 'rtc', xp: 35, coins: 40 },
+      ]},
+      { id: 'rtb', texto: '🛡️ Puxas as pessoas para um lugar seguro. Uma criança entrega-te um medalhão quente: “A luz escolheu-te.”', next: 'rtd', xp: 40, coins: 30 },
+      { id: 'rtc', texto: '👁️ Aproximas-te do portal. A voz silencia quando tocas o ar rasgado, deixando uma runa gravada na tua mão.', next: 'rtd', xp: 50, item: 'Runa da Fenda' },
+      { id: 'rtd', texto: '🌀 Entre as chamas, a fenda mostra uma cidade invertida do outro lado do céu. A aventura começou.', xp: 60, coins: 50 },
+    ],
+    recompensas: { xp: 120, coins: 150, item: 'Mapa do Véu' },
+  },
+  {
+    id: 'rt02', titulo: 'Capítulo 2: O Bosque sem Som',
+    descricao: 'Segue o mapa para uma floresta onde até o vento se cala.', nivel: 1, xp: 100, coins: 160,
+    nodes: [
+      { id: 'rte', texto: '🌲 *O BOSQUE SEM SOM*\n\nO mapa leva-te a árvores negras. Nenhuma folha se move. Ao fundo, uma guardiã feita de raízes observa-te.', escolhas: [
+        { txt: '🤝 Pedir orientação', next: 'rtf', xp: 30 },
+        { txt: '⚔️ Cortar as raízes', next: 'rtg', xp: 45, coins: 35 },
+      ]},
+      { id: 'rtf', texto: '🤝 Baixas a arma. A guardiã reconhece o medalhão e oferece uma gota de seiva dourada.', next: 'rth', xp: 45, item: 'Seiva Estelar' },
+      { id: 'rtg', texto: '⚔️ A lâmina encontra madeira viva. A guardiã bloqueia o golpe, mas respeita a tua coragem e abre uma passagem.', next: 'rth', xp: 55 },
+      { id: 'rth', texto: '✨ Na clareira, a seiva revela uma frase no mapa: “Três chaves fecham a lua; uma mão decide o preço.”', xp: 70, coins: 65 },
+    ],
+    recompensas: { xp: 160, coins: 220, skill: 'Passo do Véu' },
+  },
+  {
+    id: 'rt03', titulo: 'Capítulo 3: A Cidade Invertida',
+    descricao: 'Atravessa o primeiro portal e encontra uma cidade pendurada no céu.', nivel: 2, xp: 140, coins: 240,
+    nodes: [
+      { id: 'rti', texto: '🏙️ *A CIDADE INVERTIDA*\n\nCaminhas no tecto de uma cidade suspensa. Abaixo de ti há estrelas; acima, um oceano escuro. Um mensageiro mascarado pede a tua ajuda para resgatar a Chave do Norte.', escolhas: [
+        { txt: '🗝️ Aceitar a missão', next: 'rtj', xp: 45 },
+        { txt: '🔍 Procurar respostas primeiro', next: 'rtk', xp: 55, item: 'Página do Astrónomo' },
+      ]},
+      { id: 'rtj', texto: '🗝️ O mensageiro guia-te pelos telhados. Descobres que a chave é também uma bússola para o coração da ruptura.', next: 'rtl', xp: 60, coins: 80 },
+      { id: 'rtk', texto: '🔍 Numa biblioteca abandonada, encontras o diário do último guardião. A lua não caiu: foi empurrada.', next: 'rtl', xp: 70 },
+      { id: 'rtl', texto: '🧭 A Chave do Norte responde à tua presença e aponta para uma torre feita de espelhos. Alguém espera lá dentro.', xp: 90, coins: 100 },
+    ],
+    recompensas: { xp: 220, coins: 320, item: 'Chave do Norte' },
+  },
+  {
+    id: 'rt04', titulo: 'Capítulo 4: O Guardião sem Rosto',
+    descricao: 'A torre de espelhos esconde o primeiro guardião do Véu.', nivel: 3, xp: 200, coins: 350,
+    nodes: [
+      { id: 'rtm', texto: '🪞 *O GUARDIÃO SEM ROSTO*\n\nNo topo da torre, uma figura veste a tua própria sombra. “Para fechar a ruptura, precisas de escolher o que perder.”', escolhas: [
+        { txt: '❤️ Oferecer a tua memória mais feliz', next: 'rtn', xp: 80, item: 'Lágrima de Vidro' },
+        { txt: '🔥 Oferecer parte da tua força', next: 'rto', xp: 95, coins: 120 },
+      ]},
+      { id: 'rtn', texto: '❤️ Uma memória transforma-se numa estrela pequena. Dói, mas a estrela abre uma porta no peito do guardião.', next: 'rtp', xp: 110 },
+      { id: 'rto', texto: '🔥 A tua energia envolve a torre. O guardião curva-se e devolve-te uma chama que nunca se apaga.', next: 'rtp', xp: 120, skill: 'Chama do Véu' },
+      { id: 'rtp', texto: '👑 O guardião entrega-te a primeira chave e faz uma promessa: “Quando as três se reunirem, a Lua lembrará o teu nome.”\n\n> 🌀 *Fim do primeiro arco — a caça às chaves continua.*', xp: 140, coins: 180, title: 'Guardião do Véu' },
+    ],
+    recompensas: { xp: 300, coins: 500, item: 'Primeira Chave do Véu', title: 'Guardião do Véu' },
+  },
+];
+
+WORLDS.ruptura.capitulos = RUPTURA_CHAPTERS.length;
 WORLDS.naruto.capitulos = NARUTO_CHAPTERS.length;
 WORLDS.onepiece.capitulos = ONEPIECE_CHAPTERS.length;
 WORLDS.sololeveling.capitulos = SOLOLEVELING_CHAPTERS.length;
@@ -1491,6 +1572,7 @@ WORLDS.bleach.capitulos = BLEACH_CHAPTERS.length;
 
 function _getChapters(worldId) {
   const map = {
+    ruptura: RUPTURA_CHAPTERS,
     naruto: NARUTO_CHAPTERS,
     onepiece: ONEPIECE_CHAPTERS,
     sololeveling: SOLOLEVELING_CHAPTERS,
@@ -1510,12 +1592,53 @@ function _getChapters(worldId) {
 async function getProgress(p, worldId) {
   if (!p.storyProgress) p.storyProgress = {};
   if (!p.storyProgress[worldId]) {
-    p.storyProgress[worldId] = { capitulo: 0, node: null, completos: [], testePassado: false, testePontos: 0 };
+    p.storyProgress[worldId] = { capitulo: 0, node: null, completos: [], testePassado: false, testePontos: 0, nodesRecompensados: [] };
   }
-  if (p.storyProgress[worldId].testePassado === undefined) p.storyProgress[worldId].testePassado = false;
-  if (p.storyProgress[worldId].testePontos === undefined) p.storyProgress[worldId].testePontos = 0;
-  return p.storyProgress[worldId];
+  const prog = p.storyProgress[worldId];
+  if (prog.testePassado === undefined) prog.testePassado = false;
+  if (prog.testePontos === undefined) prog.testePontos = 0;
+  if (!Array.isArray(prog.completos)) prog.completos = [];
+  if (!Array.isArray(prog.nodesRecompensados)) prog.nodesRecompensados = [];
+  return prog;
 }
+
+function _testePassado(w, prog) {
+  return !!(w?.acessoLivre || prog?.testePassado);
+}
+
+function _arraysJogador(p) {
+  if (!Array.isArray(p.inventory)) p.inventory = [];
+  if (!Array.isArray(p.skills)) p.skills = [];
+}
+
+/** Aplica uma recompensa sem duplicar itens/skills únicos. */
+function _darRecompensa(p, reward = {}) {
+  _arraysJogador(p);
+  const linhas = [];
+  if (reward.xp) { rpg.addXP(p, reward.xp); linhas.push('⭐ +' + reward.xp + ' XP'); }
+  if (reward.coins) { p.coins = (p.coins || 0) + reward.coins; linhas.push('💰 +' + reward.coins + ' coins'); }
+  if (reward.item && !p.inventory.includes(reward.item)) { p.inventory.push(reward.item); linhas.push('🎁 ' + reward.item); }
+  if (reward.skill && !p.skills.includes(reward.skill)) { p.skills.push(reward.skill); linhas.push('✨ ' + reward.skill); }
+  if (reward.title) { p.title = reward.title; linhas.push('🏅 ' + reward.title); }
+  return linhas;
+}
+
+/** Cada nó paga no máximo uma vez, mesmo que o jogador toque num botão antigo. */
+function _darRecompensaNo(p, prog, chapter, node) {
+  if (!node) return [];
+  const key = String(chapter?.id || '') + ':' + String(node.id || '');
+  if (!key || prog.nodesRecompensados.includes(key)) return [];
+  prog.nodesRecompensados.push(key);
+  return _darRecompensa(p, node);
+}
+
+async function _avisoEscolhaAntiga(sock, msg, ctx) {
+  return tReply(sock, msg, ctx, '⌛ ESCOLHA ANTIGA', [
+    'Esta opção já não pertence ao capítulo actual.',
+    'Usa *' + (ctx.prefix || '!') + 'historia* para continuares.',
+  ]);
+}
+
 
 // ══════════════════════════════════════════════════════════════
 // FUNÇÕES DE UI
@@ -1687,7 +1810,7 @@ async function mostrarStatus(sock, msg, ctx) {
     const capAtual = prog.capitulo || 0;
     const total = w.capitulos;
     const pct = total > 0 ? Math.round((capAtual / total) * 100) : 0;
-    const teste = prog.testePassado ? '\u2705' : '\u{1f512}';
+    const teste = _testePassado(w, prog) ? '\u2705' : '\u{1f512}';
     const evo = w.evolucoes.reduce((acc, e) => capAtual >= e.nivel ? e : acc, w.evolucoes[0]);
     const desbloqueado = p.level >= w.nivelMin;
     if (desbloqueado) {
@@ -1746,7 +1869,7 @@ async function listarMundos(sock, msg, ctx) {
     const total = w.capitulos;
     const pct = total > 0 ? Math.round((capAtual / total) * 100) : 0;
     const desbloqueado = p.level >= w.nivelMin;
-    const testePassado = prog.testePassado;
+    const testePassado = _testePassado(w, prog);
     const evo = w.evolucoes.reduce((acc, e) => capAtual >= e.nivel ? e : acc, w.evolucoes[0]);
     const status = !desbloqueado ? '\u{1f512} Bloqueado' : pct >= 100 ? '\u2705 Completo' : testePassado ? '\u{1f3ae} Em progresso' : '\u{1f4dd} Teste pendente';
     const barraStr = '\u{1f7e9}'.repeat(Math.min(10, Math.round(pct / 10))) + '\u2B1B'.repeat(10 - Math.min(10, Math.round(pct / 10)));
@@ -1783,7 +1906,7 @@ async function listarMundos(sock, msg, ctx) {
     for (const [id, w] of Object.entries(WORLDS)) {
       const prog = await getProgress(p, id);
       const desbloqueado = p.level >= w.nivelMin;
-      const testePassado = prog.testePassado;
+      const testePassado = _testePassado(w, prog);
       if (desbloqueado) {
         rows.push({
           title: w.emoji + ' ' + w.name,
@@ -1807,7 +1930,9 @@ async function iniciarTeste(sock, msg, ctx, worldId) {
   if (!w) return tReply(sock, msg, ctx, '\u274C', ['Mundo nao encontrado.']);
   if (p.level < w.nivelMin) return tReply(sock, msg, ctx, '\u{1f512} MUNDO BLOQUEADO', [w.emoji + ' *' + w.name + '*', 'Precisas de nivel *' + w.nivelMin + '*']);
   const prog = await getProgress(p, worldId);
+  if (w.acessoLivre) return jogarMundo(sock, msg, ctx, worldId);
   if (prog.testePassado) return tReply(sock, msg, ctx, w.emoji + ' ' + w.name, ['\u2705 Ja passaste o teste!']);
+  if (!w.teste?.perguntas?.length) return tReply(sock, msg, ctx, '❌', ['Este mundo ainda não tem teste configurado.']);
   if (!p._testState) p._testState = {};
   p._testState[worldId] = { pergunta: 0, acertos: 0 };
   await rpg.savePlayer(p);
@@ -1820,6 +1945,8 @@ async function mostrarPergunta(sock, msg, ctx, worldId, perguntaIdx) {
   const p = await rpg.getPlayer(ctx.senderNumber);
   const w = WORLDS[worldId];
   if (!w || !w.teste || !w.teste.perguntas || !w.teste.perguntas[perguntaIdx]) return;
+  const state = p._testState?.[worldId];
+  if (!state || state.pergunta !== perguntaIdx) return _avisoEscolhaAntiga(sock, msg, ctx);
   const pergunta = w.teste.perguntas[perguntaIdx];
   const botoes = pergunta.opcoes.map((op, i) => ({ text: op.slice(0, 25), id: 'STESTA_' + worldId + '_' + perguntaIdx + '_' + i }));
   const corpo = [w.emoji + ' *' + w.teste.titulo + '*', '\u{1f4dd} Pergunta ' + (perguntaIdx + 1) + ' de ' + w.teste.perguntas.length, '', pergunta.q].join('\n');
@@ -1831,13 +1958,16 @@ async function responderPergunta(sock, msg, ctx, worldId, perguntaIdx, respostaI
   const w = WORLDS[worldId];
   if (!w || !w.teste || !w.teste.perguntas || !w.teste.perguntas[perguntaIdx]) return;
   const pergunta = w.teste.perguntas[perguntaIdx];
-  const correto = parseInt(respostaIdx) === pergunta.correta;
-  if (!p._testState) p._testState = {};
-  if (!p._testState[worldId]) p._testState[worldId] = { pergunta: 0, acertos: 0 };
-  if (correto) p._testState[worldId].acertos++;
-  const acertos = p._testState[worldId].acertos;
+  const state = p._testState?.[worldId];
+  if (!state || state.pergunta !== perguntaIdx || !Number.isInteger(respostaIdx) || respostaIdx < 0 || respostaIdx >= pergunta.opcoes.length) {
+    return _avisoEscolhaAntiga(sock, msg, ctx);
+  }
+  const correto = respostaIdx === pergunta.correta;
+  if (correto) state.acertos++;
+  const acertos = state.acertos;
   const total = w.teste.perguntas.length;
   const proxima = perguntaIdx + 1;
+  state.pergunta = proxima;
   if (proxima < total) {
     const feedback = correto ? '\u2705 Correto!' : '\u274C Errado!';
     await enviarBotoes(sock, msg, ctx, feedback + '\n\n\u{1f4ca} Acertos: ' + acertos + '/' + total, [{ text: '\u25B6\uFE0F Proxima', id: 'STESTQ_' + worldId + '_' + proxima }]);
@@ -1845,6 +1975,7 @@ async function responderPergunta(sock, msg, ctx, worldId, perguntaIdx, respostaI
     const passou = acertos >= Math.ceil(total * 0.75);
     const prog = await getProgress(p, worldId);
     if (passou) {
+      delete p._testState[worldId];
       prog.testePassado = true;
       prog.testePontos = acertos;
       rpg.addXP(p, 200);
@@ -1852,6 +1983,7 @@ async function responderPergunta(sock, msg, ctx, worldId, perguntaIdx, respostaI
       const imagePath = path.join(IMAGES_DIR, w.image);
       await enviarImagem(sock, msg, ctx, imagePath, [w.emoji + ' *TESTE PASSADO!*', '\u2705 Acertos: ' + acertos + '/' + total, '\u2B50 +200 XP', '', '\u{1f389} Agora podes entrar no mundo de ' + w.name + '!'].join('\n'), [{ text: '\u{1f3ae} Entrar no Mundo', id: 'STORY_' + worldId }]);
     } else {
+      delete p._testState[worldId];
       await rpg.savePlayer(p);
       await enviarBotoes(sock, msg, ctx, [w.emoji + ' *TESTE REPROVADO*', '\u274C Acertos: ' + acertos + '/' + total + ' (min: ' + Math.ceil(total * 0.75) + ')', '', '\u{1f4aa} Estuda mais e tenta novamente!'].join('\n'), [
         { text: '\u{1f4dd} Tentar Novamente', id: 'STESTE_' + worldId },
@@ -1869,7 +2001,7 @@ async function mostrarInfoMundo(sock, msg, ctx, worldId) {
   const capAtual = prog.capitulo || 0;
   const total = w.capitulos;
   const pct = total > 0 ? Math.round((capAtual / total) * 100) : 0;
-  const testePassado = prog.testePassado;
+  const testePassado = _testePassado(w, prog);
   const desbloqueado = p.level >= w.nivelMin;
   const evo = w.evolucoes.reduce((acc, e) => capAtual >= e.nivel ? e : acc, w.evolucoes[0]);
   const evoLinhas = w.evolucoes.map(e => (capAtual >= e.nivel ? '\u2705' : '\u{1f512}') + ' ' + e.emoji + ' ' + e.titulo + ' (Cap. ' + e.nivel + ')');
@@ -1902,10 +2034,17 @@ async function jogarMundo(sock, msg, ctx, worldId) {
   if (!w) return tReply(sock, msg, ctx, '\u274C', ['Mundo nao encontrado.']);
   if (p.level < w.nivelMin) return tReply(sock, msg, ctx, '\u{1f512} BLOQUEADO', [w.emoji + ' *' + w.name + '*', 'Nivel *' + w.nivelMin + '* necessario. Tens *' + p.level + '*']);
   const prog = await getProgress(p, worldId);
-  if (!prog.testePassado) return iniciarTeste(sock, msg, ctx, worldId);
+  if (w.acessoLivre && !prog.testePassado) {
+    prog.testePassado = true;
+    await rpg.savePlayer(p);
+  }
+  if (!_testePassado(w, prog)) return iniciarTeste(sock, msg, ctx, worldId);
   const chapters = _getChapters(worldId);
-  if (!chapters.length) return tReply(sock, msg, ctx, w.emoji + ' ' + w.name, ['Sem capitulos.']);
-  const capIdx = Math.min(prog.capitulo || 0, chapters.length - 1);
+  if (!chapters.length) return tReply(sock, msg, ctx, w.emoji + ' ' + w.name, ['Sem capítulos.']);
+  if ((prog.capitulo || 0) >= chapters.length) {
+    return enviarBotoes(sock, msg, ctx, '🏆 *' + w.name + ' já está completo!*\n\nA tua recompensa final já foi entregue. Escolhe um novo destino.', [{ id: 'STORY_MENU', text: '📖 Outros Mundos' }]);
+  }
+  const capIdx = prog.capitulo || 0;
   return _mostrarCapitulo(sock, msg, ctx, p, w, chapters[capIdx], capIdx);
 }
 
@@ -1913,20 +2052,69 @@ async function jogarMundo(sock, msg, ctx, worldId) {
 // MOSTRAR CAPITULO
 // ══════════════════════════════════════════════════════════════
 
-async function _mostrarCapitulo(sock, msg, ctx, p, w, chapter, capIdx) {
-  const prog = p.storyProgress[w.id];
-  const nodeId = prog.node || (chapter.nodes[0] ? chapter.nodes[0].id : null);
-  const node = chapter.nodes.find(n => n.id === nodeId) || chapter.nodes[0];
-  if (!node) return tReply(sock, msg, ctx, w.emoji + ' ' + chapter.titulo, ['Capitulo vazio.']);
-  const capituloLinhas = [w.emoji + ' *' + chapter.titulo + '*', '\u{1f4d6} Capitulo ' + (capIdx + 1) + ' de ' + w.capitulos, '\u{1f4ca} Nivel: ' + chapter.nivel, ''];
+async function _concluirCapitulo(sock, msg, ctx, p, w, chapter, prog) {
+  // A mesma carta pode chegar duas vezes pelo WhatsApp. Nunca volta a pagar.
+  if (prog.completos.includes(chapter.id)) return _avisoEscolhaAntiga(sock, msg, ctx);
+
+  const ganhos = _darRecompensa(p, chapter.recompensas || {});
+  prog.completos.push(chapter.id);
+  prog.capitulo = (prog.capitulo || 0) + 1;
+  prog.node = null;
+  const chapters = _getChapters(w.id);
+  const terminouMundo = prog.capitulo >= chapters.length;
+
+  if (terminouMundo) ganhos.push(..._darRecompensa(p, w.recompensaFinal || {}));
+  await rpg.savePlayer(p);
+
+  if (terminouMundo) {
+    const rf = w.recompensaFinal || {};
+    const imagePath = path.join(IMAGES_DIR, w.image);
+    return enviarImagem(sock, msg, ctx, imagePath, [
+      '🏆 *' + w.name + ' COMPLETO!*',
+      '',
+      '🎉 Parabéns! Fechaste todos os capítulos desta campanha.',
+      rf.title ? '🏆 ' + rf.title : '',
+      rf.item ? '🎁 ' + rf.item : '',
+      ...ganhos,
+    ].filter(Boolean).join('\n'), [{ id: 'STORY_MENU', text: '📖 Outros Mundos' }]);
+  }
+
+  const proximo = chapters[prog.capitulo];
+  const evo = w.evolucoes.reduce((acc, e) => prog.capitulo >= e.nivel ? e : acc, w.evolucoes[0]);
+  return enviarBotoes(sock, msg, ctx, [
+    '✅ *' + chapter.titulo + '* completo!',
+    ganhos.length ? ganhos.join(' · ') : '',
+    '',
+    evo ? evo.emoji + ' *Rank:* ' + evo.titulo : '',
+    '📖 Próximo: *' + proximo.titulo + '*',
+  ].filter(Boolean).join('\n'), [{ id: 'STORY_' + w.id, text: '📖 Próximo Capítulo' }]);
+}
+
+/** Renderiza um nó e entrega a recompensa própria apenas na primeira visita. */
+async function _mostrarNoHistoria(sock, msg, ctx, p, w, chapter, capIdx, prog, node, ganhosExtras = []) {
+  const ganhos = [...ganhosExtras, ..._darRecompensaNo(p, prog, chapter, node)];
+  const capituloLinhas = [
+    w.emoji + ' *' + chapter.titulo + '*',
+    '📖 Capítulo ' + (capIdx + 1) + ' de ' + w.capitulos,
+    '📊 Nível: ' + chapter.nivel,
+    '',
+  ];
   const evo = w.evolucoes.reduce((acc, e) => capIdx >= e.nivel ? e : acc, w.evolucoes[0]);
   if (evo) capituloLinhas.push(evo.emoji + ' *Rank:* ' + evo.titulo, '');
-  const corpo = capituloLinhas.join('\n') + node.texto;
+  const corpo = capituloLinhas.join('\n') + node.texto + (ganhos.length ? '\n\n' + ganhos.join(' · ') : '');
   const imagePath = path.join(IMAGES_DIR, w.image);
+
+  if (!node.next && !node.escolhas && !node.boss) {
+    await tReply(sock, msg, ctx, w.emoji + ' ' + chapter.titulo, [corpo]);
+    return _concluirCapitulo(sock, msg, ctx, p, w, chapter, prog);
+  }
+
+  // Guarda a posição e a recompensa antes de apresentar o botão seguinte.
+  await rpg.savePlayer(p);
   if (capIdx === 0 || node.boss || node.escolhas) {
     await enviarImagem(sock, msg, ctx, imagePath, corpo).catch(() => {});
   }
-  if (node.escolhas && node.escolhas.length) {
+  if (node.escolhas?.length) {
     const botoes = node.escolhas.map((e, i) => ({ id: 'STORYC_' + w.id + '_' + chapter.id + '_' + node.id + '_' + i, text: e.txt.slice(0, 25) }));
     return enviarBotoes(sock, msg, ctx, corpo, botoes);
   }
@@ -1934,67 +2122,68 @@ async function _mostrarCapitulo(sock, msg, ctx, p, w, chapter, capIdx) {
     await tReply(sock, msg, ctx, w.emoji + ' ' + chapter.titulo, [corpo]);
     return _iniciarBossFight(sock, msg, ctx, p, w, chapter, node);
   }
-  if (!node.next && !node.escolhas) {
-    await tReply(sock, msg, ctx, w.emoji + ' ' + chapter.titulo, [corpo]);
-    if (node.xp) rpg.addXP(p, node.xp);
-    if (node.coins) p.coins += node.coins;
-    if (node.item && !p.inventory.includes(node.item)) p.inventory.push(node.item);
-    if (node.skill && !p.skills.includes(node.skill)) p.skills.push(node.skill);
-    if (node.title) p.title = node.title;
-    prog.capitulo = (prog.capitulo || 0) + 1;
-    prog.node = null;
-    if (!prog.completos) prog.completos = [];
-    prog.completos.push(chapter.id);
-    if (chapter.recompensas) {
-      const r = chapter.recompensas;
-      if (r.xp) rpg.addXP(p, r.xp);
-      if (r.coins) p.coins += r.coins;
-      if (r.item && !p.inventory.includes(r.item)) p.inventory.push(r.item);
-      if (r.skill && !p.skills.includes(r.skill)) p.skills.push(r.skill);
-      if (r.title) p.title = r.title;
-    }
-    await rpg.savePlayer(p);
-    const chapters = _getChapters(w.id);
-    if (prog.capitulo < chapters.length) {
-      const proximo = chapters[prog.capitulo];
-      const evo2 = w.evolucoes.reduce((acc, e) => prog.capitulo >= e.nivel ? e : acc, w.evolucoes[0]);
-      await enviarBotoes(sock, msg, ctx, '\u2705 *' + chapter.titulo + '* completo!\n\n' + (evo2 ? evo2.emoji + ' *Rank:* ' + evo2.titulo + '\n' : '') + '\u{1f4d6} Proximo: *' + proximo.titulo + '*', [{ id: 'STORY_' + w.id, text: '\u{1f4d6} Proximo Capitulo' }]);
-    } else {
-      await enviarImagem(sock, msg, ctx, imagePath, '\u{1f3c6} *' + w.name + ' COMPLETO!*\n\n\u{1f389} PARABENS!\n\u{1f3c6} ' + w.recompensaFinal.title + '\n\u{1f381} ' + w.recompensaFinal.item + '\n\u{1f4b0} ' + w.recompensaFinal.coins + ' coins', [{ id: 'STORY_MENU', text: '\u{1f4d6} Outros Mundos' }]);
-      const rf = w.recompensaFinal;
-      if (rf.xp) rpg.addXP(p, rf.xp);
-      if (rf.coins) p.coins += rf.coins;
-      if (rf.item) p.inventory.push(rf.item);
-      if (rf.title) p.title = rf.title;
-      await rpg.savePlayer(p);
-    }
-    return;
-  }
-  if (node.next) {
-    await enviarBotoes(sock, msg, ctx, corpo, [{ id: 'STORYN_' + w.id + '_' + chapter.id + '_' + node.next, text: '\u25B6\uFE0F Continuar' }]);
-    return;
-  }
-  await tReply(sock, msg, ctx, w.emoji + ' ' + chapter.titulo, [corpo]);
+  return enviarBotoes(sock, msg, ctx, corpo, [{ id: 'STORYN_' + w.id + '_' + chapter.id + '_' + node.next, text: '▶️ Continuar' }]);
+}
+
+async function _mostrarCapitulo(sock, msg, ctx, p, w, chapter, capIdx) {
+  const prog = await getProgress(p, w.id);
+  const nodeId = prog.node || (chapter.nodes[0] ? chapter.nodes[0].id : null);
+  const node = chapter.nodes.find(n => n.id === nodeId) || chapter.nodes[0];
+  if (!node) return tReply(sock, msg, ctx, w.emoji + ' ' + chapter.titulo, ['Capítulo vazio.']);
+  return _mostrarNoHistoria(sock, msg, ctx, p, w, chapter, capIdx, prog, node);
 }
 
 async function _iniciarBossFight(sock, msg, ctx, p, w, chapter, node) {
   const boss = node.boss;
-  await enviarBotoes(sock, msg, ctx, ['\u{1f451} *BOSS: ' + boss.nome + '*', boss.descricao, '', '\u2764\uFE0F HP: ' + boss.hp + ' | \u2694\uFE0F ATK: ' + boss.atk + ' | \u{1f6e1}\uFE0F DEF: ' + boss.def, '\u2728 ' + boss.habilidades.join(', '), '', '\u{1f3af} Escolhe:'].join('\n'), [
-    { id: 'RPGFIGHT_' + boss.nome.replace(/ /g, '_'), text: '\u2694\uFE0F Lutar!' },
-    { id: 'STORY_' + w.id, text: '\u{1f3c3} Fugir' },
+  await enviarBotoes(sock, msg, ctx, ['👑 *BOSS: ' + boss.nome + '*', boss.descricao, '', '❤️ HP: ' + boss.hp + ' | ⚔️ ATK: ' + boss.atk + ' | 🛡️ DEF: ' + boss.def, '✨ ' + (boss.habilidades || []).join(', '), '', '🎯 Escolhe:'].join('\n'), [
+    { id: 'STORYB_' + w.id + '_' + chapter.id + '_' + node.id, text: '⚔️ Lutar!' },
+    { id: 'STORY_' + w.id, text: '🏃 Fugir' },
   ]);
+}
+
+async function _iniciarBossHistoria(sock, msg, ctx, worldId, chapterId, nodeId) {
+  const p = await rpg.getPlayer(ctx.senderNumber);
+  const w = WORLDS[worldId];
+  const chapters = _getChapters(worldId);
+  const chapter = chapters.find(c => c.id === chapterId);
+  const prog = await getProgress(p, worldId);
+  const atual = chapters[prog.capitulo || 0];
+  const esperado = prog.node || atual?.nodes?.[0]?.id;
+  const node = chapter?.nodes?.find(n => n.id === nodeId);
+  if (!w || !chapter || atual?.id !== chapterId || esperado !== nodeId || !node?.boss) return _avisoEscolhaAntiga(sock, msg, ctx);
+
+  return combat.iniciarCombateBoss(sock, msg, ctx, node.boss, async ({ p: vencedor }) => {
+    const progresso = await getProgress(vencedor, worldId);
+    const capAtual = _getChapters(worldId)[progresso.capitulo || 0];
+    const noAtual = capAtual?.nodes?.find(n => n.id === (progresso.node || capAtual?.nodes?.[0]?.id));
+    if (capAtual?.id !== chapterId || noAtual?.id !== nodeId) return _avisoEscolhaAntiga(sock, msg, ctx);
+    const indice = chapter.nodes.findIndex(n => n.id === nodeId);
+    const proximo = node.next ? chapter.nodes.find(n => n.id === node.next) : chapter.nodes[indice + 1];
+    if (!proximo) return _concluirCapitulo(sock, msg, ctx, vencedor, w, chapter, progresso);
+    progresso.node = proximo.id;
+    return _mostrarNoHistoria(sock, msg, ctx, vencedor, w, chapter, progresso.capitulo || 0, progresso, proximo);
+  });
 }
 
 // ══════════════════════════════════════════════════════════════
 // PROCESSAR CLIQUES
 // ══════════════════════════════════════════════════════════════
 
+function _resolverCapituloNo(worldId, raw) {
+  const chapters = _getChapters(worldId);
+  for (const chapter of chapters) {
+    const prefix = chapter.id + '_';
+    if (!raw.startsWith(prefix)) continue;
+    const nodeId = raw.slice(prefix.length);
+    if (chapter.nodes.some(n => n.id === nodeId)) return { chapterId: chapter.id, nodeId };
+  }
+  return null;
+}
+
 async function resolverClique(sock, msg, ctx, token) {
   const tk = String(token || '');
   if (tk === 'STORY_MENU') { await listarMundos(sock, msg, ctx); return true; }
-  let m = tk.match(/^STORY_([a-z]+)$/i);
-  if (m) { await jogarMundo(sock, msg, ctx, m[1].toLowerCase()); return true; }
-  m = tk.match(/^STESTE_([a-z]+)$/i);
+  let m = tk.match(/^STESTE_([a-z]+)$/i);
   if (m) { await iniciarTeste(sock, msg, ctx, m[1].toLowerCase()); return true; }
   m = tk.match(/^STESTQ_([a-z]+)_(\d+)$/i);
   if (m) { await mostrarPergunta(sock, msg, ctx, m[1].toLowerCase(), parseInt(m[2])); return true; }
@@ -2002,10 +2191,26 @@ async function resolverClique(sock, msg, ctx, token) {
   if (m) { await responderPergunta(sock, msg, ctx, m[1].toLowerCase(), parseInt(m[2]), parseInt(m[3])); return true; }
   m = tk.match(/^SINFO_([a-z]+)$/i);
   if (m) { await mostrarInfoMundo(sock, msg, ctx, m[1].toLowerCase()); return true; }
-  m = tk.match(/^STORYC_([a-z]+)_([^_]+)_([^_]+)_(\d+)$/i);
-  if (m) { await _processarEscolha(sock, msg, ctx, m[1], m[2], m[3], parseInt(m[4])); return true; }
-  m = tk.match(/^STORYN_([a-z]+)_([^_]+)_([^_]+)$/i);
-  if (m) { await _processarProximo(sock, msg, ctx, m[1], m[2], m[3]); return true; }
+  m = tk.match(/^STORYB_([a-z]+)_(.+)$/i);
+  if (m) {
+    const parsed = _resolverCapituloNo(m[1].toLowerCase(), m[2]);
+    if (parsed) { await _iniciarBossHistoria(sock, msg, ctx, m[1].toLowerCase(), parsed.chapterId, parsed.nodeId); return true; }
+    return false;
+  }
+  m = tk.match(/^STORYC_([a-z]+)_(.+)_(\d+)$/i);
+  if (m) {
+    const parsed = _resolverCapituloNo(m[1].toLowerCase(), m[2]);
+    if (parsed) { await _processarEscolha(sock, msg, ctx, m[1].toLowerCase(), parsed.chapterId, parsed.nodeId, parseInt(m[3])); return true; }
+    return false;
+  }
+  m = tk.match(/^STORYN_([a-z]+)_(.+)$/i);
+  if (m) {
+    const parsed = _resolverCapituloNo(m[1].toLowerCase(), m[2]);
+    if (parsed) { await _processarProximo(sock, msg, ctx, m[1].toLowerCase(), parsed.chapterId, parsed.nodeId); return true; }
+    return false;
+  }
+  m = tk.match(/^STORY_([a-z]+)$/i);
+  if (m) { await jogarMundo(sock, msg, ctx, m[1].toLowerCase()); return true; }
   return false;
 }
 
@@ -2014,45 +2219,31 @@ async function _processarEscolha(sock, msg, ctx, worldId, chapterId, nodeId, cho
   const w = WORLDS[worldId];
   const chapters = _getChapters(worldId);
   const chapter = chapters.find(c => c.id === chapterId);
-  if (!chapter) return tReply(sock, msg, ctx, '\u274C', ['Capitulo nao encontrado.']);
-  const node = chapter.nodes.find(n => n.id === nodeId);
-  if (!node || !node.escolhas || !node.escolhas[choiceIdx]) return tReply(sock, msg, ctx, '\u274C', ['Escolha invalida.']);
-  const choice = node.escolhas[choiceIdx];
-  if (choice.xp) rpg.addXP(p, choice.xp);
-  if (choice.coins) p.coins += choice.coins;
-  if (choice.item && !p.inventory.includes(choice.item)) p.inventory.push(choice.item);
-  if (choice.skill && !p.skills.includes(choice.skill)) p.skills.push(choice.skill);
-  if (choice.title) p.title = choice.title;
+  if (!w || !chapter) return tReply(sock, msg, ctx, '❌', ['Capítulo não encontrado.']);
   const prog = await getProgress(p, worldId);
-  prog.node = choice.next || null;
-  if (choice.next) {
-    const nextNode = chapter.nodes.find(n => n.id === choice.next);
-    if (nextNode) {
-      await rpg.savePlayer(p);
-      const corpo = w.emoji + ' *' + chapter.titulo + '*\n\n' + nextNode.texto;
-      if (nextNode.escolhas && nextNode.escolhas.length) {
-        const botoes = nextNode.escolhas.map((e, i) => ({ id: 'STORYC_' + worldId + '_' + chapterId + '_' + nextNode.id + '_' + i, text: e.txt.slice(0, 25) }));
-        await enviarBotoes(sock, msg, ctx, corpo, botoes);
-      } else if (nextNode.next) {
-        await enviarBotoes(sock, msg, ctx, corpo, [{ id: 'STORYN_' + worldId + '_' + chapterId + '_' + nextNode.next, text: '\u25B6\uFE0F Continuar' }]);
-      } else {
-        await tReply(sock, msg, ctx, w.emoji + ' ' + chapter.titulo, [corpo]);
-        prog.capitulo = (prog.capitulo || 0) + 1; prog.node = null;
-        if (!prog.completos) prog.completos = [];
-        prog.completos.push(chapterId);
-        await rpg.savePlayer(p);
-        if (prog.capitulo < chapters.length) {
-          await enviarBotoes(sock, msg, ctx, '\u2705 Capitulo completo!', [{ id: 'STORY_' + worldId, text: '\u{1f4d6} Proximo' }]);
-        }
-      }
-      return;
-    }
+  const capIdx = prog.capitulo || 0;
+  const atual = chapters[capIdx];
+  const esperado = prog.node || atual?.nodes?.[0]?.id;
+  if (atual?.id !== chapterId || esperado !== nodeId) return _avisoEscolhaAntiga(sock, msg, ctx);
+
+  const node = chapter.nodes.find(n => n.id === nodeId);
+  if (!node?.escolhas?.[choiceIdx]) return tReply(sock, msg, ctx, '❌', ['Escolha inválida.']);
+  const choice = node.escolhas[choiceIdx];
+  const ganhos = _darRecompensa(p, choice);
+  const nextNode = choice.next ? chapter.nodes.find(n => n.id === choice.next) : null;
+
+  if (!nextNode) {
+    prog.node = null;
+    await rpg.savePlayer(p);
+    await tReply(sock, msg, ctx, w.emoji + ' ' + chapter.titulo, [
+      '✅ Escolha: *' + choice.txt + '*',
+      ...ganhos,
+    ]);
+    return _concluirCapitulo(sock, msg, ctx, p, w, chapter, prog);
   }
-  prog.capitulo = (prog.capitulo || 0) + 1; prog.node = null;
-  if (!prog.completos) prog.completos = [];
-  prog.completos.push(chapterId);
-  await rpg.savePlayer(p);
-  await tReply(sock, msg, ctx, w.emoji + ' ' + chapter.titulo, ['\u2705 Escolha: *' + choice.txt + '*', choice.xp ? '\u2B50 +' + choice.xp + ' XP' : '', choice.item ? '\u{1f392} +' + choice.item : '', '', '> Proximo com *!historia*'].filter(Boolean));
+
+  prog.node = nextNode.id;
+  return _mostrarNoHistoria(sock, msg, ctx, p, w, chapter, capIdx, prog, nextNode, ganhos);
 }
 
 async function _processarProximo(sock, msg, ctx, worldId, chapterId, nextNodeId) {
@@ -2060,25 +2251,18 @@ async function _processarProximo(sock, msg, ctx, worldId, chapterId, nextNodeId)
   const w = WORLDS[worldId];
   const chapters = _getChapters(worldId);
   const chapter = chapters.find(c => c.id === chapterId);
-  if (!chapter) return;
-  const node = chapter.nodes.find(n => n.id === nextNodeId);
-  if (!node) return;
+  if (!w || !chapter) return _avisoEscolhaAntiga(sock, msg, ctx);
   const prog = await getProgress(p, worldId);
-  prog.node = nextNodeId;
-  await rpg.savePlayer(p);
-  const corpo = w.emoji + ' *' + chapter.titulo + '*\n\n' + node.texto;
-  if (node.escolhas && node.escolhas.length) {
-    const botoes = node.escolhas.map((e, i) => ({ id: 'STORYC_' + worldId + '_' + chapterId + '_' + node.id + '_' + i, text: e.txt.slice(0, 25) }));
-    await enviarBotoes(sock, msg, ctx, corpo, botoes);
-  } else if (node.next) {
-    await enviarBotoes(sock, msg, ctx, corpo, [{ id: 'STORYN_' + worldId + '_' + chapterId + '_' + node.next, text: '\u25B6\uFE0F Continuar' }]);
-  } else {
-    await tReply(sock, msg, ctx, w.emoji + ' ' + chapter.titulo, [corpo]);
-    prog.capitulo = (prog.capitulo || 0) + 1; prog.node = null;
-    if (!prog.completos) prog.completos = [];
-    prog.completos.push(chapterId);
-    await rpg.savePlayer(p);
-  }
+  const capIdx = prog.capitulo || 0;
+  const atual = chapters[capIdx];
+  const currentId = prog.node || atual?.nodes?.[0]?.id;
+  const currentNode = chapter.nodes.find(n => n.id === currentId);
+  if (atual?.id !== chapterId || currentNode?.next !== nextNodeId) return _avisoEscolhaAntiga(sock, msg, ctx);
+
+  const node = chapter.nodes.find(n => n.id === nextNodeId);
+  if (!node) return _avisoEscolhaAntiga(sock, msg, ctx);
+  prog.node = node.id;
+  return _mostrarNoHistoria(sock, msg, ctx, p, w, chapter, capIdx, prog, node);
 }
 
 

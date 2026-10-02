@@ -121,6 +121,40 @@ setInterval(() => {
 // INICIAR COMBATE
 // ══════════════════════════════════════════════════════════════
 
+/**
+ * Inicia combate contra um boss definido pela história. Mantém o mesmo motor
+ * de turnos, mas não substitui o inimigo por um mob aleatório.
+ */
+async function iniciarCombateBoss(sock, msg, ctx, boss = {}, onVictory = null) {
+  const p = await rpg.getPlayer(ctx.senderNumber);
+  if (p.hp <= 0) return tReply(sock, msg, ctx, '💀 MORTO', ['💀 Estás morto! Usa ' + (ctx.prefix || '!') + 'descansar ou ' + (ctx.prefix || '!') + 'pocao']);
+  if (p.lives <= 0) return tReply(sock, msg, ctx, '💀 SEM VIDAS', ['💀 Sem vidas! Usa ' + (ctx.prefix || '!') + 'reviver']);
+  if (!boss.nome || !Number(boss.hp) || !Number(boss.atk)) return tReply(sock, msg, ctx, '❌ BOSS', ['Este boss não está configurado correctamente.']);
+
+  const enemy = {
+    name: String(boss.nome), emoji: boss.emoji || '👑',
+    level: Number(boss.level || p.level || 1), boss: true,
+    hp: Math.max(1, Number(boss.hp)), maxHp: Math.max(1, Number(boss.hp)),
+    atk: Math.max(1, Number(boss.atk)), def: Math.max(0, Number(boss.def || 0)),
+    habilidades: Array.isArray(boss.habilidades) ? boss.habilidades : [],
+  };
+  _combates.set(ctx.senderNumber, {
+    enemy,
+    playerHp: p.hp,
+    playerMp: p.mp || 80,
+    maxHp: p.maxHp,
+    maxMp: p.maxMp,
+    round: 1,
+    log: [],
+    defending: false,
+    buffs: {},
+    expira: Date.now() + COMBAT_TTL,
+    stats: getEffectiveStats(p),
+    onVictory: typeof onVictory === 'function' ? onVictory : null,
+  });
+  return _mostrarEstado(sock, msg, ctx, p);
+}
+
 async function iniciarCombate(sock, msg, ctx, tipo = 'normal') {
   const p = await rpg.getPlayer(ctx.senderNumber);
   if (p.hp <= 0) {
@@ -442,7 +476,7 @@ async function _vitoria(sock, msg, ctx, p, c) {
 
   const rank = rpg.getRank(p.level);
 
-  return tReply(sock, msg, ctx, `⚔️ VITÓRIA vs ${c.enemy.name}`, [
+  await tReply(sock, msg, ctx, `⚔️ VITÓRIA vs ${c.enemy.name}`, [
     `⚔️ *${c.enemy.name}* (Nv.${c.enemy.level}) DERROTADO!`,
     '',
     ...c.log.slice(-3),
@@ -453,6 +487,8 @@ async function _vitoria(sock, msg, ctx, p, c) {
     `❤️ HP: ${c.playerHp}/${c.maxHp} | 💙 MP: ${c.playerMp}/${c.maxMp}`,
     ...achLines,
   ].filter(Boolean));
+  // Bosses narrativos devolvem o jogador exactamente ao próximo nó da história.
+  if (typeof c.onVictory === 'function') return c.onVictory({ sock, msg, ctx, p, enemy: c.enemy });
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -499,6 +535,7 @@ async function tReply(sock, msg, ctx, title, lines) {
 
 module.exports = {
   iniciarCombate,
+  iniciarCombateBoss,
   processarEscolha,
   resolverBotao,
   getEffectiveStats,
