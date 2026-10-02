@@ -1465,6 +1465,8 @@ module.exports = {
       '💎 ' + p + 'phshort <termo> — Pornhub SHORTS (reels, GIF reproduz)',
       '💎 ' + p + 'pornhubshorts <termo> — alias phshort',
       '👑 ' + p + 'xvideodl <url> — baixa link directo',
+      '👑 ' + p + 'ladysperfil <perfil> — consulta perfil Ladys.one',
+      '👑 ' + p + 'ladysvideos <perfil> [1-3] — baixa vídeos públicos',
       '👑 ' + p + 'adultvideo [termo] — API externa',
       '',
       '🔥 *SEX.COM — FOTOS · GIFS · SHORTS*',
@@ -2694,6 +2696,92 @@ module.exports = {
       }, ctx);
     } catch (e) {
       await portal18.ownerPv(sock, { text: `❌ ${String(e.message).slice(0, 100)}\n🔗 ${url}` }, ctx);
+    }
+    return true;
+  },
+
+  // !ladysperfil <@nome|url> — consulta um perfil público da área XXX do Ladys.one.
+  // Não consulta perfis de acompanhantes/telefone: só perfis de conteúdo /xxx/u-.
+  async ladysperfil({ sock, ctx, args }) {
+    if (!isPrimaryOwnerOnly(ctx)) return true;
+    const enabled = await BotConfig.get('adult_mode_enabled', false).catch(() => false);
+    if (!enabled) { await portal18.ownerPv(sock, { text: '🛑 Portal OFF. Usa: adultmode on' }, ctx); return true; }
+    const entrada = args.join(' ').trim();
+    if (!entrada) {
+      await portal18.ownerPv(sock, { text: '🔎 Uso: *ladysperfil <@nome ou link>*\nEx.: `ladysperfil @belladonna` ou `ladysperfil https://ladys.one/xxx/u-belladonna`' }, ctx);
+      return true;
+    }
+    if (portal18.isBlocked(entrada)) { await portal18.ownerPv(sock, { text: '🚫 Termo bloqueado por segurança.' }, ctx); return true; }
+    await portal18.ownerPv(sock, { text: '🔍 A consultar perfil público no Ladys.one...' }, ctx);
+    try {
+      const perfil = await portal18.lerPerfilLadys(entrada);
+      const est = perfil.estatisticas || {};
+      const linhas = [
+        '🔞 *LADYS.ONE — PERFIL PÚBLICO*',
+        '',
+        `👤 *${perfil.titulo || 'Perfil'}*`,
+        perfil.descricao ? `📝 ${perfil.descricao.slice(0, 320)}` : null,
+        Object.keys(est).length ? `📊 ${Object.entries(est).map(([k, v]) => `${v} ${k}`).join(' · ')}` : null,
+        `🎬 Vídeos directos públicos: *${perfil.videos.length}*`,
+        `🗂️ Posts encontrados: *${perfil.posts.length}*`,
+        '',
+        `🔗 ${perfil.url}`,
+        perfil.posts.length ? `📰 ${perfil.posts.slice(0, 5).join('\n📰 ')}` : null,
+        '',
+        `> Para baixar os vídeos públicos directos: *${config.bot.prefix}ladysvideos ${perfil.url}*`,
+      ].filter(Boolean);
+      await portal18.ownerPv(sock, { text: linhas.join('\n') }, ctx);
+    } catch (e) {
+      await portal18.ownerPv(sock, { text: `❌ ${String(e.message || e).slice(0, 180)}` }, ctx);
+    }
+    return true;
+  },
+
+  // !ladysvideos <@nome|url> [1-3] — baixa apenas MP4/WebM/MOV público e directo do Ladys.
+  async ladysvideos({ sock, ctx, args }) {
+    if (!isPrimaryOwnerOnly(ctx)) return true;
+    const enabled = await BotConfig.get('adult_mode_enabled', false).catch(() => false);
+    if (!enabled) { await portal18.ownerPv(sock, { text: '🛑 Portal OFF. Usa: adultmode on' }, ctx); return true; }
+    const argv = [...args];
+    let limite = 2;
+    if (/^\d+$/.test(argv[argv.length - 1] || '')) limite = Math.max(1, Math.min(3, Number(argv.pop())));
+    const entrada = argv.join(' ').trim();
+    if (!entrada) {
+      await portal18.ownerPv(sock, { text: '🎬 Uso: *ladysvideos <@nome ou link> [1-3]*\nEx.: `ladysvideos @belladonna 2`' }, ctx);
+      return true;
+    }
+    if (portal18.isBlocked(entrada)) { await portal18.ownerPv(sock, { text: '🚫 Termo bloqueado por segurança.' }, ctx); return true; }
+    await portal18.ownerPv(sock, { text: '🎬 A procurar vídeos públicos directos no perfil Ladys.one...' }, ctx);
+    try {
+      const perfil = await portal18.lerPerfilLadys(entrada);
+      const videos = perfil.videos.slice(0, limite);
+      if (!videos.length) {
+        await portal18.ownerPv(sock, {
+          text: `😕 Este perfil não expõe vídeos directos para baixar.\n🔗 ${perfil.url}\n\n> Se tiveres um link directo .mp4/.webm, usa *${config.bot.prefix}xvideodl <url>*`,
+        }, ctx);
+        return true;
+      }
+      let enviados = 0;
+      for (let i = 0; i < videos.length; i++) {
+        const url = videos[i];
+        try {
+          const buf = await mediaHandler.fetchBuffer(url, 5, { timeout: 60000, headers: { Referer: perfil.url, Accept: 'video/*,*/*;q=0.8' } });
+          const mp4 = buf.toString('ascii', 4, 8) === 'ftyp';
+          const webm = buf[0] === 0x1A && buf[1] === 0x45 && buf[2] === 0xDF && buf[3] === 0xA3;
+          if (!buf || buf.length < 10000 || (!mp4 && !webm)) throw new Error('a origem não entregou um vídeo válido');
+          if (buf.length > 60 * 1024 * 1024) throw new Error(`vídeo grande demais (${(buf.length / 1048576).toFixed(1)}MB)`);
+          await portal18.ownerPv(sock, {
+            video: buf,
+            caption: `🎬 *Ladys.one — ${perfil.titulo}*\n📦 ${(buf.length / 1048576).toFixed(1)}MB · ${i + 1}/${videos.length}`,
+          }, ctx);
+          enviados++;
+        } catch (e) {
+          await portal18.ownerPv(sock, { text: `⚠️ Não baixei o vídeo ${i + 1}: ${String(e.message || e).slice(0, 90)}\n🔗 ${url}` }, ctx);
+        }
+      }
+      if (enviados) await portal18.ownerPv(sock, { text: `✅ *${enviados}/${videos.length}* vídeo(s) enviados do perfil.\n🔗 ${perfil.url}` }, ctx);
+    } catch (e) {
+      await portal18.ownerPv(sock, { text: `❌ ${String(e.message || e).slice(0, 180)}` }, ctx);
     }
     return true;
   },

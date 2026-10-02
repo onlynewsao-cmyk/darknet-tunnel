@@ -17,7 +17,7 @@ const PROCESSING = {
   broadcast: '📢', send: '📤', sendgroup: '📤',
   todos: '📢', hidetag: '📢',
   clima: '🌤️', translate: '🌐', qrcode: '📱', calc: '🧮', noticias: '📰', pesquisar: '🔎', resumir: '📝',
-  cmdsocultos: '🕳️', adultsearch: '🔞', adultvideo: '🔞', hotchat: '🥵', adultmode: '🕳️', adultapi: '🕳️',
+  cmdsocultos: '🕳️', adultsearch: '🔞', adultvideo: '🔞', ladysperfil: '🔎', ladysvideos: '🎬', hotchat: '🥵', adultmode: '🕳️', adultapi: '🕳️',
   invokedono: '👑', aceitarinvocacao: '✅', recusarinvocacao: '❌', vipcmds: '⭐',
   casar: '💍', divorciar: '💔', adotar: '👶',
   abracar: '🤗', beijar: '💋', cafune: '🥰', declarar: '💌', flertar: '😏', dancar: '💃',

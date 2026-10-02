@@ -577,6 +577,102 @@ async function fetchAdultVideo(query = '', apiTpl = '') {
 }
 
 // ─────────────────────────────────────────────
+// LADYS.ONE — PERFIS PÚBLICOS E VÍDEOS DIRECTOS
+// Só aceita a área /xxx/u- do próprio Ladys: nada de URLs arbitrárias,
+// contactos de acompanhantes ou tentativas de contornar protecções do site.
+// ─────────────────────────────────────────────
+const LADYS_HOST = 'ladys.one';
+const LADYS_PROFILE_RE = /^\/xxx\/u-([a-z0-9][a-z0-9_-]{0,100})\/?$/i;
+
+function _decodeHtml(txt = '') {
+  return String(txt || '')
+    .replace(/&amp;/gi, '&').replace(/&quot;/gi, '"').replace(/&#0*39;|&apos;/gi, "'")
+    .replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/&nbsp;/gi, ' ');
+}
+function _textoHtml(txt = '') {
+  return _decodeHtml(String(txt || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ')).trim();
+}
+function _attr(tag = '', nome = '') {
+  const m = String(tag).match(new RegExp(`\\b${nome}\\s*=\\s*(["'])([\\s\\S]*?)\\1|\\b${nome}\\s*=\\s*([^\\s>]+)`, 'i'));
+  return _decodeHtml(m?.[2] || m?.[3] || '').trim();
+}
+function _meta(html = '', nome = '') {
+  for (const tag of String(html).match(/<meta\b[^>]*>/gi) || []) {
+    const key = _attr(tag, 'property') || _attr(tag, 'name');
+    if (key.toLowerCase() === String(nome).toLowerCase()) return _attr(tag, 'content');
+  }
+  return '';
+}
+function _urlLadysMedia(url = '') {
+  try {
+    const u = new URL(_decodeHtml(url));
+    return u.protocol === 'https:' && (u.hostname === LADYS_HOST || u.hostname.endsWith('.' + LADYS_HOST));
+  } catch { return false; }
+}
+
+/** Aceita @nome, nome, ou o URL completo de um perfil /xxx/u- do Ladys. */
+function normalizarPerfilLadys(entrada = '') {
+  const bruto = String(entrada || '').trim();
+  if (!bruto) throw new Error('Indica o perfil do Ladys.one');
+  if (/^https?:\/\//i.test(bruto)) {
+    let u;
+    try { u = new URL(bruto); } catch { throw new Error('Link de perfil inválido'); }
+    const host = u.hostname.toLowerCase().replace(/^www\./, '');
+    const m = u.pathname.match(LADYS_PROFILE_RE);
+    if (host !== LADYS_HOST || !m) throw new Error('Usa um perfil público: https://ladys.one/xxx/u-nome');
+    return `https://${LADYS_HOST}/xxx/u-${m[1].toLowerCase()}`;
+  }
+  const slug = bruto.replace(/^@/, '').toLowerCase().trim()
+    .replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
+  if (!/^[a-z0-9][a-z0-9_-]{0,100}$/i.test(slug)) throw new Error('Nome de perfil inválido');
+  return `https://${LADYS_HOST}/xxx/u-${slug}`;
+}
+
+/** Lê apenas os metadados e links públicos disponíveis numa página de perfil. */
+async function lerPerfilLadys(entrada = '') {
+  const url = normalizarPerfilLadys(entrada);
+  const buf = await mediaHandler.fetchBuffer(url, 5, {
+    timeout: 20000,
+    headers: { Accept: 'text/html,application/xhtml+xml', Referer: `https://${LADYS_HOST}/` },
+  });
+  const html = buf.toString('utf8');
+  if (/cf-wrapper|attention required|captcha|sorry, you have been blocked/i.test(html)) {
+    throw new Error('Ladys.one recusou a leitura automática deste perfil. Abre o link no navegador.');
+  }
+  if (!/<(?:html|title|body)\b/i.test(html)) throw new Error('Resposta inválida do Ladys.one');
+
+  const h1 = (html.match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/i) || [])[1];
+  const titulo = _textoHtml(h1) || _meta(html, 'og:title') || _textoHtml((html.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i) || [])[1]) || 'Perfil Ladys';
+  const descricao = (_meta(html, 'og:description') || _meta(html, 'description') || '').replace(/\s+/g, ' ').trim().slice(0, 500);
+  const avatar = (html.match(/https?:\/\/[^"'\s<>]*\.ladys\.one\/user\/profile\/avatar\/[^"'\s<>]+/i) || [])[0] || '';
+  const texto = _textoHtml(html);
+  const estatisticas = {};
+  for (const chave of ['likes', 'posts', 'videos', 'comments']) {
+    const m = texto.match(new RegExp(`(\\d[\\d., ]*)\\s+${chave}\\b`, 'i'));
+    if (m) estatisticas[chave] = m[1].replace(/\s/g, '');
+  }
+
+  const posts = new Set();
+  for (const m of html.matchAll(/(?:href|data-href)=["']([^"']*\/xxx\/a-[^"'#?]+)["']/gi)) {
+    try { posts.add(new URL(_decodeHtml(m[1]), url).href); } catch {}
+  }
+  const videos = new Set();
+  const padraoVideo = /(?:src|content|data-src)=["']([^"']+\.(?:mp4|webm|mov)(?:\?[^"']*)?)["']|https?:\/\/[^"'\s<>]+\.(?:mp4|webm|mov)(?:\?[^"'\s<>]*)?/gi;
+  for (const m of html.matchAll(padraoVideo)) {
+    const candidato = _decodeHtml(m[1] || m[0]);
+    try {
+      const absoluto = new URL(candidato, url).href;
+      if (_urlLadysMedia(absoluto)) videos.add(absoluto);
+    } catch {}
+  }
+
+  return {
+    url, titulo: _textoHtml(titulo).slice(0, 160), descricao, avatar,
+    estatisticas, posts: [...posts].slice(0, 12), videos: [...videos].slice(0, 6),
+  };
+}
+
+// ─────────────────────────────────────────────
 // MENU DO PORTAL — card visual rico
 // ─────────────────────────────────────────────
 function portalMenuText(ownerName, enabled, apiConfigured, prefix) {
@@ -599,6 +695,9 @@ function portalMenuText(ownerName, enabled, apiConfigured, prefix) {
     `╠══════════════════════════╣\n` +
     `║  🎬 *VÍDEOS*\n` +
     `║  ${prefix}xvideo [termo]   — busca vídeo\n` +
+    `║  ${prefix}xvideodl <url>   — baixa link directo\n` +
+    `║  ${prefix}ladysperfil <p>  — consulta perfil público\n` +
+    `║  ${prefix}ladysvideos <p>  — baixa vídeos do perfil\n` +
     `║  ${prefix}adultapi <url>   — configura API\n` +
     `╠══════════════════════════╣\n` +
     `║  💬 *CHAT HOT*\n` +
@@ -644,6 +743,8 @@ module.exports = {
   popularBooks18,
   hotChatIA,
   fetchAdultVideo,
+  normalizarPerfilLadys,
+  lerPerfilLadys,
   portalMenuText,
   NEKOS_LIFE_TYPES,
   // v7.2

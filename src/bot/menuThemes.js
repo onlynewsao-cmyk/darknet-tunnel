@@ -69,7 +69,7 @@ const CATEGORY_META = {
 // ── Comandos ocultos do menu público ────────────────────────
 const ALWAYS_HIDDEN = new Set([
   'cmdsocultos','portal18','maiscmds','menudono',
-  'adultsearch','adultvideo','adultmode','adultapi',
+  'adultsearch','adultvideo','adultmode','adultapi','ladysperfil','ladysvideos',
   'hentai','ximg','xvideo','hotchat','buscalivro','livros18',
   // Botões/sticker de config só pelo dashboard ou dono
   'stickerwm','buttonmode','themeglobal','menustyle',

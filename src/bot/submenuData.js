@@ -313,6 +313,7 @@ function categorize(cmd) {
     erome:'18', eromevid:'18', livros18:'18', xvideo:'18', xvideodl:'18',
     adultvideo:'18', adultsearch:'18', adultapi:'18', adultmode:'18', adultstats:'18',
     buscar18:'18', fig18:'18', pack18:'18', gif18:'18', shorts18:'18', hotchat:'18',
+    ladysperfil:'18', ladysvideos:'18',
     figbusca:'18', packbusca:'18', figgif:'18', portal18:'18', menu18:'18',
     // ── v7.25: seleccionar grupo da comunidade (RPG) → owner ──────
     setgrupo:'owner', setarena:'owner', setdungeons:'owner', settrocas:'owner',
