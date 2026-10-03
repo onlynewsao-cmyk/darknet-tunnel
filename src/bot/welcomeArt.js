@@ -23,6 +23,10 @@ const PP_SIZE = 320;          // foto de perfil nítida
 const PP_LEFT = 72;
 const PP_TOP = Math.round((H - PP_SIZE) / 2);
 const POLLI = 'https://image.pollinations.ai/prompt';
+// Fundos por tema/patamar ficam na memória: a primeira pintura pode usar IA,
+// as seguintes respondem localmente sem nova chamada de rede.
+const _backgroundCache = new Map();
+const BACKGROUND_CACHE_MAX = 80;
 
 const PROMPTS = {
   welcome: 'elegant dark purple gradient abstract background, soft violet light, subtle silk texture, cinematic bokeh, minimal, no text, no letters, no watermark, no people',
@@ -39,6 +43,8 @@ function _defaults(opts, seedOffset = 0) {
     sub: opts.sub || '#c4b5fd',
     seed: (opts.seed || Date.now() % 100000) + seedOffset,
     kind: opts.kind || 'welcome',
+    backgroundPrompt: opts.backgroundPrompt || '',
+    backgroundCacheKey: opts.backgroundCacheKey || '',
   };
 }
 
@@ -50,7 +56,7 @@ async function _fetch(url, opts = {}) {
   if (opts.fetchFn) return opts.fetchFn(url);
   try {
     const axios = require('axios');
-    const r = await axios.get(url, { responseType: 'arraybuffer', timeout: 45000, maxRedirects: 4 });
+    const r = await axios.get(url, { responseType: 'arraybuffer', timeout: opts.timeoutMs || 45000, maxRedirects: 4 });
     const ct = String(r.headers?.['content-type'] || '').toLowerCase();
     const b = Buffer.from(r.data || []);
     if (!ct.startsWith('image/') || b.length < 512) return null;
@@ -58,36 +64,69 @@ async function _fetch(url, opts = {}) {
   } catch { return null; }
 }
 
-/** Fundo IA ou gradiente elegante local. */
-async function fundo(o, opts) {
-  const url = `${POLLI}/${encodeURIComponent(PROMPTS[o.kind] || PROMPTS.welcome)}?width=${W}&height=${H}&seed=${o.seed}&nologo=true`;
-  const b = await _fetch(url, opts).catch(() => null);
-  if (b && b.length > 3000) {
+/** Resolve um ffmpeg realmente executável antes de renderizar frames caros. */
+async function _ffmpegDisponivel() {
+  const candidatos = [];
+  if (process.env.FFMPEG_PATH) candidatos.push(process.env.FFMPEG_PATH);
+  try {
+    const bundled = require('ffmpeg-static');
+    if (bundled && fs.existsSync(bundled)) candidatos.push(bundled);
+  } catch {}
+  candidatos.push('ffmpeg');
+  for (const bin of [...new Set(candidatos)]) {
     try {
-      return await sharp(b).resize(W, H, { fit: 'cover', kernel: sharp.kernel.lanczos3 }).jpeg({ quality: 92 }).toBuffer();
+      await execFileAsync(bin, ['-version'], { timeout: 2500, windowsHide: true });
+      return bin;
     } catch {}
   }
-  const svg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
-    <defs>
-      <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0" stop-color="#0b0b12"/>
-        <stop offset="0.45" stop-color="#161022"/>
-        <stop offset="1" stop-color="#2a1848"/>
-      </linearGradient>
-      <radialGradient id="v" cx="0.18" cy="0.5" r="0.7">
-        <stop offset="0" stop-color="${o.accent}" stop-opacity="0.45"/>
-        <stop offset="1" stop-opacity="0"/>
-      </radialGradient>
-      <radialGradient id="v2" cx="0.92" cy="0.2" r="0.5">
-        <stop offset="0" stop-color="#6366f1" stop-opacity="0.25"/>
-        <stop offset="1" stop-opacity="0"/>
-      </radialGradient>
-    </defs>
-    <rect width="${W}" height="${H}" fill="url(#g)"/>
-    <rect width="${W}" height="${H}" fill="url(#v)"/>
-    <rect width="${W}" height="${H}" fill="url(#v2)"/>
-  </svg>`;
-  return sharp(Buffer.from(svg)).png().toBuffer();
+  return null;
+}
+
+/** Fundo IA por tema ou gradiente local. A rede tem prazo curto e cache. */
+async function fundo(o, opts = {}) {
+  const prompt = o.backgroundPrompt || PROMPTS[o.kind] || PROMPTS.welcome;
+  const cacheKey = o.backgroundCacheKey || `${o.kind}|${o.seed}|${prompt}`;
+  // Não partilha o cache quando um teste injeta fetchFn, evitando contaminação.
+  const useCache = !opts.fetchFn && opts.cache !== false;
+  if (useCache && _backgroundCache.has(cacheKey)) return _backgroundCache.get(cacheKey);
+
+  const criar = async () => {
+    const url = `${POLLI}/${encodeURIComponent(prompt)}?width=${W}&height=${H}&seed=${o.seed}&nologo=true`;
+    const b = await _fetch(url, { ...opts, timeoutMs: opts.timeoutMs || 2600 }).catch(() => null);
+    if (b && b.length > 3000) {
+      try {
+        return await sharp(b).resize(W, H, { fit: 'cover', kernel: sharp.kernel.lanczos3 }).jpeg({ quality: 92 }).toBuffer();
+      } catch {}
+    }
+    const svg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#0b0b12"/>
+          <stop offset="0.45" stop-color="#161022"/>
+          <stop offset="1" stop-color="#2a1848"/>
+        </linearGradient>
+        <radialGradient id="v" cx="0.18" cy="0.5" r="0.7">
+          <stop offset="0" stop-color="${o.accent}" stop-opacity="0.45"/>
+          <stop offset="1" stop-opacity="0"/>
+        </radialGradient>
+        <radialGradient id="v2" cx="0.92" cy="0.2" r="0.5">
+          <stop offset="0" stop-color="#6366f1" stop-opacity="0.25"/>
+          <stop offset="1" stop-opacity="0"/>
+        </radialGradient>
+      </defs>
+      <rect width="${W}" height="${H}" fill="url(#g)"/>
+      <rect width="${W}" height="${H}" fill="url(#v)"/>
+      <rect width="${W}" height="${H}" fill="url(#v2)"/>
+    </svg>`;
+    return sharp(Buffer.from(svg)).png().toBuffer();
+  };
+
+  const result = criar();
+  if (useCache) {
+    if (_backgroundCache.size >= BACKGROUND_CACHE_MAX) _backgroundCache.clear();
+    _backgroundCache.set(cacheKey, result);
+  }
+  return result;
 }
 
 function _circleMask(size) {
@@ -219,22 +258,16 @@ async function artCard(opts = {}) {
 async function artGif(opts = {}) {
   const o = _defaults(opts);
   const frames = Math.min(16, Math.max(8, opts.frames || 12));
+  const ffmpeg = await _ffmpegDisponivel();
+  // Não bloqueia o bot se o host não oferece vídeo: o caller cai para card.
+  if (!ffmpeg) return null;
   const bigW = Math.round(W * 1.12);
-  const bgFull = await (async () => {
-    const url = `${POLLI}/${encodeURIComponent(PROMPTS[o.kind] || PROMPTS.welcome)}?width=${bigW}&height=${H}&seed=${o.seed}&nologo=true`;
-    const b = await _fetch(url, opts).catch(() => null);
-    if (b && b.length > 3000) {
-      try {
-        return await sharp(b).resize(bigW, H, { fit: 'cover', kernel: sharp.kernel.lanczos3 }).jpeg({ quality: 90 }).toBuffer();
-      } catch {}
-    }
-    const svg = `<svg width="${bigW}" height="${H}" xmlns="http://www.w3.org/2000/svg"><defs>
-      <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0" stop-color="#0b0b12"/><stop offset="0.5" stop-color="#161022"/>
-        <stop offset="1" stop-color="#2a1848"/></linearGradient></defs>
-      <rect width="${bigW}" height="${H}" fill="url(#g)"/></svg>`;
-    return sharp(Buffer.from(svg)).jpeg({ quality: 90 }).toBuffer();
-  })();
+  // Reaproveita o mesmo fundo temático/cacheado do cartão estático. Assim
+  // pedir o GIF depois do card não volta a chamar a IA.
+  const bgFull = await sharp(await fundo(o, opts))
+    .resize(bigW, H, { fit: 'cover', kernel: sharp.kernel.lanczos3 })
+    .jpeg({ quality: 90 })
+    .toBuffer();
 
   const ppBuf = opts.profilePicUrl ? await _fetch(opts.profilePicUrl, opts).catch(() => null) : null;
   const pp = await _ppCircle(ppBuf, PP_SIZE, { ...o, initial: o.name });
@@ -267,9 +300,6 @@ async function artGif(opts = {}) {
         .toBuffer();
       fs.writeFileSync(path.join(dir, `f${String(f).padStart(2, '0')}.png`), frameBuf);
     }
-    let ffmpeg = 'ffmpeg';
-    try { ffmpeg = require('ffmpeg-static') || 'ffmpeg'; } catch {}
-    if (process.env.FFMPEG_PATH) ffmpeg = process.env.FFMPEG_PATH;
     const out = path.join(dir, 'art.mp4');
     await execFileAsync(ffmpeg, [
       '-y', '-framerate', '8', '-i', path.join(dir, 'f%02d.png'),
@@ -282,19 +312,44 @@ async function artGif(opts = {}) {
   }
 }
 
-function cardOptsFromPlayer(p, jid, botName) {
-  const sub1 = `Nv.${p.level || 1} · ${String(p.race || 'humano')} ${String(p.class || 'guerreiro')}`;
+function _hash(text) {
+  let n = 2166136261;
+  for (const ch of String(text || '')) { n ^= ch.charCodeAt(0); n = Math.imul(n, 16777619); }
+  return Math.abs(n >>> 0);
+}
+
+function cardOptsFromPlayer(p, opts = {}) {
+  const level = Number(p.level || 1);
+  const tier = Math.max(1, Math.ceil(level / 10));
+  const race = String(p.race || 'humano');
+  const cls = String(p.class || 'guerreiro');
+  const region = opts.region || null;
+  const rankAccent = ['#8b9bb4', '#33d17a', '#5b8def', '#b07cff', '#f2c94c', '#ff5c5c', '#ff8c42', '#f15bb5'];
+  const accent = rankAccent[Math.min(rankAccent.length - 1, Math.floor((level - 1) / 10))];
+  const cityLine = region ? `${region.flag} ${region.city} · ${region.name}` : '🌐 DARK VILLE internacional';
+  const prompt = [
+    `dark fantasy anime hero, ${race} ${cls}, level tier ${tier}`,
+    region ? `guardian from ${region.city}, ${region.biome}` : 'traveller of an international RPG city',
+    'obsidian hall, cinematic light, elegant, no text, no letters, no watermark, no people other than the hero portrait motif',
+  ].join(', ');
+  const key = `${p.whatsappNumber || p.name}|${level}|${race}|${cls}|${region?.id || 'nexus'}`;
+  const sub1 = `Nv.${level} · ${race} ${cls} · ${cityLine}`;
   const sub2 = `HP ${p.hp ?? 0}/${p.maxHp ?? 100} · MP ${p.mp ?? 0}/${p.maxMp ?? 80} · ${p.coins ?? 0} coins`;
   return {
     name: p.name || 'Aventureiro', sub1, sub2,
-    footer: `${botName || 'DARK BOT'} · DARK VILLE`, kind: 'hero', accent: '#a78bfa',
+    footer: `${opts.botName || 'DARK BOT'} · DARK VILLE`,
+    kind: 'hero', accent,
+    seed: _hash(key) % 100000,
+    backgroundPrompt: prompt,
+    backgroundCacheKey: `hero:${key}`,
+    timeoutMs: 2600,
   };
 }
 async function heroCard(player, opts = {}) {
-  return artCard({ ...cardOptsFromPlayer(player, opts.jid, opts.botName || 'DARK BOT'), ...opts });
+  return artCard({ ...cardOptsFromPlayer(player, opts), ...opts });
 }
 async function heroGif(player, opts = {}) {
-  return artGif({ ...cardOptsFromPlayer(player, opts.jid, opts.botName || 'DARK BOT'), ...opts });
+  return artGif({ ...cardOptsFromPlayer(player, opts), ...opts });
 }
 
-module.exports = { artCard, artGif, heroCard, heroGif, PROMPTS, W, H, PP_SIZE };
+module.exports = { artCard, artGif, heroCard, heroGif, cardOptsFromPlayer, PROMPTS, W, H, PP_SIZE, _backgroundCache };

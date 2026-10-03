@@ -503,6 +503,17 @@ async function _stepFinalizar(sock, msg, ctx) {
     p.skills = skillsClasse.slice(0, 3).map(s => s.name);
   }
 
+  // Se a criação acabar dentro de uma cidade RPG, o herói nasce naquela
+  // região. A ficha/economia são globais; isto só dá contexto ao mapa.
+  let territorio = null;
+  if (ctx.isGroup) {
+    try {
+      const regioes = require('./regions');
+      territorio = await regioes.getCountryForGroup(ctx.remoteJid);
+      if (territorio) regioes.marcarJogadorNoPais(p, territorio);
+    } catch {}
+  }
+
   await rpg.savePlayer(p);
   _pendentes.delete(ctx.senderNumber);
 
@@ -527,6 +538,7 @@ async function _stepFinalizar(sock, msg, ctx) {
     `✨ Skills: ${p.skills.length ? p.skills.join(', ') : 'nenhuma'}`,
     '',
     `💰 ${p.coins} coins`,
+    ...(territorio ? [`${territorio.flag} Origem: *${territorio.name}* · ${territorio.city}`] : []),
     '',
     `> 🎮 Usa *${_prefixo(ctx)}status* para veres tudo.`,
     `> ⚔️ *${_prefixo(ctx)}lutar* — combate! | 🗺️ *${_prefixo(ctx)}viajar floresta* — explora!`,

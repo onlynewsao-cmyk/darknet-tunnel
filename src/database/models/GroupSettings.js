@@ -175,6 +175,13 @@ const GroupSettingsSchema = new mongoose.Schema({
   // ── v7.87/7.88: mundo RPG do grupo (rpg/gate.js lê gs.modorpg) ──
   modorpg:        { type: Boolean, default: false },
 
+  // ── v13.0: região internacional DARK RPG ─────────────────────
+  // Todo grupo que liga o Modo RPG recebe uma cidade/país. O jogador,
+  // inventário e mercado continuam globais entre as regiões.
+  rpgCountry:          { type: String, default: '' },
+  rpgCity:             { type: String, default: '' },
+  rpgCountryAssignedAt:{ type: Date, default: null },
+
   // ── toggles de admin históricos: agora persistem (sem leitor ainda) ──
   antidemote:     { type: Boolean, default: false },
   automsg:        { type: Boolean, default: false },

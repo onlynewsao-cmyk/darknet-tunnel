@@ -89,8 +89,9 @@ const COMMUNITY_RULES = [
   '2️⃣ Nada de spam, flood ou divulgação sem autorização.',
   '3️⃣ Sem conteúdo +18 nos grupos gerais.',
   '4️⃣ Trapaça, bots externos ou multi-conta = banimento.',
-  '5️⃣ Cada grupo tem o seu tema — usa o grupo certo.',
-  '6️⃣ As decisões dos admins valem. Discute em privado.',
+  '5️⃣ Cada grupo com Modo RPG é uma cidade de um país — usa o portal certo.',
+  '6️⃣ Mercado internacional: não enganes, não dupliques e respeita as trocas em escrow.',
+  '7️⃣ As decisões dos admins valem. Discute em privado.',
   '',
   '━━━━━━━━━━━━━━━━━━━━━━━━━━',
   '⚔️ *Quem quebra as regras perde o que conquistou.*',
@@ -209,7 +210,7 @@ async function createWhatsAppCommunity(sock, ownerJid) {
 
     const community = await sock.communityCreate(
       'DARK VILLE',
-      'Comunidade oficial DARK RPG — Batalhas, Rankings, Eventos, Clas'
+      'Centro internacional DARK RPG — Cidade Nexus, Mercado, Arena Mundial e portais para todas as regiões.'
     );
 
     let jid = community?.id || community?.jid || null;
@@ -619,7 +620,19 @@ async function createGroupInCommunity(sock, groupType, ownerJid, communityJid, o
 async function _acabarGrupo(sock, groupType, groupJid, ownerJid, opts = {}) {
   const def = COMMUNITY_GROUPS[groupType];
   if (!def) return;
-  try { await sock.groupUpdateDescription(groupJid, def.desc); } catch {}
+
+  // Cada subgrupo da DARK VILLE é uma cidade de um país diferente.
+  // A economia continua global; a região dá identidade ao portal local.
+  let territorio = null;
+  try {
+    const regioes = require('./regions');
+    const r = await regioes.ensureGroupCountry(groupJid);
+    if (r.ok) territorio = r.country;
+  } catch {}
+  const descricao = territorio
+    ? `${def.desc}\n\n${territorio.flag} Região RPG: ${territorio.name}\n🏙️ Cidade: ${territorio.city}\n💱 Mercado ligado a DARK VILLE internacional.`
+    : def.desc;
+  try { await sock.groupUpdateDescription(groupJid, descricao); } catch {}
   await _esperar(3000, opts);
   if (def.ownerAdm) {
     try { await sock.groupParticipantsUpdate(groupJid, [ownerJid], 'promote'); } catch {}
@@ -935,7 +948,12 @@ async function initCommunity(sock, ownerJid, opts = {}) {
   const criados = [];
   for (const [type, def] of Object.entries(COMMUNITY_GROUPS)) {
     if (_groupCache.get(type)) {
-      results.push({ type, ok: true, name: def.name + ' (já existia)', jid: _groupCache.get(type) });
+      let territorio = null;
+      try {
+        const r = await require('./regions').ensureGroupCountry(_groupCache.get(type));
+        if (r.ok) territorio = r.country;
+      } catch {}
+      results.push({ type, ok: true, name: def.name + ' (já existia)', jid: _groupCache.get(type), territory: territorio?.id || null });
       continue;
     }
     const r = await createGroupInCommunity(sock, type, ownerJid, cJid, opts);
@@ -1143,8 +1161,16 @@ async function adoptGroupAs(sock, groupType, groupJid, ownerJid) {
     acoes.push('Não consegui renomear: ' + String(e?.message || e).slice(0, 50));
   }
 
-  // 3. descrição
-  try { await sock.groupUpdateDescription(groupJid, def.desc); acoes.push('Descrição actualizada'); } catch {}
+  // 3. descrição + cidade internacional deste subgrupo
+  let territorio = null;
+  try {
+    const r = await require('./regions').ensureGroupCountry(groupJid);
+    if (r.ok) territorio = r.country;
+  } catch {}
+  const descricao = territorio
+    ? `${def.desc}\n\n${territorio.flag} Região RPG: ${territorio.name}\n🏙️ Cidade: ${territorio.city}\n💱 Mercado ligado a DARK VILLE internacional.`
+    : def.desc;
+  try { await sock.groupUpdateDescription(groupJid, descricao); acoes.push('Descrição actualizada'); } catch {}
 
   // 4. ligar à comunidade (se ainda não estiver)
   try {
@@ -1167,7 +1193,7 @@ async function adoptGroupAs(sock, groupType, groupJid, ownerJid) {
     } catch {}
   }
 
-  return { ok: true, jid: groupJid, nome: def.name, emoji: def.emoji, desc: def.desc, acoes };
+  return { ok: true, jid: groupJid, nome: def.name, emoji: def.emoji, desc: descricao, territory: territorio?.id || null, acoes };
 }
 
 /** v7.88 — o grupo pertence à comunidade DARK VILLE (mundo internacional)? */

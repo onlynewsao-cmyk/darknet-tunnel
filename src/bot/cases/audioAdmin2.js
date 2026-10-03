@@ -251,6 +251,18 @@ module.exports = function registerAudioAdmin2(registerCase) {
           upd,
           { upsert: true }
         );
+
+        // Um grupo que abre o Modo RPG entra no mapa internacional.
+        // A atribuição é persistida e evita repetir país enquanto houver
+        // regiões disponíveis; não faz chamadas WhatsApp, só uma escrita leve.
+        let territorio = null;
+        if (cmd === 'modorpg' && isOn && ctx.isGroup) {
+          try {
+            const regioes = require('../rpg/regions');
+            const r = await regioes.ensureGroupCountry(ctx.remoteJid);
+            if (r.ok) territorio = r.country;
+          } catch {}
+        }
         const label = cmd.replace('anti', 'ANTI-').replace(/([A-Z])/g, ' $1').toUpperCase().replace('  ', ' ');
         const sw = isOn
           ? '🟢 ON  ━━━━●'
@@ -268,6 +280,10 @@ module.exports = function registerAudioAdmin2(registerCase) {
               '📜  O portal abriu-se com trovões de obsidiana.',
               '🎭  Raças antigas, classes proibidas e clãs por fundar acordam.',
               '🗺️  Biomas por explorar, bosses por desafiar, tesouros por saquear.',
+              territorio
+                ? `${territorio.flag}  *REGIÃO ATRIBUÍDA:* ${territorio.name} · cidade ${territorio.city}`
+                : '🌍  Região internacional preparada — vê com *!pais*.',
+              '💱  Trocas com todas as regiões: *!trocar ofertas*.',
               '',
               '🎮  *Começa a aventura:*',
               `  • ${pref}rpgstart — cria o teu herói`,

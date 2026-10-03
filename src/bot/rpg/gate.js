@@ -31,6 +31,8 @@ const LIVRE_CHAR = new Set([
   'racas', 'classes', 'rpginfo',
   'rankrpg', 'toprpg', 'rankglobal', 'ranking', 'leaderboard',
   'mundial', 'rankmundial', 'worldrank', 'rankingmundial',
+  // Mapa internacional: regiões/cidades podem ser vistas antes da ficha.
+  'pais', 'país', 'paises', 'países', 'statuspaises', 'statuspaíses', 'regiaorpg', 'região-rpg', 'regioesrpg',
   'world', 'mapa', 'biomas', 'mundomap',
   // v11.2: a vitrine do multiverso abre sem personagem
   'personagens', 'personagem', 'heroes', 'heroi',
@@ -42,6 +44,8 @@ const RPG_CMDS = new Set([
   'rg', 'ficha', 'perfilrpg', 'quest', 'historia', 'lutar', 'fight', 'combate',
   'explorar', 'explore', 'descansar', 'rest', 'pocao', 'potion', 'reviver', 'revive',
   'guilda', 'guild', 'criarguilda', 'inventario', 'inv', 'bau', 'npc', 'falar', 'talk',
+  // Mercado único entre as cidades internacionais.
+  'trocar', 'trade', 'troca', 'mercadorpg',
   'vidas', 'lives', 'nome', 'rename', 'viajar', 'travel', 'irpara',
   'criaclan', 'criaclã', 'newclan',
   // v11.0/v11.1: story mode, status, raids e estratégia

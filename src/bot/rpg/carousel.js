@@ -18,6 +18,7 @@ const images = require('./images');
 const _imgCache = new Map();
 /** Cache de capas Pinterest: cacheKey → URL de imagem (vive na sessão do bot). */
 const _pinCache = new Map();
+const CACHE_MAX = 120; // impede crescimento infinito numa sessão longa
 const PINTEREST_SEARCH_ENDPOINT = 'https://api.siputzx.my.id/api/s/pinterest?query=';
 
 /**
@@ -34,7 +35,10 @@ async function _imagem(cacheKey, prompt, w, h, prazoMs = 3500) {
       new Promise((_, rej) => setTimeout(() => rej(new Error('prazo')), prazoMs)),
     ]);
     if (!buf || buf.length < 4000) return null;
-    if (cacheKey) _imgCache.set(cacheKey, buf);
+    if (cacheKey) {
+      if (_imgCache.size >= CACHE_MAX) _imgCache.clear();
+      _imgCache.set(cacheKey, buf);
+    }
     return buf;
   } catch { return null; }
 }
@@ -63,7 +67,10 @@ async function _imagemPinterest(cacheKey, query, prazoMs = 4000) {
     }) : null;
     const url = typeof first === 'string' ? first : (first?.image_url || first?.image || first?.url || first?.src);
     if (!/^https?:\/\//i.test(String(url || ''))) return null;
-    if (cacheKey) _pinCache.set(cacheKey, url);
+    if (cacheKey) {
+      if (_pinCache.size >= CACHE_MAX) _pinCache.clear();
+      _pinCache.set(cacheKey, url);
+    }
     return url;
   } catch { return null; }
   finally { clearTimeout(timer); }

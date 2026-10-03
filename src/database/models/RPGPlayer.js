@@ -17,6 +17,11 @@ const RPGPlayerSchema = new mongoose.Schema({
   faction:   { type: String, default: null },
   guild:     { type: String, default: null },
 
+  // v13.0 — mundo internacional: a cidade de origem e regiões visitadas.
+  // O personagem e a economia são globais; isto só dá contexto ao mapa.
+  homeCountry:     { type: String, default: '' },
+  visitedCountries:[{ type: String }],
+
   // ── v9.23: Criação expandida (género, idade, bio, aparência) ──
   gender:    { type: String, default: null },  // masculino, feminino, outro
   age:       { type: Number, default: null },

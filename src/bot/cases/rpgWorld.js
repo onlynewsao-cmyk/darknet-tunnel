@@ -50,11 +50,17 @@ module.exports = function registerRPGWorld(registerCase) {
         `> 🖱️ Toca num cartão ou escreve \`${prefix}viajar <sítio>\``,
         `> (ex.: \`${prefix}viajar ${Object.keys(rpg.BIOMES)[0] || 'floresta'}\`)`,
       ].join('\n');
+      // A arte muda por patamar de nível, mas cada patamar fica em cache:
+      // visualmente pessoal sem gerar oito imagens novas a cada toque.
+      const tier = Math.max(1, Math.ceil((p.level || 1) / 10));
+      const visited = p.world?.visited || [];
       const cards = Object.entries(rpg.BIOMES).map(([k, b]) => ({
-        corpo: `${b.emoji} *${k.toUpperCase()}*\n${b.desc}\n\n⭐ nv.${b.nivel} · ${'⚠️'.repeat(b.danger || 1)} perigo\n🎁 loot: ${(b.loot || []).slice(0, 3).join(', ') || '—'}${(p.biome?.visited || []).includes(k) ? '\n✅ já visitado' : '\n🆕 1ª visita dá XP'}`,
-        rodape: `🌍 ${config.bot.name} · MUNDO`,
-        promptImg: `dark fantasy RPG landscape, ${b.desc}, atmospheric epic vista, anime dark fantasy art, no text`,
-        cacheKey: `biome_${k}`,
+        corpo: `${b.emoji} *${k.toUpperCase()}*\n${b.desc}\n\n⭐ nv.${b.nivel} · ${'⚠️'.repeat(b.danger || 1)} perigo\n🎁 loot: ${(b.loot || []).slice(0, 3).join(', ') || '—'}${visited.includes(k) ? '\n✅ já visitado' : '\n🆕 1ª visita dá XP'}`,
+        rodape: `🌍 ${config.bot.name} · NÍVEL ${p.level || 1}`,
+        promptImg: `dark fantasy RPG landscape for level tier ${tier}, ${b.desc}, atmospheric epic vista, anime dark fantasy art, no text`,
+        cacheKey: `biome_${k}_tier_${tier}`,
+        // Falha rápido para a lista nativa/fallback não parecer bloqueada.
+        prazoMs: 2500,
         botoes: [{ texto: `🚶 Viajar para ${k}`, id: `${prefix}viajar ${k}` }],
       }));
       let carro = false;
@@ -73,11 +79,20 @@ module.exports = function registerRPGWorld(registerCase) {
     }
 
     const p = await rpg.getPlayer(ctx.senderNumber);
+    let territorio = null;
+    if (ctx.isGroup) {
+      try {
+        const regioes = require('../rpg/regions');
+        territorio = await regioes.getCountryForGroup(ctx.remoteJid);
+        if (territorio) regioes.marcarJogadorNoPais(p, territorio);
+      } catch {}
+    }
     const r = world.viajar(p, destino);
     if (!r.ok) {
       return tReply(sock, msg, ctx, '🧭 VIAJAR', [r.motivo]);
     }
 
+    if (territorio) r.linhas.push(`🌍 Região actual: ${territorio.flag} ${territorio.name} · ${territorio.city}`);
     await rpg.savePlayer(p);
     return tReply(sock, msg, ctx,
       r.primeiraVez ? '🧭 NOVO TERRITÓRIO' : '🧭 VIAJAR', r.linhas);

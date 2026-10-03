@@ -104,6 +104,12 @@ module.exports = function (registerCase) {
       try { ppUrl = await sock.profilePictureUrl(ctx.senderJid || ctx.remoteJid, 'image').catch(() => null); } catch {}
       const botName = (config.bot?.name) || 'DARK BOT';
       const gif = args.some(a => /gif|anim|welcm3|gif3/i.test(a));
+      // A arte nasce da raça/classe/nível e também da cidade onde o
+      // jogador a pediu. É uma leitura curta e só acontece no !rgcard.
+      let region = null;
+      if (ctx.isGroup) {
+        try { region = await require('../rpg/regions').getCountryForGroup(ctx.remoteJid); } catch {}
+      }
       // v8.4: a arte NUNCA pode pendurar o comando — deadline 6s e queda
       // garantida para o gradiente local (o dia em que a IA dorme, o
       // jogador continua a receber um cartão bonito).
@@ -113,23 +119,33 @@ module.exports = function (registerCase) {
         prom.then(v => { clearTimeout(t); res(v); }, err => { clearTimeout(t); rej(err); });
       });
       const tenta = async () => {
-        if (gif) return sock.sendMessage(ctx.remoteJid, {
-          video: await wa.heroGif(p, { profilePicUrl: ppUrl, botName, frames: 12 }),
-          gifPlayback: true, mimetype: 'video/mp4',
-          caption: `🎞️ *${p.name}* — cartão de herói animado (DARK VILLE)`,
-        }, { quoted: msg });
+        if (gif) {
+          const animacao = await wa.heroGif(p, { profilePicUrl: ppUrl, botName, region, jid: ctx.remoteJid, frames: 12 });
+          if (animacao?.length > 2048) {
+            return sock.sendMessage(ctx.remoteJid, {
+              video: animacao, gifPlayback: true, mimetype: 'video/mp4',
+              caption: `🎞️ *${p.name}* — cartão de herói animado (DARK VILLE)`,
+            }, { quoted: msg });
+          }
+        }
+        // Host sem ffmpeg ou arte IA lenta: o cartão estático local continua
+        // a sair imediatamente, em vez de o comando falhar.
         return sock.sendMessage(ctx.remoteJid, {
-          image: await wa.heroCard(p, { profilePicUrl: ppUrl, botName }),
-          caption: `🪶 *${p.name}* — cartão de herói\n💡 animado: \`${prefix}rgcard gif\``,
+          image: await wa.heroCard(p, { profilePicUrl: ppUrl, botName, region, jid: ctx.remoteJid }),
+          caption: `🪶 *${p.name}* — cartão de herói${gif ? ' (animação indisponível neste momento)' : ''}\n💡 animado: \`${prefix}rgcard gif\``,
         }, { quoted: msg });
       };
       try {
         await comPrazo(tenta(), 3500);
       } catch (e1) {
         // queda: gradiente local (0 rede) — rápido e bonito à mesma
-        const local = { profilePicUrl: null, fetchFn: async () => null, botName };
-        if (gif) await sock.sendMessage(ctx.remoteJid, { video: await wa.heroGif(p, { ...local, frames: 10 }), gifPlayback: true, mimetype: 'video/mp4', caption: `🎞️ *${p.name}* — cartão de herói animado` }, { quoted: msg });
-        else await sock.sendMessage(ctx.remoteJid, { image: await wa.heroCard(p, local), caption: `🪶 *${p.name}* — cartão de herói\n💡 animado: \`${prefix}rgcard gif\`` }, { quoted: msg });
+        const local = { profilePicUrl: null, fetchFn: async () => null, botName, region, jid: ctx.remoteJid };
+        // A queda de prazo/rede é sempre uma imagem local, nunca um MP4
+        // vazio. Isto mantém !rgcard rápido mesmo sem ffmpeg no host.
+        await sock.sendMessage(ctx.remoteJid, {
+          image: await wa.heroCard(p, local),
+          caption: `🪶 *${p.name}* — cartão de herói${gif ? ' (animação indisponível neste momento)' : ''}\n💡 animado: \`${prefix}rgcard gif\``,
+        }, { quoted: msg });
       }
       sock.sendMessage(ctx.remoteJid, { react: { text: '✅', key: msg.key } }).catch(() => {});
     } catch (e) {

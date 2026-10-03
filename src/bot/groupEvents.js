@@ -482,6 +482,20 @@ async function onJoin(sock, groupJid, participantJid, number, groupName, gs, met
         }).catch(() => {});
         return;
       }
+      // Alguns hosts não têm ffmpeg. Nesse caso mantém a arte personalizada
+      // como imagem, em vez de perder por completo o welcome configurado.
+      const png = await wa.artCard({
+        profilePicUrl: ppUrl,
+        name: memberName,
+        sub1: `Entrou em ${groupName}`.slice(0, 44),
+        sub2: `Membro nº ${memberCount}`,
+        footer: `${config.bot.name}`,
+        kind: 'welcome',
+      });
+      if (png?.length > 2048) {
+        await sock.sendMessage(groupJid, { image: png, caption, mentions: [participantJid] }).catch(() => {});
+        return;
+      }
     } catch (e) { console.warn('[Welcome GIF]', e.message); }
   }
 

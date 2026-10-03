@@ -507,6 +507,7 @@ module.exports = function registerRPGCommunity(registerCase) {
       seccoes.push({ title: '🏆 VITRINE (sem personagem)', rows: [
         R('ranking', 'Tabela de heróis — quem manda em DARK VILLE'),
         R('mapa', 'O mapa do mundo — biomas e cidades'),
+        R('paises', 'Cidades internacionais e regiões RPG activas'),
       ]});
     } else {
       seccoes.push({ title: '🎭 A TUA PERSONAGEM', rows: [
@@ -540,6 +541,9 @@ module.exports = function registerRPGCommunity(registerCase) {
         R('npc', 'Falar com NPCs — pistas e histórias'),
         R('ranking', 'Tabela de heróis — o topo de DARK VILLE'),
         R('mundial', 'Rank mundial — o mundo inteiro a competir'),
+        R('pais', 'A tua região, cidade e portal internacional'),
+        R('paises', 'Estado das cidades e países RPG activos'),
+        R('trocar', 'Mercado internacional — trocar itens entre regiões'),
       ]});
     }
     seccoes.push({ title: '🛠️ LIVRO DO MUNDO', rows: [
