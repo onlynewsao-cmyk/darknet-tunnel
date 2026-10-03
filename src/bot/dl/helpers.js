@@ -421,11 +421,36 @@ async function systemZoneYtVideo(queryOrUrl) {
 }
 
 async function systemZoneSpotifySearch(query, limit = 10) {
+  const max = Math.min(Math.max(Number(limit) || 10, 1), 20);
   try {
-    const data = await mediaHandler.fetchJson(`${SYSTEMZONE_API_URL}/api/search/spotify?q=${encodeURIComponent(query)}&limit=${limit}&apikey=${encodeURIComponent(SYSTEMZONE_API_KEY)}`, 30000);
+    const data = await mediaHandler.fetchJson(`${SYSTEMZONE_API_URL}/api/search/spotify?q=${encodeURIComponent(query)}&limit=${max}&apikey=${encodeURIComponent(SYSTEMZONE_API_KEY)}`, 30000);
     const arr = data?.result || data?.results || [];
-    return Array.isArray(arr) ? arr : [];
-  } catch (e) { return []; }
+    if (Array.isArray(arr) && arr.length) return arr;
+  } catch (e) {
+    console.log('[SYSTEMZONE-SPOTIFY-SEARCH] falhou:', e.message);
+  }
+
+  // A busca do catálogo externo pode oscilar (DNS/TLS/rate-limit). O fluxo
+  // Spotify já entrega o áudio por YouTube como último fallback, por isso uma
+  // busca de vídeos aqui mantém !spotify <nome> utilizável sem fingir que não
+  // houve resultado. A URL directa evita uma segunda busca ao escolher.
+  try {
+    const r = await yts(String(query || ''));
+    const videos = (r?.videos || [])
+      .filter(v => v?.url && Number(v.seconds || 0) >= 15 && Number(v.seconds || 0) <= 90 * 60)
+      .slice(0, max);
+    return videos.map(v => ({
+      title: v.title || 'Música',
+      artist: v.author?.name || v.author || '',
+      url: v.url,
+      thumbnail: v.thumbnail || '',
+      duration: v.timestamp || '',
+      source: 'youtube-fallback',
+    }));
+  } catch (e) {
+    console.log('[SPOTIFY-SEARCH] fallback YouTube falhou:', e.message);
+    return [];
+  }
 }
 
 async function systemZoneSpotifyDownload(url) {

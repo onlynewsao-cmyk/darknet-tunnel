@@ -165,7 +165,11 @@ module.exports = function registerDownloads2(registerCase) {
     const mediaH = require('../mediaHandler');
     const ytdl = require('../ytdl');
     let buf = null, meta = { title: alvo?.nome || 'Spotify', author: alvo?.artista || '' };
-    if (fonteUrl) {
+    // A busca por nome pode cair para resultados YouTube quando o catálogo
+    // Spotify externo estiver indisponível. Nesse caso vai directo ao motor
+    // de áudio (em vez de tentar interpretar uma URL YouTube como Spotify).
+    const eLinkSpotify = /(?:open\.)?spotify\.com|spotify\.link/i.test(String(fonteUrl || ''));
+    if (fonteUrl && eLinkSpotify) {
       try {
         const dl = require('../dl/others');
         const r = await dl.spotify(fonteUrl);
@@ -174,7 +178,9 @@ module.exports = function registerDownloads2(registerCase) {
       } catch {}
     }
     if (!buf || buf.length < 2048) {
-      const qy = `${alvo?.artista ? alvo.artista + ' ' : ''}${alvo?.nome || 'spotify'} audio`.trim();
+      const qy = fonteUrl && !eLinkSpotify
+        ? fonteUrl
+        : `${alvo?.artista ? alvo.artista + ' ' : ''}${alvo?.nome || 'spotify'} audio`.trim();
       const a = await ytdl.getAudio(qy, nv.bit);   // já sai no bitrate do nível
       buf = a.buffer;
       meta = { title: alvo?.nome || a.title || meta.title, author: alvo?.artista || a.author || meta.author };
