@@ -307,7 +307,11 @@ async function _mostrarEstado(sock, msg, ctx, p) {
   const strat = rpg.getStrategy ? rpg.getStrategy(p.strategy) : null;
   const momento = c.momentoPendente;
 
-  const linhas = [
+  // O combate é entregue em três mensagens, sempre na mesma ordem:
+  // 1) status, 2) narrativa/resultados do turno, 3) acções clicáveis.
+  // Assim os textos da batalha não se perdem no meio da ficha e os botões
+  // ficam numa mensagem limpa, sem repetir as opções no corpo.
+  const status = [
     `⚔️ *ROUND ${c.round} — COMBATE*`,
     strat ? `🧠 Estratégia: *${strat.emoji} ${strat.name}*` : '',
     '',
@@ -319,13 +323,15 @@ async function _mostrarEstado(sock, msg, ctx, p) {
     `❤️ ${hpBar(c.playerHp, c.maxHp)} ${c.playerHp}/${c.maxHp}`,
     `💙 ${c.playerMp}/${c.maxMp} MP`,
     c.tactical ? `${c.tactical.emoji} *Vantagem: ${c.tactical.nome}* · ${c.tactical.turns} turno(s)` : '',
-    '',
-    ...c.log.slice(-4).map(l => `  ${l}`),
-    momento ? '' : '> Escolhe a tua acção 👇',
+  ].filter(Boolean).join('\n');
+
+  const narrativa = [
+    '📜 *BATALHA*',
+    ...c.log.slice(-4).map(l => `• ${l}`),
     momento ? `🎭 *MOMENTO ÚNICO — ${momento.titulo}*` : '',
     momento ? momento.texto : '',
     momento ? '> A tua decisão muda o rumo desta batalha.' : '',
-  ].filter(Boolean);
+  ].filter(Boolean).join('\n');
 
   let botoes;
   if (momento) {
@@ -344,11 +350,18 @@ async function _mostrarEstado(sock, msg, ctx, p) {
     if (skillsDisponiveis.length > 1) botoes.push({ id: 'RPGFIGHT_skill2', text: `✨ ${skillsDisponiveis[1].name}` });
   }
 
-  const corpo = linhas.join('\n');
+  const controlos = momento
+    ? '🎭 *DECISÃO TÁTICA*\n> Escolhe uma opção nos botões abaixo.'
+    : '🎮 *AÇÕES DE COMBATE*\n> Escolhe a tua ação nos botões abaixo.';
+
+  // Não juntar estas sessões: a ordem torna o combate legível no WhatsApp.
+  await sock.sendMessage(ctx.remoteJid, { text: status }, { quoted: msg }).catch(() => {});
+  await sock.sendMessage(ctx.remoteJid, { text: narrativa || '📜 *BATALHA*\n> O combate continua…' }, { quoted: msg }).catch(() => {});
   try {
-    await ui._enviarBotoes?.(sock, msg, ctx, corpo, botoes) || await _enviarBotoes(sock, msg, ctx, corpo, botoes);
+    const enviado = await ui._enviarBotoes?.(sock, msg, ctx, controlos, botoes) || await _enviarBotoes(sock, msg, ctx, controlos, botoes);
+    if (!enviado) await sock.sendMessage(ctx.remoteJid, { text: controlos }, { quoted: msg }).catch(() => {});
   } catch {
-    await sock.sendMessage(ctx.remoteJid, { text: corpo }, { quoted: msg }).catch(() => {});
+    await sock.sendMessage(ctx.remoteJid, { text: controlos }, { quoted: msg }).catch(() => {});
   }
 }
 

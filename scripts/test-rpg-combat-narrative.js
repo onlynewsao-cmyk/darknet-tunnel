@@ -13,6 +13,7 @@ const player = {
   kills: 0, bossKills: 0, deaths: 0, stats: { str: 12, dex: 12, int: 12, vit: 12, luk: 12 },
 };
 const renders = [];
+const mensagens = [];
 const engine = {
   RACES: { humano: { emoji: '🧑' } },
   SKILLS: { guerreiro: [{ name: 'Golpe de Aço', emoji: '⚔️', type: 'atk', power: 20, cost: 10 }] },
@@ -39,23 +40,33 @@ const combat = require(combatPath);
 Module._load = originalLoad;
 
 const ctx = { senderNumber: '244900000002', remoteJid: '244900000002@s.whatsapp.net', prefix: '!' };
-const sock = { sendMessage: async () => ({}) };
+const sock = { sendMessage: async (_jid, content) => { mensagens.push(content); return {}; } };
 const msg = {};
 const realRandom = Math.random;
 
 (async () => {
   Math.random = () => 0.5;
+  let antes = mensagens.length;
   await combat.iniciarCombate(sock, msg, ctx, 'normal');
-  assert(renders.at(-1).botoes.some(b => b.id === 'RPGFIGHT_basic'), 'combate começa com acções normais');
-  assert(/Algo neste combate|Marcas antigas|terreno estremece/i.test(renders.at(-1).corpo), 'combate começa com uma introdução narrativa');
+  assert.strictEqual(mensagens.length - antes, 2, 'o início envia status e narrativa como mensagens separadas');
+  const [statusInicial, narrativaInicial] = mensagens.slice(antes);
+  assert(/ROUND 1/.test(statusInicial.text), 'a primeira mensagem é o status da batalha');
+  assert(/Algo neste combate|Marcas antigas|terreno estremece/i.test(narrativaInicial.text), 'a segunda mensagem traz a introdução narrativa');
+  assert(renders.at(-1).botoes.some(b => b.id === 'RPGFIGHT_basic'), 'a terceira sessão contém acções normais');
+  assert(/AÇÕES DE COMBATE/.test(renders.at(-1).corpo), 'a sessão de controlos não mistura status ou narrativa');
+  assert(!/ROUND|Marcas antigas|terreno estremece/i.test(renders.at(-1).corpo), 'os controlos ficam limpos');
 
+  antes = mensagens.length;
   await combat.processarEscolha(sock, msg, ctx, 'basic');
   const c = combat._combates.get(ctx.senderNumber);
   assert(c?.momentoPendente, 'o primeiro round deve criar um momento único');
+  assert.strictEqual(mensagens.length - antes, 2, 'cada turno mantém status e narrativa em duas mensagens');
+  const [, narrativaMomento] = mensagens.slice(antes);
   const evento = renders.at(-1);
   assert.strictEqual(evento.botoes.length, 3, 'um momento narrativo deve oferecer três decisões');
   assert(evento.botoes.every(b => b.id.startsWith('RPGFIGHT_EVENT_')), 'as decisões devem usar IDs próprios de evento');
-  assert(/MOMENTO ÚNICO/.test(evento.corpo), 'a narrativa do momento deve ser apresentada');
+  assert(/MOMENTO ÚNICO/.test(narrativaMomento.text), 'a narrativa do momento é enviada separadamente');
+  assert(/DECISÃO TÁTICA/.test(evento.corpo), 'a terceira sessão fica reservada aos botões da decisão');
 
   const hpEnemyAntesCliqueAntigo = c.enemy.hp;
   await combat.processarEscolha(sock, msg, ctx, 'basic');
