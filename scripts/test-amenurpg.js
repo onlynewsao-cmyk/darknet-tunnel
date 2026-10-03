@@ -1,10 +1,9 @@
 #!/usr/bin/env node
 /**
- * v8.01 📜 MENURPG — LISTA DE TEXTO DOS COMANDOS RPG
- * O menurpg é o LIVRO EM TEXTO: cartão vivo da personagem no topo +
- * lista completa por secções — SEM botões/interactivos (a versão
- * toque-para-correr vive na fila "RPG & AVENTURA" do menu principal).
- * Sem personagem: o PORTAL lidera; o jogo fica guardado.
+ * MENURPG — painel interativo dos comandos RPG.
+ * O cartão vivo vem no topo e as secções surgem numa lista tocável;
+ * cada linha devolve o comando correspondente. Sem personagem, só o
+ * portal e a vitrine ficam disponíveis.
  */
 'use strict';
 
@@ -32,15 +31,27 @@ Module.prototype.require = function (id) {
 
 const sent = [];
 let relays = 0;
+let relayPayload = null;
 const sockF = {
   sendMessage: async (j, c) => { sent.push({ j, c }); return { key: { id: 'k' } }; },
-  relayMessage: async () => { relays++; return {}; },
+  relayMessage: async (_j, m) => { relays++; relayPayload = m; return {}; },
   user: { id: 'bot@s.whatsapp.net' },
 };
+function menuInterativo() {
+  const im = relayPayload?.viewOnceMessage?.message?.interactiveMessage || relayPayload?.interactiveMessage;
+  const params = im?.nativeFlowMessage?.buttons?.[0]?.buttonParamsJson || '{}';
+  const data = JSON.parse(params);
+  return {
+    corpo: im?.body?.text || '',
+    rows: (data.sections || []).flatMap(s => s.rows || []),
+    sections: data.sections || [],
+  };
+}
 const CTX = (extra = {}) => ({ remoteJid: 'GRP@g.us', senderNumber: '2449', senderJid: '2449@s.whatsapp.net', isGroup: true, pushName: 'Dark', prefix: '!', isOwner: false, ...extra });
+const MSG = (id) => ({ key: { id, remoteJid: 'GRP@g.us', participant: '2449@s.whatsapp.net' }, message: { conversation: '!menurpg' } });
 
 (async () => {
-  console.log('=== v8.01 — MENURPG LISTA DE TEXTO ===');
+  console.log('=== MENURPG — PAINEL INTERATIVO ===');
 
   const reg = {};
   require('../src/bot/cases/rpgCommunity')((nomes, fn) => { for (const n of [].concat(nomes)) reg[n] = fn; });
@@ -48,66 +59,67 @@ const CTX = (extra = {}) => ({ remoteJid: 'GRP@g.us', senderNumber: '2449', send
 
   // ── 1. Fechado → MSG_MODO ──────────────────────────────────
   _gs = null; sent.length = 0; relays = 0;
-  await reg.menurpg({ sock: sockF, msg: { key: { id: 'm1' } }, ctx: CTX(), prefix: '!' });
+  await reg.menurpg({ sock: sockF, msg: MSG('m1'), ctx: CTX(), prefix: '!' });
   assert.ok(sent.some(x => /mundo RPG está fechado/i.test(x.c?.text || '')), 'mundo fechado pede !modorpg');
   console.log('✔ gate intacto: fechado nem abre');
 
-  // ── 2. Aberto SEM personagem → PORTAL lidera em texto ──────
-  _gs = { modorpg: true }; _player = null; sent.length = 0; relays = 0;
-  await reg.menurpg({ sock: sockF, msg: { key: { id: 'm2' } }, ctx: CTX(), prefix: '!' });
-  const t2 = sent.find(x => x.c?.text)?.c.text || '';
-  assert.ok(t2, 'texto enviado');
-  assert.ok(/Ainda não tens personagem/i.test(t2), 'cartão avisa a falta de personagem');
-  assert.ok(/PORTAL DE ENTRADA/.test(t2), 'secção do portal');
-  assert.ok(/!rpgstart/.test(t2), 'linha de criação');
-  assert.ok(!/!lutar\b/.test(t2), 'jogo fica guardado sem personagem');
-  assert.ok(/!ranking/.test(t2), 'vitrine continua visível');
-  assert.strictEqual(relays, 0, '📜 zero botões interactivos — é LISTA DE TEXTO');
-  console.log('✔ sem personagem: portal lidera, jogo guardado, ZERO botões');
+  // ── 2. Aberto SEM personagem → portal tocável ──────────────
+  _gs = { modorpg: true }; _player = null; sent.length = 0; relays = 0; relayPayload = null;
+  await reg.menurpg({ sock: sockF, msg: MSG('m2'), ctx: CTX(), prefix: '!' });
+  const m2 = menuInterativo();
+  const ids2 = m2.rows.map(r => r.id);
+  assert.strictEqual(relays, 1, 'menu abre uma lista interativa');
+  assert.ok(/Ainda não tens personagem/i.test(m2.corpo), 'cartão avisa a falta de personagem');
+  assert.ok(m2.sections.some(s => /PORTAL DE ENTRADA/.test(s.title)), 'secção do portal');
+  assert.ok(ids2.includes('!rpgstart'), 'linha de criação é tocável');
+  assert.ok(!ids2.includes('!lutar'), 'jogo fica guardado sem personagem');
+  assert.ok(ids2.includes('!ranking'), 'vitrine continua visível');
+  console.log('✔ sem personagem: portal e vitrine abrem por toque');
 
-  // ── 3. Aberto COM personagem → livro completo em texto ──────
+  // ── 3. Aberto COM personagem → cartão + secções tocáveis ───
   _player = {
     started: true, name: 'Kael Storm', race: 'elfo', class: 'mago',
     level: 12, xp: 1440, hp: 72, maxHp: 120, mp: 55, maxMp: 90,
     coins: 630, bank: 2500, lives: 2, kills: 88, deaths: 5,
     guild: 'LOBO NEGRO', winStreak: 7, biome: { visited: ['floresta', 'caverna', 'vulcão'] },
   };
-  sent.length = 0; relays = 0;
-  await reg.menurpg({ sock: sockF, msg: { key: { id: 'm3' } }, ctx: CTX(), prefix: '!' });
-  const t3 = sent.find(x => x.c?.text)?.c.text || '';
-  assert.ok(/Kael Storm/.test(t3), 'nome da personagem');
-  assert.ok(/ELFO · MAGO/.test(t3), 'raça + classe');
-  assert.ok(/Nível \*12\*/.test(t3) && /XP 1440/.test(t3), 'nível + xp');
-  assert.ok(/▰/.test(t3) && /▱/.test(t3), 'barras HP/MP');
-  assert.ok(/72\/120/.test(t3) && /55\/90/.test(t3), 'valores HP/MP');
-  assert.ok(/630 gold/.test(t3) && /2500 banco/.test(t3), 'finanças');
-  assert.ok(/2 vidas/.test(t3) && /88 K/.test(t3) && /💀 5 M/.test(t3), 'vidas + K/M');
-  assert.ok(/LOBO NEGRO/.test(t3), 'guilda');
-  assert.ok(/biomas pisados: 3/.test(t3), 'biomas');
+  sent.length = 0; relays = 0; relayPayload = null;
+  await reg.menurpg({ sock: sockF, msg: MSG('m3'), ctx: CTX(), prefix: '!' });
+  const m3 = menuInterativo();
+  const ids3 = m3.rows.map(r => r.id);
+  assert.strictEqual(relays, 1, 'menu completo abre uma lista nativa');
+  assert.ok(/Kael Storm/.test(m3.corpo), 'nome da personagem');
+  assert.ok(/ELFO · MAGO/.test(m3.corpo), 'raça + classe');
+  assert.ok(/Nível \*12\*/.test(m3.corpo) && /XP 1440/.test(m3.corpo), 'nível + xp');
+  assert.ok(/▰/.test(m3.corpo) && /▱/.test(m3.corpo), 'barras HP/MP');
+  assert.ok(/72\/120/.test(m3.corpo) && /55\/90/.test(m3.corpo), 'valores HP/MP');
+  assert.ok(/630 gold/.test(m3.corpo) && /2500 banco/.test(m3.corpo), 'finanças');
+  assert.ok(/2 vidas/.test(m3.corpo) && /88 K/.test(m3.corpo) && /💀 5 M/.test(m3.corpo), 'vidas + K/M');
+  assert.ok(/LOBO NEGRO/.test(m3.corpo), 'guilda');
+  assert.ok(/biomas pisados: 3/.test(m3.corpo), 'biomas');
   for (const seccao of ['A TUA PERSONAGEM', 'AVENTURA & COMBATE', 'INVENTÁRIO & BAÚ', 'PRAÇA', 'LIVRO DO MUNDO']) {
-    assert.ok(t3.includes(seccao), `secção ${seccao} no livro`);
+    assert.ok(m3.sections.some(s => s.title.includes(seccao)), `secção ${seccao} na lista`);
   }
   for (const cmd of ['!rg', '!lutar', '!explorar', '!quest', '!viajar', '!descansar', '!pocao', '!inventario', '!bau', '!guilda', '!criaclan', '!npc', '!ranking', '!mundial', '!nome', '!vidas', '!regrasrpg', '!rpgguia']) {
-    assert.ok(t3.includes(cmd), `comando ${cmd} listado`);
+    assert.ok(ids3.includes(cmd), `comando ${cmd} tocável`);
   }
-  assert.strictEqual(relays, 0, 'continua lista de texto pura');
-  console.log('✔ com personagem: cartão completo + 18 comandos por secções');
+  console.log('✔ com personagem: cartão completo + comandos tocáveis por secção');
 
-  // ── 4. Prefixos respeitados ─────────────────────────────────
-  sent.length = 0;
-  await reg.menurpg({ sock: sockF, msg: { key: { id: 'm4' } }, ctx: CTX({ prefix: '.' }), prefix: '.' });
-  const t4 = sent.find(x => x.c?.text)?.c.text || '';
-  assert.ok(/.lutar/.test(t4) && !/!lutar/.test(t4), 'linhas usam o prefixo activo');
+  // ── 4. Prefixos respeitados nos IDs tocáveis ─────────────────
+  sent.length = 0; relayPayload = null;
+  await reg.menurpg({ sock: sockF, msg: MSG('m4'), ctx: CTX({ prefix: '.' }), prefix: '.' });
+  const ids4 = menuInterativo().rows.map(r => r.id);
+  assert.ok(ids4.includes('.lutar') && !ids4.includes('!lutar'), 'linhas usam o prefixo activo');
   console.log('✔ prefixo dinâmico aplicado');
 
   // ── 5. Estático ─────────────────────────────────────────────
   const fs8 = require('fs'), path8 = require('path');
   const src = fs8.readFileSync(path8.join(__dirname, '..', 'src', 'bot', 'cases', 'rpgCommunity.js'), 'utf8');
-  assert.ok(/LISTA DE TEXTO/.test(src), 'comentário do contrato texto');
+  assert.ok(/rpgLista/.test(src), 'menurpg usa lista interativa');
   assert.ok(/peekPlayer/.test(src), 'lê a personagem sem criar');
-  assert.ok(!/single_select/.test(src), '📜 sem interactivo no menurpg');
-  console.log('✔ ganchos correctos e sem botões no código');
+  assert.ok(/ABRIR MENU RPG/.test(src), 'título do painel está presente');
+  console.log('✔ ganchos correctos para lista interativa');
 
-  console.log('\nOK / test-amenurpg — MENURPG LISTA DE TEXTO pronto (v8.01)');
+  console.log('\nOK / test-amenurpg — MENURPG interativo pronto');
   process.exit(0);
 })().catch(e => { console.error('ERRO FATAL:', e); process.exit(1); });

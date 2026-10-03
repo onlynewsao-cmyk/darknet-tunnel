@@ -124,7 +124,7 @@ const t = (n, c, x = '') => { if (c) { ok++; console.log('  ✅', n); } else { f
   t('com char: pergunta antes de apagar', OUT.join(' ').includes('JÁ EXISTE') && BTNS.some(b => /^RPGSIM_/.test(b)), OUT.join(' ').slice(0, 70));
   OUT = [];
   await ui.decidirPorTexto(sock, msg, ctx, true); // "@!rpgsim"
-  t('confirmação abre a lista de raças', /ESCOLHE A RAÇA/i.test(OUT.join(' ')), OUT.join(' ').slice(0, 70));
+  t('confirmação reinicia pelo pedido de nome', /CRIAÇÃO DE PERSONAGEM|rpgnome/i.test(OUT.join(' ')), OUT.join(' ').slice(0, 70));
 
   console.log(`\n${fail ? '💥' : '🎉'} RPG-UI: ${ok} OK / ${fail} FALHOU\n`);
   process.exit(fail ? 1 : 0);

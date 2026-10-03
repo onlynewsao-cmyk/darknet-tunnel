@@ -486,13 +486,19 @@ module.exports = function registerRPGCommunity(registerCase) {
     ]});
 
     const bodyTxt = cartao +
-      '\n📜 *O LIVRO DE COMANDOS DO RPG — escreve e joga:*\n' +
+      '\n🎮 *PAINEL DO RPG*\n' +
+      '> Toca em *ABRIR MENU* para escolher uma ação.\n' +
+      '> Cada opção executa o comando certo para ti.\n' +
       '🕸️━━━━━━━━━━━━━━━━━━━━━━━🕸️';
 
-    // ── v8.01: o menurpg é a LISTA DE TEXTO dos comandos RPG ─────
-    // (a versão interactiva toque-para-correr vive na fila "RPG &
-    // AVENTURA" do menu principal; aqui fica o livro, inteiro e em
-    // texto, com o cartão vivo da personagem no topo)
+    // O livro deixou de ser uma parede de comandos: cada secção abre numa
+    // lista nativa e a linha tocada volta como o próprio comando (!lutar,
+    // !explorar, !loja…). O texto abaixo continua como fallback honesto.
+    try {
+      const rpgTheme = require('../rpg/rpgTheme');
+      if (await rpgTheme.rpgLista(sock, msg, ctx, '🎮 ABRIR MENU RPG', seccoes, bodyTxt)) return true;
+    } catch {}
+
     const listagem = seccoes.map(s =>
       '\n*' + s.title + '*\n' +
       s.rows.map(r => '  ' + r.id + (r.description ? ' — ' + r.description : '')).join('\n')
