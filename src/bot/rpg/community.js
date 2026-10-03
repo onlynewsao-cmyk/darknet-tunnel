@@ -143,6 +143,14 @@ const _clanGroups = new Map();
 const DB_KEY = 'darkrpg_community_v1';
 let _loaded = false;
 
+// Mantém o ritmo seguro no WhatsApp real, mas permite aos testes verificarem
+// todo o fluxo sem esperar minutos entre comunidade e subgrupos.
+function _esperar(ms, opts = {}) {
+  const configurado = Number(opts?.delayMs);
+  const espera = Number.isFinite(configurado) ? Math.max(0, configurado) : ms;
+  return espera ? new Promise(resolve => setTimeout(resolve, espera)) : Promise.resolve();
+}
+
 async function _persist() {
   try {
     const cache = require('../botConfigCache');
@@ -303,7 +311,7 @@ async function _criarGrupoCru(sock, subject, participants, communityJid) {
  *
  * Devolve { dentro, admin, acoes[], convite }
  */
-async function ensureOwnerInCommunity(sock, communityJid, ownerJid) {
+async function ensureOwnerInCommunity(sock, communityJid, ownerJid, opts = {}) {
   const onum = _num(ownerJid);
   const res = { dentro: false, admin: false, acoes: [], convite: null };
 
@@ -320,6 +328,11 @@ async function ensureOwnerInCommunity(sock, communityJid, ownerJid) {
   const eu = (meta?.participants || []).find(p => _num(p.id) === onum);
   if (eu) { res.dentro = true; res.admin = p_admin(eu); }
 
+  // O dono recebe sempre o acesso da comunidade. Mesmo quando o add
+  // automático funciona, o link permite abrir a comunidade na app.
+  res.convite = await getCommunityInvite(sock, communityJid);
+  if (res.convite) res.acoes.push('link de convite gerado');
+
   if (!res.dentro) {
     try {
       const r = await sock.groupParticipantsUpdate(communityJid, [ownerJid], 'add');
@@ -331,14 +344,11 @@ async function ensureOwnerInCommunity(sock, communityJid, ownerJid) {
     }
   }
 
-  // Não entrou? Manda o convite — é o plano B que o utilizador pediu.
-  if (!res.dentro) {
-    res.convite = await getCommunityInvite(sock, communityJid);
-    if (res.convite) res.acoes.push('mandei-te o link de convite');
-  }
+  // Não entrou? O link gerado acima é o plano B para entrar pela app.
+  if (!res.dentro && res.convite) res.acoes.push('entra pelo link de convite');
 
   if (res.dentro && !res.admin) {
-    await new Promise(r => setTimeout(r, 2000));
+    await _esperar(2000, opts);
     try {
       const r = await sock.groupParticipantsUpdate(communityJid, [ownerJid], 'promote');
       const st = Array.isArray(r) ? String(r[0]?.status || '200') : '200';
@@ -349,6 +359,67 @@ async function ensureOwnerInCommunity(sock, communityJid, ownerJid) {
     }
   }
 
+  return res;
+}
+
+/**
+ * Promove um membro que já entrou na comunidade. É usado por !meadm:
+ * nunca tenta adicioná-lo silenciosamente, para que o dono possa entrar
+ * primeiro pelo convite e confirmar o acesso na própria app.
+ */
+async function promoteCommunityMember(sock, communityJid, memberJid) {
+  const res = {
+    ok: false,
+    dentro: false,
+    admin: false,
+    jaEraAdmin: false,
+    convite: null,
+    error: null,
+  };
+
+  if (!communityJid) {
+    res.error = 'Comunidade DARK RPG ainda não foi configurada.';
+    return res;
+  }
+
+  let meta = null;
+  try {
+    meta = typeof sock.communityMetadata === 'function'
+      ? await sock.communityMetadata(communityJid)
+      : await sock.groupMetadata(communityJid);
+  } catch (e) {
+    res.error = 'Não consegui confirmar os membros da comunidade: ' + e.message;
+    return res;
+  }
+
+  const membro = (meta?.participants || []).find(p => _num(p.id) === _num(memberJid));
+  if (!membro) {
+    res.convite = await getCommunityInvite(sock, communityJid);
+    res.error = 'Ainda não estás dentro da comunidade. Entra pelo convite e usa !meadm novamente.';
+    return res;
+  }
+
+  res.dentro = true;
+  if (p_admin(membro)) {
+    res.ok = true;
+    res.admin = true;
+    res.jaEraAdmin = true;
+    return res;
+  }
+
+  try {
+    const retorno = await sock.groupParticipantsUpdate(communityJid, [memberJid], 'promote');
+    const lista = Array.isArray(retorno) ? retorno : (Array.isArray(retorno?.value) ? retorno.value : [{ status: '200' }]);
+    const status = String(lista[0]?.status || '');
+    if (status === '200') {
+      res.ok = true;
+      res.admin = true;
+      return res;
+    }
+    res.error = 'O WhatsApp recusou a promoção (status ' + (status || 'desconhecido') + '). Confirma que o bot é admin da comunidade.';
+  } catch (e) {
+    res.error = 'Não consegui promover-te: ' + e.message;
+  }
   return res;
 }
 
@@ -400,19 +471,30 @@ async function createNamedGroup(sock, nome, ownerJid, communityJid, opts = {}) {
       ligado: true,
     });
   }
-  // Criar solto — depois liga-se. Também serve sem comunidade nenhuma.
-  tentativas.push({
-    nome: communityJid ? 'criar e ligar depois' : 'grupo normal',
-    run: async () => {
-      if (typeof sock.query === 'function') {
-        const j = await _criarGrupoCru(sock, nome, [ownerJid], null);
-        if (j) return j;
-      }
-      const g = await sock.groupCreate(nome, [ownerJid]);
-      return g?.id || g?.jid || null;
-    },
-    ligado: false,
-  });
+  // Criar solto só é aceitável se o socket também souber ligá-lo depois.
+  // Sem communityLinkGroup não criamos um órfão e fingimos que é subgrupo.
+  if (!communityJid || typeof sock.communityLinkGroup === 'function') {
+    tentativas.push({
+      nome: communityJid ? 'criar e ligar depois' : 'grupo normal',
+      run: async () => {
+        if (typeof sock.query === 'function') {
+          const j = await _criarGrupoCru(sock, nome, [ownerJid], null);
+          if (j) return j;
+        }
+        const g = await sock.groupCreate(nome, [ownerJid]);
+        return g?.id || g?.jid || null;
+      },
+      ligado: false,
+    });
+  }
+
+  if (!tentativas.length) {
+    return {
+      ok: false,
+      error: 'este Baileys não suporta criar grupos directamente numa comunidade nem ligá-los depois',
+      nome,
+    };
+  }
 
   for (const tent of tentativas) {
     try {
@@ -424,7 +506,7 @@ async function createNamedGroup(sock, nome, ownerJid, communityJid, opts = {}) {
       // Não nasceu dentro? Liga-o agora — é o "adicionar grupo à
       // comunidade" que o utilizador pediu como passo 1.
       if (communityJid && !ligado && typeof sock.communityLinkGroup === 'function') {
-        await new Promise(r => setTimeout(r, 1500));
+        await _esperar(1500, opts);
         try {
           await sock.communityLinkGroup(jid, communityJid);
           ligado = true;
@@ -487,7 +569,7 @@ async function linkExistingGroup(sock, nomeOuJid, communityJid) {
   }
 }
 
-async function createGroupInCommunity(sock, groupType, ownerJid, communityJid) {
+async function createGroupInCommunity(sock, groupType, ownerJid, communityJid, opts = {}) {
   const groupDef = COMMUNITY_GROUPS[groupType];
   if (!groupDef) return { ok: false, error: 'Tipo invalido: ' + groupType };
 
@@ -495,27 +577,22 @@ async function createGroupInCommunity(sock, groupType, ownerJid, communityJid) {
 
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      let groupJid = null;
-      let dentroDaComunidade = false;
+      console.log('[DARKRPG] Criando ' + groupDef.name + (communityJid ? ' (na comunidade)' : ''));
 
-      // Caminho rápido: 1 query, com o linked_parent embutido.
-      if (typeof sock.query === 'function') {
-        console.log('[DARKRPG] Criando ' + groupDef.name + (communityJid ? ' (na comunidade)' : ''));
-        groupJid = await _criarGrupoCru(sock, groupDef.name, [ownerJid], communityJid);
-        dentroDaComunidade = !!communityJid;
+      // Usa o mesmo fluxo robusto dos grupos AURA: cria com linked_parent,
+      // tenta a API de comunidade e, em último caso, cria e liga depois.
+      // Assim um groupCreate normal nunca é reportado indevidamente como
+      // subgrupo da comunidade.
+      const criado = await createNamedGroup(sock, groupDef.name, ownerJid, communityJid, opts);
+      if (!criado.ok || !criado.jid) {
+        throw new Error(criado.error || 'WhatsApp nao devolveu o ID do grupo');
+      }
+      if (communityJid && !criado.ligado) {
+        throw new Error(criado.avisoLink || 'o grupo foi criado, mas nao ficou ligado à comunidade');
       }
 
-      // Fallback: Baileys sem sock.query exposto.
-      if (!groupJid) {
-        const g = communityJid && typeof sock.communityCreateGroup === 'function'
-          ? await sock.communityCreateGroup(groupDef.name, [ownerJid], communityJid)
-          : await sock.groupCreate(groupDef.name, [ownerJid]);
-        groupJid = g?.id || g?.jid || null;
-        dentroDaComunidade = !!communityJid;
-      }
-
-      if (!groupJid) throw new Error('WhatsApp nao devolveu o ID do grupo');
-
+      const groupJid = criado.jid;
+      const dentroDaComunidade = !!criado.ligado;
       _groupCache.set(groupType, groupJid);
       await _persist();
       console.log('[DARKRPG] Grupo criado: ' + groupDef.name + ' → ' + groupJid);
@@ -531,7 +608,7 @@ async function createGroupInCommunity(sock, groupType, ownerJid, communityJid) {
         // rate-overlimit precisa de MUITO mais que 15s para acalmar.
         const wait = /rate-overlimit|429/i.test(lastErr) ? 60000 : 5000;
         console.log('[DARKRPG] A esperar ' + (wait / 1000) + 's...');
-        await new Promise(r => setTimeout(r, wait));
+        await _esperar(wait, opts);
       }
     }
   }
@@ -539,11 +616,11 @@ async function createGroupInCommunity(sock, groupType, ownerJid, communityJid) {
 }
 
 /** Descrição + promote, feitos DEPOIS de todos os grupos existirem. */
-async function _acabarGrupo(sock, groupType, groupJid, ownerJid) {
+async function _acabarGrupo(sock, groupType, groupJid, ownerJid, opts = {}) {
   const def = COMMUNITY_GROUPS[groupType];
   if (!def) return;
   try { await sock.groupUpdateDescription(groupJid, def.desc); } catch {}
-  await new Promise(r => setTimeout(r, 3000));
+  await _esperar(3000, opts);
   if (def.ownerAdm) {
     try { await sock.groupParticipantsUpdate(groupJid, [ownerJid], 'promote'); } catch {}
   }
@@ -836,10 +913,20 @@ async function initCommunity(sock, ownerJid, opts = {}) {
 
   const cJid = comm.ok ? comm.jid : null;
 
+  // A comunidade é criada pelo número do bot; o dono pode ser outro
+  // número. Garante o acesso dele logo neste fluxo e conserva o convite
+  // para o handler enviar por PV caso a privacidade impeça o add.
+  const acessoDono = comm.adopcao?.dono || await ensureOwnerInCommunity(sock, cJid, ownerJid, opts);
+  // A adopção usa o varrimento já feito; completa apenas o convite, sem
+  // repetir add/promote que ela acabou de executar.
+  if (!acessoDono.convite) acessoDono.convite = await getCommunityInvite(sock, cJid);
+  results[0].dono = acessoDono;
+  results[0].convite = acessoDono.convite || null;
+
   // A criação da comunidade já custou queries — deixa o WhatsApp
   // respirar antes de começar os grupos.
   if (comm.ok && !_communityJid_jaExistia(comm)) {
-    await new Promise(r => setTimeout(r, 10000));
+    await _esperar(10000, opts);
   }
 
   // 2. Cria grupos (1 query cada) — salta os que já existem.
@@ -851,7 +938,7 @@ async function initCommunity(sock, ownerJid, opts = {}) {
       results.push({ type, ok: true, name: def.name + ' (já existia)', jid: _groupCache.get(type) });
       continue;
     }
-    const r = await createGroupInCommunity(sock, type, ownerJid, cJid);
+    const r = await createGroupInCommunity(sock, type, ownerJid, cJid, opts);
     results.push({ type, ...r });
     if (r.ok) criados.push([type, r.jid]);
 
@@ -864,14 +951,14 @@ async function initCommunity(sock, ownerJid, opts = {}) {
       break;
     }
 
-    await new Promise(r => setTimeout(r, 15000));
+    await _esperar(15000, opts);
   }
 
   // 3. Descrição + promote só no fim, com os grupos já criados.
   // Se falhar aqui, o grupo existe na mesma — é só cosmética.
   for (const [type, jid] of criados) {
-    await _acabarGrupo(sock, type, jid, ownerJid);
-    await new Promise(r => setTimeout(r, 4000));
+    await _acabarGrupo(sock, type, jid, ownerJid, opts);
+    await _esperar(4000, opts);
   }
 
   await _persist();
@@ -1110,6 +1197,7 @@ module.exports = {
   scanCommunities,
   adoptCommunity,
   ensureOwnerInCommunity,
+  promoteCommunityMember,
   getCommunityInvite,
   createNamedGroup,
   linkExistingGroup,

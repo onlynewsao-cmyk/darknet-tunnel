@@ -41,7 +41,7 @@ const sockOK={communityCreate:async()=>({id:'comm1@g.us'}),communityCreateGroup:
  groupUpdateDescription:async()=>{},groupParticipantsUpdate:async()=>[{status:'200'}],communityLinkGroup:async()=>{},groupCreate:async()=>({id:'gx@g.us'}),
  groupFetchAllParticipating:async()=>({}),
  query:async(node)=>({tag:'iq',attrs:{},content:[{tag:'group',attrs:{id:'g'+(++n)},content:[]}]})};
-const r=await C.initCommunity(sockOK,OWNER,{criarSeNaoExistir:true,rescan:true});
+const r=await C.initCommunity(sockOK,OWNER,{criarSeNaoExistir:true,rescan:true,delayMs:0});
 t('Comunidade + 6 grupos criados', r.filter(x=>x.ok).length===7, r.filter(x=>x.ok).length+'/7');
 t('Estado gravado no MongoDB', !!STORE['darkrpg_community_v1'], JSON.stringify(STORE['darkrpg_community_v1']||{}).slice(0,60));
 t('Arsenal ficou no cache', !!C._groupCache.get('arsenal'), C._groupCache.get('arsenal'));
@@ -61,19 +61,19 @@ const R=await C2.addAllUsersToMainGroup(sockAdd,OWNER);
 t('Encontra grupo principal (antes falhava sempre)', !!R.group, R.group);
 t('Adiciona os 2 utilizadores', R.added.length===2, 'added='+R.added.length+' inv='+R.invited.length+' err='+R.errors.length);
 
-console.log('\n▸ D. WhatsApp recusa o add (status 403) → manda convite?');
+console.log('\n▸ D. WhatsApp recusa o add (status 403) → regista para convite manual');
 const invs=[];
 const sock403={groupParticipantsUpdate:async()=>[{status:'403'}],sendMessage:async(j,c)=>{invs.push(j);}};
 const R2=await C2.addAllUsersToMainGroup(sock403,OWNER);
 t('Não mente a dizer "adicionado"', R2.added.length===0, 'added='+R2.added.length);
-t('Cai para convite por PV', R2.invited.length===2, 'invited='+R2.invited.length);
+t('Regista privacidade para convite manual', R2.naoEntraram.length===2 && R2.naoEntraram.every(x=>/privacidade/.test(x.motivo)), 'fora='+R2.naoEntraram.length+' inv='+R2.invited.length);
 
 console.log('\n▸ E. Erros reais chegam ao dono?');
 const sockErr={communityCreate:async()=>{throw new Error('rate-overlimit')},communityFetchAllParticipating:async()=>({})};
 const e1=await C.createWhatsAppCommunity(sockErr,OWNER);
 t('Reporta o motivo real', !e1.ok && /rate-overlimit/.test(e1.error), e1.error);
 const sockNull={communityCreateGroup:async()=>null,groupUpdateDescription:async()=>{},groupParticipantsUpdate:async()=>[]};
-const e2=await C.createGroupInCommunity(sockNull,'arena',OWNER,'comm1@g.us');
+const e2=await C.createGroupInCommunity(sockNull,'arena',OWNER,'comm1@g.us',{delayMs:0});
 t('Grupo null não rebenta e diz porquê', !e2.ok && /ID do grupo/.test(e2.error), e2.error);
 
 console.log('\n▸ F. Baileys sem suporte a comunidades');

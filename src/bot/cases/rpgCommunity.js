@@ -126,6 +126,35 @@ module.exports = function registerRPGCommunity(registerCase) {
         report += '\n';
       }
 
+      // O convite é enviado por PV para o dono poder entrar na comunidade
+      // mesmo quando o WhatsApp bloqueia o add automático por privacidade.
+      const donoComunidade = commRes?.dono;
+      const conviteComunidade = commRes?.convite || donoComunidade?.convite || null;
+      let conviteEnviado = false;
+      if (conviteComunidade) {
+        try {
+          await sock.sendMessage(ctx.senderJid, {
+            text: '🕸️ *CONVITE — DARK VILLE*\n\nEntra na comunidade por este link:\n' +
+              conviteComunidade +
+              '\n\nDepois de entrares, envia *!meadm* para eu confirmar a tua promoção a admin.',
+          });
+          conviteEnviado = true;
+        } catch {}
+
+        report += '🔗 *Convite da comunidade:*\n' + conviteComunidade + '\n';
+        report += conviteEnviado
+          ? '📩 Também enviei o convite no teu PV.\n'
+          : '📩 Guarda este link e entra na comunidade pela app.\n';
+      } else if (commRes?.ok) {
+        report += '⚠️ Não consegui gerar o convite automaticamente. Usa *!meadm* depois de entrares na comunidade.\n';
+      }
+
+      if (donoComunidade) {
+        report += donoComunidade.dentro
+          ? (donoComunidade.admin ? '👑 Já estás como admin da comunidade.\n\n' : '👤 Estás na comunidade; usa *!meadm* se ainda não fores admin.\n\n')
+          : '👤 Entra pelo convite e depois usa *!meadm*.\n\n';
+      }
+
       if (limitado) {
         // v6.64: em vez de só dizer "rate-overlimit", explica o que fazer.
         report += '⚠️ *O WhatsApp limitou a conta (rate-overlimit).*\n\n';
@@ -158,6 +187,39 @@ module.exports = function registerRPGCommunity(registerCase) {
       await sock.sendMessage(ctx.remoteJid, { react: { text: '✅', key: msg.key } });
     } catch (e) {
       await sock.sendMessage(ctx.remoteJid, { react: { text: '❌', key: msg.key } });
+      return tReply(sock, msg, ctx, '❌ Erro', [e.message]);
+    }
+  }, true);
+
+  // ═══ !MEADM — DONO ENTROU PELO CONVITE, PROMOVER NA COMUNIDADE ═══
+  registerCase(['meadm', 'meadmin'], async ({ sock, msg, ctx, isOwner }) => {
+    if (!isOwner) return tReply(sock, msg, ctx, '🚫 Acesso', ['Só o dono da DARK VILLE pode pedir esta promoção.']);
+
+    try {
+      const comm = await community.discoverCommunityForGroup(sock, ctx.remoteJid);
+      if (!comm?.jid) {
+        return tReply(sock, msg, ctx, '🏰 Comunidade', [
+          comm?.erro || 'Ainda não encontrei a comunidade DARK RPG.',
+          'Primeiro usa *!darkrpg criar* (ou *!darkrpg* para adoptar uma existente).',
+        ]);
+      }
+
+      const r = await community.promoteCommunityMember(sock, comm.jid, ctx.senderJid);
+      if (r.ok) {
+        return tReply(sock, msg, ctx, '👑 ADMIN DARK VILLE', [
+          r.jaEraAdmin
+            ? 'Já eras admin da comunidade. Está tudo pronto.'
+            : 'Promoção concluída: agora és admin da comunidade DARK VILLE.',
+          'Os grupos DARK RPG continuam ligados e prontos a usar.',
+        ]);
+      }
+
+      const linhas = [r.error || 'Não consegui promover-te agora.'];
+      if (r.convite) {
+        linhas.push('', '🔗 Entra primeiro por este convite:', r.convite, '', 'Depois envia *!meadm* novamente.');
+      }
+      return tReply(sock, msg, ctx, '⚠️ ADMIN DARK VILLE', linhas);
+    } catch (e) {
       return tReply(sock, msg, ctx, '❌ Erro', [e.message]);
     }
   }, true);
