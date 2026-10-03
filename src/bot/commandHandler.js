@@ -469,7 +469,7 @@ async function _handleInner(sock, msg) {
   }
 
   // ── v9.23: RPG COMBAT — botões de combate (RPGFIGHT_) ─────────────
-  if (/^RPGFIGHT_[a-z0-9]+$/i.test(text.split(/\s+/)[0] || '')) {
+  if (/^RPGFIGHT_[a-z0-9_]+$/i.test(text.split(/\s+/)[0] || '')) {
     try {
       const combat = require('./rpg/combat');
       if (await combat.resolverBotao(sock, msg, ctx, text.split(/\s+/)[0])) return true;
