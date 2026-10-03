@@ -52,7 +52,7 @@ const realRandom = Math.random;
   const [statusInicial, narrativaInicial] = mensagens.slice(antes);
   assert(/ROUND 1/.test(statusInicial.text), 'a primeira mensagem é o status da batalha');
   assert(/Algo neste combate|Marcas antigas|terreno estremece/i.test(narrativaInicial.text), 'a segunda mensagem traz a introdução narrativa');
-  assert(renders.at(-1).botoes.some(b => b.id === 'RPGFIGHT_basic'), 'a terceira sessão contém acções normais');
+  assert(renders.at(-1).botoes.some(b => b.id === 'RPGFIGHT_T1_basic'), 'a terceira sessão contém acções normais com turno protegido');
   assert(/AÇÕES DE COMBATE/.test(renders.at(-1).corpo), 'a sessão de controlos não mistura status ou narrativa');
   assert(!/ROUND|Marcas antigas|terreno estremece/i.test(renders.at(-1).corpo), 'os controlos ficam limpos');
 
@@ -76,7 +76,19 @@ const realRandom = Math.random;
   assert.strictEqual(await combat.resolverBotao(sock, msg, ctx, token), true, 'o clique de evento deve ser resolvido');
   assert.strictEqual(c.momentoPendente, null, 'a decisão deve encerrar o momento pendente');
   assert(c.tactical, 'a decisão deve criar uma vantagem ou desvantagem tática temporária');
-  assert(renders.at(-1).botoes.some(b => b.id === 'RPGFIGHT_basic'), 'após decidir, o combate volta às acções normais');
+  assert(renders.at(-1).botoes.some(b => b.id === 'RPGFIGHT_T2_basic'), 'após decidir, o combate volta às acções normais do turno actual');
+  assert(/ATK|DEF|ESQ/.test(mensagens.at(-2).text), 'o status explica o efeito tático activo');
+
+  const hpAntesPainelAntigo = c.enemy.hp;
+  assert.strictEqual(await combat.resolverBotao(sock, msg, ctx, 'RPGFIGHT_T1_basic'), true, 'um painel antigo é reconhecido');
+  assert.strictEqual(c.enemy.hp, hpAntesPainelAntigo, 'painel de turno antigo não executa uma nova acção');
+  assert(/turno antigo/.test(mensagens.at(-1).text), 'painel antigo recebe explicação clara');
+
+  const botaoSkill = renders.at(-1).botoes.find(b => /_skill$/.test(b.id));
+  assert(botaoSkill && /MP/.test(botaoSkill.text), 'o botão da skill mostra o custo de MP');
+  await combat.resolverBotao(sock, msg, ctx, botaoSkill.id);
+  assert.strictEqual(c.cooldowns.skill.turns, 1, 'a skill entra numa recarga curta depois de usada');
+  assert(renders.at(-1).botoes.some(b => /_skill$/.test(b.id) && /⌛/.test(b.text)), 'o botão informa quando a skill está em recarga');
 
   // Armadilha explícita: a opção de atravessar tem custo de HP e benefício de ataque.
   c.momentoPendente = combat.MOMENTOS_BATALHA.find(m => m.id === 'runa_explosiva');

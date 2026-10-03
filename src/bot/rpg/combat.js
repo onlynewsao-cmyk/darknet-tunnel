@@ -208,6 +208,69 @@ function _expirarEfeitoTatico(c) {
   }
 }
 
+// Skills não podem ser repetidas no clique seguinte. A recarga é curta para
+// manter o combate rápido, mas força alternância entre ataque, defesa e MP.
+function _recargaRestante(c, chave) {
+  const valor = c.cooldowns?.[chave];
+  return Math.max(0, Number(typeof valor === 'object' ? valor.turns : valor) || 0);
+}
+
+function _iniciarRecarga(c, chave, skill) {
+  if (!c.cooldowns) c.cooldowns = {};
+  const base = Number(skill?.cooldown || (Number(skill?.cost || 0) >= 35 ? 2 : 1));
+  const turnos = Math.min(3, Math.max(1, base));
+  // +1 porque a contagem avança no fim do turno que lançou a técnica.
+  c.cooldowns[chave] = { turns: turnos + 1, nome: skill?.name || 'Skill' };
+}
+
+function _avancarRecargas(c) {
+  if (!c.cooldowns) return;
+  for (const [chave, valor] of Object.entries(c.cooldowns)) {
+    const dados = typeof valor === 'object' ? valor : { turns: Number(valor) || 0, nome: chave };
+    dados.turns--;
+    if (dados.turns <= 0) {
+      delete c.cooldowns[chave];
+      c.log.push(`✨ *${dados.nome}* está pronta novamente.`);
+    } else c.cooldowns[chave] = dados;
+  }
+}
+
+function _expirarBuffsDeSkill(c) {
+  if (!c.buffs?.atkBuffTurns) return;
+  c.buffs.atkBuffTurns--;
+  if (c.buffs.atkBuffTurns <= 0) {
+    c.buffs.atkBuff = 0;
+    delete c.buffs.atkBuffTurns;
+    c.log.push('⌛ O reforço de ataque da tua skill desapareceu.');
+  }
+}
+
+function _resumoEfeitoTatico(tatico) {
+  if (!tatico) return '';
+  const efeitos = [];
+  const pct = (n) => Math.round((n - 1) * 100);
+  if (tatico.atkMult && tatico.atkMult !== 1) efeitos.push(`ATK ${pct(tatico.atkMult) >= 0 ? '+' : ''}${pct(tatico.atkMult)}%`);
+  if (tatico.defMult && tatico.defMult !== 1) efeitos.push(`DEF ${pct(tatico.defMult) >= 0 ? '+' : ''}${pct(tatico.defMult)}%`);
+  if (tatico.dodgeBonus) efeitos.push(`ESQ +${Math.round(tatico.dodgeBonus * 100)}%`);
+  if (tatico.enemyDefMult && tatico.enemyDefMult !== 1) efeitos.push(`DEF inimigo ${pct(tatico.enemyDefMult)}%`);
+  return efeitos.length ? `${tatico.emoji} ${efeitos.join(' · ')}` : '';
+}
+
+function _avisoRisco(c) {
+  const referencia = Math.max(1, c.enemy.atk || 1);
+  const proporcao = c.playerHp / referencia;
+  if (proporcao <= 2) return '☠️ *PERIGO CRÍTICO* — defender ou usar poção pode salvar-te.';
+  if (proporcao <= 4) return '⚠️ *Perigo alto* — o próximo golpe pode decidir a luta.';
+  return '🟢 *Risco controlado* — mantém a pressão.';
+}
+
+function _rotuloSkill(c, chave, skill, fallback = 'Skill') {
+  if (!skill) return `✨ ${fallback}`;
+  const cd = _recargaRestante(c, chave);
+  const nome = `${skill.emoji || '✨'} ${skill.name || fallback}`.slice(0, 21);
+  return cd ? `⌛ ${nome} · ${cd}T` : `${nome} · ${skill.cost || 0}MP`;
+}
+
 setInterval(() => {
   const now = Date.now();
   for (const [k, v] of _combates) if (now > v.expira) _combates.delete(k);
@@ -244,6 +307,8 @@ async function iniciarCombateBoss(sock, msg, ctx, boss = {}, onVictory = null) {
     log: [_narrativaEntrada(enemy, p)],
     defending: false,
     buffs: {},
+    cooldowns: {},
+    processando: false,
     momentoPendente: null,
     eventosVistos: [],
     eventosResolvidos: 0,
@@ -278,6 +343,8 @@ async function iniciarCombate(sock, msg, ctx, tipo = 'normal') {
     log: [_narrativaEntrada(enemy, p)],
     defending: false,
     buffs: {},
+    cooldowns: {},
+    processando: false,
     momentoPendente: null,
     eventosVistos: [],
     eventosResolvidos: 0,
@@ -302,7 +369,8 @@ async function _mostrarEstado(sock, msg, ctx, p) {
     return '█'.repeat(filled) + '░'.repeat(len - filled);
   };
   const skillsDisponiveis = (rpg.SKILLS?.[p.class] || []).slice(0, 4);
-  const skillNames = skillsDisponiveis.map(s => s.name).slice(0, 3);
+  const skillPrimaria = skillsDisponiveis[0];
+  const skillSecundaria = skillsDisponiveis[1];
   const temPocao = p.inventory?.includes('poção de vida');
   const strat = rpg.getStrategy ? rpg.getStrategy(p.strategy) : null;
   const momento = c.momentoPendente;
@@ -323,6 +391,11 @@ async function _mostrarEstado(sock, msg, ctx, p) {
     `❤️ ${hpBar(c.playerHp, c.maxHp)} ${c.playerHp}/${c.maxHp}`,
     `💙 ${c.playerMp}/${c.maxMp} MP`,
     c.tactical ? `${c.tactical.emoji} *Vantagem: ${c.tactical.nome}* · ${c.tactical.turns} turno(s)` : '',
+    _resumoEfeitoTatico(c.tactical),
+    _recargaRestante(c, 'skill') ? `⌛ ${skillPrimaria?.name || 'Skill'}: ${_recargaRestante(c, 'skill')} turno(s)` : '',
+    _recargaRestante(c, 'skill2') ? `⌛ ${skillSecundaria?.name || 'Skill extra'}: ${_recargaRestante(c, 'skill2')} turno(s)` : '',
+    '',
+    _avisoRisco(c),
   ].filter(Boolean).join('\n');
 
   const narrativa = [
@@ -333,26 +406,27 @@ async function _mostrarEstado(sock, msg, ctx, p) {
     momento ? '> A tua decisão muda o rumo desta batalha.' : '',
   ].filter(Boolean).join('\n');
 
+  const turnoId = `T${c.round}_`;
   let botoes;
   if (momento) {
     botoes = momento.escolhas.map((texto, index) => ({
-      id: 'RPGFIGHT_EVENT_' + momento.id + '_' + (index + 1),
+      id: 'RPGFIGHT_EVENT_' + turnoId + momento.id + '_' + (index + 1),
       text: texto.slice(0, 32),
     }));
   } else {
     botoes = [
-      { id: 'RPGFIGHT_basic', text: '⚔️ Atacar' },
-      { id: 'RPGFIGHT_skill', text: `✨ Skill${skillNames.length ? ' (' + skillNames[0] + ')' : ''}` },
+      { id: 'RPGFIGHT_' + turnoId + 'basic', text: '⚔️ Atacar' },
+      { id: 'RPGFIGHT_' + turnoId + 'skill', text: _rotuloSkill(c, 'skill', skillPrimaria) },
     ];
-    if (temPocao) botoes.push({ id: 'RPGFIGHT_item', text: '🧪 Poção' });
-    botoes.push({ id: 'RPGFIGHT_defend', text: '🛡️ Defender' });
-    botoes.push({ id: 'RPGFIGHT_flee', text: '🏃 Fugir' });
-    if (skillsDisponiveis.length > 1) botoes.push({ id: 'RPGFIGHT_skill2', text: `✨ ${skillsDisponiveis[1].name}` });
+    if (temPocao) botoes.push({ id: 'RPGFIGHT_' + turnoId + 'item', text: '🧪 Poção (+HP)' });
+    botoes.push({ id: 'RPGFIGHT_' + turnoId + 'defend', text: '🛡️ Defender (-50%)' });
+    botoes.push({ id: 'RPGFIGHT_' + turnoId + 'flee', text: '🏃 Fugir' });
+    if (skillSecundaria) botoes.push({ id: 'RPGFIGHT_' + turnoId + 'skill2', text: _rotuloSkill(c, 'skill2', skillSecundaria, 'Skill extra') });
   }
 
   const controlos = momento
     ? '🎭 *DECISÃO TÁTICA*\n> Escolhe uma opção nos botões abaixo.'
-    : '🎮 *AÇÕES DE COMBATE*\n> Escolhe a tua ação nos botões abaixo.';
+    : '🎮 *AÇÕES DE COMBATE*\n> Escolhe a tua ação nos botões abaixo. Skills usam MP e têm recarga.';
 
   // Não juntar estas sessões: a ordem torna o combate legível no WhatsApp.
   await sock.sendMessage(ctx.remoteJid, { text: status }, { quoted: msg }).catch(() => {});
@@ -397,7 +471,24 @@ async function _enviarBotoes(sock, msg, ctx, corpo, botoes) {
 // PROCESSAR ESCOLHA DO JOGADOR
 // ══════════════════════════════════════════════════════════════
 
+// Impede clique duplo de resolver dois turnos em paralelo enquanto o primeiro
+// ainda está a guardar o jogador ou a enviar as três sessões.
 async function processarEscolha(sock, msg, ctx, acao) {
+  const c = _combates.get(ctx.senderNumber);
+  if (!c) return _processarEscolha(sock, msg, ctx, acao);
+  if (c.processando) {
+    await sock.sendMessage(ctx.remoteJid, { text: '⏳ A ação anterior ainda está a ser resolvida.' }, { quoted: msg }).catch(() => {});
+    return true;
+  }
+  c.processando = true;
+  try {
+    return await _processarEscolha(sock, msg, ctx, acao);
+  } finally {
+    if (_combates.get(ctx.senderNumber) === c) c.processando = false;
+  }
+}
+
+async function _processarEscolha(sock, msg, ctx, acao) {
   const c = _combates.get(ctx.senderNumber);
   if (!c) {
     await sock.sendMessage(ctx.remoteJid, { text: '⏳ Não tens combate em curso. Usa *!lutar*' }, { quoted: msg }).catch(() => {});
@@ -425,18 +516,24 @@ async function processarEscolha(sock, msg, ctx, acao) {
     }
     case 'skill': {
       const skill = skillsClasse[0];
+      const recarga = _recargaRestante(c, 'skill');
       if (!skill || c.playerMp < (skill.cost || 10)) {
         msgJogador = skill ? `💙 Sem MP para ${skill.name}! Atacas normalmente.` : '❌ Sem skills! Ataca normalmente.';
         danoJogador = calcDamage(stats, enemy).dano;
+      } else if (recarga) {
+        danoJogador = calcDamage(stats, enemy).dano;
+        msgJogador = `⌛ *${skill.name}* recarrega por mais ${recarga} turno(s). Atacas → ${danoJogador} dmg.`;
       } else {
         custoMp = skill.cost || 10;
+        _iniciarRecarga(c, 'skill', skill);
         if (skill.type === 'atk') {
           const r = calcDamage({ ...stats, totalAtk: stats.totalAtk + (skill.power || 0) * 0.3 }, enemy);
           danoJogador = r.dano;
           msgJogador = r.critico ? `💥 ${skill.emoji} *${skill.name}* CRÍTICO → ${danoJogador} dmg!` : `${skill.emoji} *${skill.name}* → ${danoJogador} dmg! (-${custoMp} MP)`;
         } else if (skill.type === 'buff') {
           c.buffs.atkBuff = (c.buffs.atkBuff || 0) + (skill.power || 30);
-          msgJogador = `${skill.emoji} *${skill.name}* activo! +${skill.power || 30}% ATK (-${custoMp} MP)`;
+          c.buffs.atkBuffTurns = Math.max(c.buffs.atkBuffTurns || 0, 3);
+          msgJogador = `${skill.emoji} *${skill.name}* activo! +${skill.power || 30}% ATK por 2 turnos (-${custoMp} MP)`;
         } else if (skill.type === 'def') {
           c.defending = true;
           c.buffs.defBuff = (c.buffs.defBuff || 0) + 50;
@@ -450,12 +547,16 @@ async function processarEscolha(sock, msg, ctx, acao) {
     }
     case 'skill2': {
       const skill = skillsClasse[1];
+      const recarga = _recargaRestante(c, 'skill2');
       if (!skill || c.playerMp < (skill.cost || 15)) {
-        msgJogador = skill ? `💙 Sem MP para ${skill.name}!` : '❌ Sem skill extra!';
+        msgJogador = skill ? `💙 Sem MP para ${skill.name}! Atacas normalmente.` : '❌ Sem skill extra! Atacas normalmente.';
         danoJogador = calcDamage(stats, enemy).dano;
-        if (!skill) msgJogador += ` Atacas → ${danoJogador} dmg`;
+      } else if (recarga) {
+        danoJogador = calcDamage(stats, enemy).dano;
+        msgJogador = `⌛ *${skill.name}* recarrega por mais ${recarga} turno(s). Atacas → ${danoJogador} dmg.`;
       } else {
         custoMp = skill.cost || 15;
+        _iniciarRecarga(c, 'skill2', skill);
         const mult = skill.type === 'atk' ? 0.3 : 0.4;
         danoJogador = calcDamage({ ...stats, totalAtk: stats.totalAtk + (skill.power || 0) * mult }, enemy).dano;
         msgJogador = `${skill.emoji} *${skill.name}* → ${danoJogador} dmg! (-${custoMp} MP)`;
@@ -514,7 +615,9 @@ async function processarEscolha(sock, msg, ctx, acao) {
   c.round++;
   c.defending = false;
   c.buffs.defBuff = 0;
+  _expirarBuffsDeSkill(c);
   _expirarEfeitoTatico(c);
+  _avancarRecargas(c);
   if (c.playerHp <= 0) return _derrota(sock, msg, ctx, p, c);
   _talvezMomento(c);
   p.hp = c.playerHp;
@@ -524,6 +627,21 @@ async function processarEscolha(sock, msg, ctx, acao) {
 }
 
 async function processarMomento(sock, msg, ctx, momentId, choiceNumber) {
+  const c = _combates.get(ctx.senderNumber);
+  if (!c) return false;
+  if (c.processando) {
+    await sock.sendMessage(ctx.remoteJid, { text: '⏳ A decisão anterior ainda está a ser resolvida.' }, { quoted: msg }).catch(() => {});
+    return true;
+  }
+  c.processando = true;
+  try {
+    return await _processarMomento(sock, msg, ctx, momentId, choiceNumber);
+  } finally {
+    if (_combates.get(ctx.senderNumber) === c) c.processando = false;
+  }
+}
+
+async function _processarMomento(sock, msg, ctx, momentId, choiceNumber) {
   const c = _combates.get(ctx.senderNumber);
   if (!c) return false;
   const p = await rpg.getPlayer(ctx.senderNumber);
@@ -656,9 +774,31 @@ async function _derrota(sock, msg, ctx, p, c) {
 // RESOLVER CLIQUE DE BOTÃO
 // ══════════════════════════════════════════════════════════════
 
+async function _painelExpirado(sock, msg, ctx) {
+  await sock.sendMessage(ctx.remoteJid, {
+    text: '⌛ Este painel é de um turno antigo. Usa os botões do estado mais recente da batalha.',
+  }, { quoted: msg }).catch(() => {});
+  return true;
+}
+
 async function resolverBotao(sock, msg, ctx, token) {
   const tk = String(token || '');
-  let m = tk.match(/^RPGFIGHT_EVENT_([a-z0-9_]+)_(\d+)$/i);
+  const combate = _combates.get(ctx.senderNumber);
+  let m = tk.match(/^RPGFIGHT_EVENT_T(\d+)_([a-z0-9_]+)_(\d+)$/i);
+  if (m) {
+    if (!combate || combate.round !== Number(m[1])) return _painelExpirado(sock, msg, ctx);
+    return processarMomento(sock, msg, ctx, m[2].toLowerCase(), Number(m[3]));
+  }
+
+  m = tk.match(/^RPGFIGHT_T(\d+)_(basic|skill|skill2|item|defend|flee)$/i);
+  if (m) {
+    if (!combate || combate.round !== Number(m[1])) return _painelExpirado(sock, msg, ctx);
+    await processarEscolha(sock, msg, ctx, m[2].toLowerCase());
+    return true;
+  }
+
+  // Compatibilidade com painéis enviados antes da protecção por turno.
+  m = tk.match(/^RPGFIGHT_EVENT_([a-z0-9_]+)_(\d+)$/i);
   if (m) return processarMomento(sock, msg, ctx, m[1].toLowerCase(), Number(m[2]));
   m = tk.match(/^RPGFIGHT_(.+)$/i);
   if (!m) return false;
