@@ -132,6 +132,9 @@ const txt1 = r => (r.respostas && r.respostas[0] && (r.respostas[0].text || (r.r
   console.log('\n▸ 2. Privado');
   const rPv = await correr(msgTexto('oi aura tudo bem?'));
   t('PV do Dono responde', falou(rPv), txt1(rPv));
+  const auraHuman = require(path.join(__dirname, '..', 'src', 'aura', 'auraHuman'));
+  const sherlock = auraHuman.generateDynamicResponse('Você conhece Sherlock Holmes?', 'owner', 'normal', 'Dark', true);
+  t('Pergunta factual offline responde de verdade', /detetive|arthur conan doyle/i.test(sherlock), sherlock);
   const rLid = await correr(msgTexto('tudo bem?', { lid: true }));
   t('PV por LID responde (WhatsApp moderno)', falou(rLid), txt1(rLid));
 
@@ -139,6 +142,8 @@ const txt1 = r => (r.respostas && r.respostas[0] && (r.respostas[0].text || (r.r
   console.log('\n▸ 3. Grupos (modo assistente — 42 dos 44 grupos reais)');
   const rG = await correr(msgTexto('aura tudo bem?', { grupo: '120363406930879349@g.us' }));
   t('Chamar "aura ..." funciona em modo assistente', falou(rG), txt1(rG));
+  const rMarca = await correr(msgTexto('Marca eles aí', { grupo: '120363406930879349@g.us' }));
+  t('"Marca eles aí" executa tagall, não conversa vazia', falou(rMarca) && /@244945280380/.test(txt1(rMarca)), txt1(rMarca));
   const rQuieta = await correr(msgTexto('bom dia malta', { grupo: '120363406930879349@g.us' }));
   t('Não se mete onde não é chamada', !falou(rQuieta), txt1(rQuieta) || '(calada)');
 

@@ -926,6 +926,30 @@ async function auraRespondSmart(text, ctx = {}) {
   return response;
 }
 
+// Respostas factuais mínimas para quando o provider de IA está indisponível.
+// Ela não deve fingir que sabe tudo, mas também não pode responder “vou ver”
+// a uma pergunta simples que já conhece offline.
+function respostaConhecimentoOffline(texto, isOwner = false) {
+  const bruto = String(texto || '').trim();
+  const t = bruto.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const chamaDono = isOwner ? 'Dark, ' : '';
+
+  if (/\bsherlock(?:\s+holmes)?\b/.test(t)) {
+    return `${chamaDono}conheço sim — Sherlock Holmes é o detetive fictício criado por Arthur Conan Doyle, famoso por resolver casos pela dedução em Londres. Estás a falar dos livros, das séries ou dos filmes?`;
+  }
+
+  // Para nomes que não existem no saber local, é melhor reconhecer o limite
+  // e oferecer pesquisa do que devolver uma confirmação vazia ou inventar.
+  const m = bruto.match(/^(?:você|voce|vc|tu)?\s*(?:conhece|sabe\s+quem\s+[ée])\s+(.+?)\??\s*$/i);
+  if (m) {
+    const nome = m[1].replace(/^(?:o|a|os|as)\s+/i, '').trim();
+    if (nome.length >= 2 && nome.length <= 80) {
+      return `${chamaDono}não conheço ${nome} bem o suficiente para inventar. Se quiseres, pede-me para pesquisar e eu verifico direitinho.`;
+    }
+  }
+  return null;
+}
+
 // Gerar resposta dinâmica — v9.22: muito mais inteligente e variada
 function generateDynamicResponse(text, userRole, mood, userName, isOwner) {
   const t = text.toLowerCase().trim();
@@ -1208,6 +1232,11 @@ function generateDynamicResponse(text, userRole, mood, userName, isOwner) {
       'Ciúmes? De quem? Tu só tens olhos pra mim 😏🖤',
     ] : [ 'Hmm... 🤔', 'Ciúmes? 😅' ]);
   }
+
+  // PERGUNTAS FACTUAIS CONHECIDAS OFFLINE — evita respostas ocas quando
+  // uma chave de IA está ausente ou o provider caiu.
+  const conhecimentoOffline = respostaConhecimentoOffline(text, isOwner);
+  if (conhecimentoOffline) return conhecimentoOffline;
 
   // PERGUNTA GENÉRICA
   if (t.includes('?')) {

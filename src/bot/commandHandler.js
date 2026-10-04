@@ -1630,13 +1630,16 @@ _Desculpa meu Dark, ainda não sei cantar de verdade... Mas um dia aprendo! 🌹
           };
         }
       }
-      else if (/^(marca todos|tag all|chama todos|marca todo mundo|atenção todos)/i.test(auraClean)) {
+      // "Marca eles aí" é uma ordem natural para mencionar quem está neste
+      // grupo. Como o bloco só roda para Dono/ADM, é seguro tratá-la como
+      // tagall — antes ela caía na conversa genérica “Hmm, entendi”.
+      else if (/^(marca todos|tag all|chama todos|marca todo mundo|atenção todos|(?:marca|marcar|menciona|mencionar|chama|chamar)\s+(?:eles(?:\s+a[ií])?|elas(?:\s+a[ií])?|a[ií]|o pessoal|a galera|geral))(?:\s|$)/i.test(auraClean)) {
         auraAction = async () => {
           const meta = ctx.groupMeta || await sock.groupMetadata(ctx.remoteJid);
           const bNum = String(sock.user?.id || '').split(':')[0].split('@')[0];
           const parts = meta.participants.filter(p => p.id.split('@')[0] !== bNum);
           const mentions = parts.map(p => p.id);
-          const txtMsg = auraClean.replace(/^(marca todos|tag all|chama todos|marca todo mundo|atenção todos)\s*/i, '').trim() || '📢 Atenção!';
+          const txtMsg = auraClean.replace(/^(marca todos|tag all|chama todos|marca todo mundo|atenção todos|(?:marca|marcar|menciona|mencionar|chama|chamar)\s+(?:eles(?:\s+a[ií])?|elas(?:\s+a[ií])?|a[ií]|o pessoal|a galera|geral))\s*/i, '').trim() || '📢 Atenção!';
           await sock.sendMessage(ctx.remoteJid, { text: txtMsg + '\n\n' + mentions.map(j => '@' + j.split('@')[0]).join(' '), mentions }, { quoted: msg });
         };
       }

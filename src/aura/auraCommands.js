@@ -130,6 +130,9 @@ const MAPA = [
   [/\b(fecha|fechar|tranca|trancar|silencia)\b[^.?!]{0,15}\b(o grupo|grupo|aqui|chat)\b/i, 'fechar', 'nenhum'],
   [/\b(abre|abrir|destranca|destrancar|liberta)\b[^.?!]{0,15}\b(o grupo|grupo|aqui|chat)\b/i, 'abrir', 'nenhum'],
   [/\b(marca|marcar|chama|menciona|mencionar)\b[^.?!]{0,15}\b(todos|toda a gente|geral|pessoal)\b/i, 'tagall', 'nenhum'],
+  // Forma natural usada no grupo: “marca eles aí”. Só chega a executar
+  // depois da permissão de admin/dono em podeExecutar().
+  [/\b(marca|marcar|chama|chamar|menciona|mencionar)\b\s+(eles|elas|a[ií]|o pessoal|a galera)\b/i, 'tagall', 'nenhum'],
   // v6.87: "todos" sozinho era catastrófico — "somos todos irmãos"
   // punha o bot a marcar o grupo inteiro. Ficam só as formas
   // inequívocas; a ordem a sério ("marca todos") já está no padrão
