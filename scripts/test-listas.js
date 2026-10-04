@@ -32,12 +32,10 @@ Module.prototype.require = function (id) {
   if (s.endsWith('mediaHandler')) return { fetchBuffer: async () => Buffer.alloc(5000, 3), fetchJson: async () => ({}), downloadFromMessage: async () => Buffer.alloc(600, 3) };
   if (s.endsWith('stickerPack')) return { sendFinishedPack: async () => { got.finished = true; return { stickers: [Buffer.alloc(100)], description: 'desc' }; } };
   if (s.endsWith('dl/others')) return {
-    spotify: async (u) => { got.sp = u; return { title: 'S', url: 'https://audio/x.mp3', author: 'A' }; },
     soundcloud: async (u) => { got.sc = u; return { title: 'C', url: 'https://audio/y.mp3', author: 'B' }; },
     tiktokSearch: async () => [{ title: 'TT1', author: 'u1', url: 'https://tt/1.mp4' }, { title: 'TT2', author: 'u2', url: 'https://tt/2.mp4' }, { title: 'TT3', author: 'u3', url: 'https://tt/3.mp4' }],
   };
   if (s.endsWith('dl/helpers')) return {
-    systemZoneSpotifySearch: async () => [{ title: 'Song A', artist: 'Art A', url: 'https://open.spotify.com/track/AAA' }, { title: 'Song B', artist: 'Art B', url: 'https://open.spotify.com/track/BBB' }],
     systemZoneSoundCloudSearch: async () => [{ title: 'SC A', author: 'Au A', sc_url: 'https://soundcloud.com/a' }],
   };
   if (/(^|\/)erome$/.test(s)) return {
@@ -166,10 +164,10 @@ const MSG = { key: { id: 'm1', remoteJid: 'G@g.us' } };
   // spotify
   store = []; sock = sockMock(store);
   const cSp = CTX('SP');
-  await cmds['spotify']({ sock, msg: MSG, ctx: cSp, args: ['drake'], prefix: '!', reply: async (t) => t });
-  check('spotify mostra lista', (store.find(c => c.text)?.text || '').includes('Song B'));
-  await lista.tentarNumero(sock, MSG, cSp, '1');
-  check('spotify escolhe → baixa url', got.sp === 'https://open.spotify.com/track/AAA', got.sp);
+  await cmds['spotify']({ sock, msg: MSG, ctx: cSp, args: ['drake'], prefix: '!', command: 'spotify', reply: async (t) => t });
+  const spotifyTexto = store.find(c => c.text)?.text || '';
+  check('spotify abre busca oficial', spotifyTexto.includes('SPOTIFY OFICIAL') && spotifyTexto.includes('https://open.spotify.com/search/drake'));
+  check('spotify não cria escolha nem baixa MP3', !lista._pendentes.has(lista._key(cSp)) && !store.some(c => c.audio || c.document || c.video) && !got.sp, got.sp);
   // soundcloud (1 resultado → lista na mesma? só 1 item → mostra lista de 1)
   store = []; sock = sockMock(store);
   const cSc = CTX('SC');

@@ -4,7 +4,6 @@
  * YouTube bloqueia IPs de servidores. Solução:
  *  1. Cloudflare Worker proxy (IPs limpos da Cloudflare) → URLs de streaming
  *  2. tikwm.com — TikTok sem marca d'água
- *  3. spotifydown.com — Spotify MP3 direto
  *  4. siputzx — Pinterest download + pesquisa
  *  5. loader.to — Fallback YouTube (pode retornar HTML com ads)
  *  6. yt-dlp — Último resort
@@ -18,7 +17,6 @@ const YT_PROXY_URL = process.env.YT_PROXY_URL || '';
 const LOADER_TO = 'https://loader.to';
 const LOADER_PROGRESS = 'https://lto2.affadaffa.com/api/progress';
 const TIKWM = 'https://www.tikwm.com/api';
-const SPOTIFYDOWN = 'https://api.spotifydown.com';
 const SIPUTZX = 'https://api.siputzx.my.id/api';
 const COBALT_API_URL = (process.env.COBALT_API_URL || '').replace(/\/$/, '');
 const COBALT_API_KEY = process.env.COBALT_API_KEY || '';
@@ -339,27 +337,6 @@ async function tikwmDownload(url) {
   return null;
 }
 
-// ==================== SPOTIFYDOWN — Spotify ====================
-
-async function spotifydownDownload(url) {
-  try {
-    const trackMatch = url.match(/track\/([a-zA-Z0-9]+)/);
-    if (!trackMatch) throw new Error('Link Spotify inválido');
-    const trackId = trackMatch[1];
-    const r = await mediaHandler.fetchJson(SPOTIFYDOWN + '/download/' + trackId, 25000);
-    if (r && r.downloadLink) {
-      return {
-        title: r.metadata?.title || r.title || 'Spotify',
-        url: r.downloadLink,
-        author: r.metadata?.artists || r.author || '',
-        thumbnail: r.metadata?.cover || '',
-        duration: r.metadata?.duration || '',
-      };
-    }
-  } catch (e) { console.log('[SPOTIFYDOWN] fallback:', e.message); }
-  return null;
-}
-
 // ==================== SIPUTZX — Pinterest ====================
 
 async function siputzxPinterest(url) {
@@ -417,50 +394,6 @@ async function systemZoneYtVideo(queryOrUrl) {
       };
     }
   } catch (e) { console.log('[SYSTEMZONE-YTMP4] falhou:', e.message); }
-  return null;
-}
-
-async function systemZoneSpotifySearch(query, limit = 10) {
-  const max = Math.min(Math.max(Number(limit) || 10, 1), 20);
-  try {
-    const data = await mediaHandler.fetchJson(`${SYSTEMZONE_API_URL}/api/search/spotify?q=${encodeURIComponent(query)}&limit=${max}&apikey=${encodeURIComponent(SYSTEMZONE_API_KEY)}`, 30000);
-    const arr = data?.result || data?.results || [];
-    if (Array.isArray(arr) && arr.length) return arr;
-  } catch (e) {
-    console.log('[SYSTEMZONE-SPOTIFY-SEARCH] falhou:', e.message);
-  }
-
-  // A busca do catálogo externo pode oscilar (DNS/TLS/rate-limit). O fluxo
-  // Spotify já entrega o áudio por YouTube como último fallback, por isso uma
-  // busca de vídeos aqui mantém !spotify <nome> utilizável sem fingir que não
-  // houve resultado. A URL directa evita uma segunda busca ao escolher.
-  try {
-    const r = await yts(String(query || ''));
-    const videos = (r?.videos || [])
-      .filter(v => v?.url && Number(v.seconds || 0) >= 15 && Number(v.seconds || 0) <= 90 * 60)
-      .slice(0, max);
-    return videos.map(v => ({
-      title: v.title || 'Música',
-      artist: v.author?.name || v.author || '',
-      url: v.url,
-      thumbnail: v.thumbnail || '',
-      duration: v.timestamp || '',
-      source: 'youtube-fallback',
-    }));
-  } catch (e) {
-    console.log('[SPOTIFY-SEARCH] fallback YouTube falhou:', e.message);
-    return [];
-  }
-}
-
-async function systemZoneSpotifyDownload(url) {
-  try {
-    const data = await mediaHandler.fetchJson(`${SYSTEMZONE_API_URL}/api/v1/spotify?text=${encodeURIComponent(url)}&apikey=${encodeURIComponent(SYSTEMZONE_API_KEY)}`, 60000);
-    if (data?.status && data?.download_url) return {
-      url: String(data.download_url).replace(/^http:\/\//i, 'https://'),
-      title: data.title || 'Spotify', author: data.artist || data.artists || '', thumbnail: data.thumbnail || data.thumb || '', source: 'SystemZone',
-    };
-  } catch (e) { console.log('[SYSTEMZONE-SPOTIFY] falhou:', e.message); }
   return null;
 }
 
@@ -658,7 +591,7 @@ async function streamToBuffer(stream, maxSize) {
 }
 
 module.exports = {
-  YT_PROXY_URL, TIKWM, SPOTIFYDOWN, SIPUTZX, COBALT_API_URL, SOCIALKIT_API_KEY, SAVENOW_API_KEY, YOUTUBE_API_URLS, SYSTEMZONE_API_URL, SYSTEMZONE_API_KEY,
+  YT_PROXY_URL, TIKWM, SIPUTZX, COBALT_API_URL, SOCIALKIT_API_KEY, SAVENOW_API_KEY, YOUTUBE_API_URLS, SYSTEMZONE_API_URL, SYSTEMZONE_API_KEY,
   ytdl, yts, mediaHandler,
   extractYtId, searchYoutube, searchYoutubeFull,
   streamToBuffer, fetchMediaBuffer,
@@ -667,7 +600,7 @@ module.exports = {
   // Loader.to (fallback)
   loaderYoutubeAudio, loaderYoutubeVideo, pollLoaderProgress,
   // Dedicated APIs
-  externalYoutubeDownload, systemZoneYtVideo, systemZoneSpotifySearch, systemZoneSpotifyDownload, systemZoneSoundCloudSearch, systemZoneSoundCloudDownload, systemZoneTwitter, cobaltDownload, socialKitDownload, saveNowDownload, tikwmDownload, spotifydownDownload,
+  externalYoutubeDownload, systemZoneYtVideo, systemZoneSoundCloudSearch, systemZoneSoundCloudDownload, systemZoneTwitter, cobaltDownload, socialKitDownload, saveNowDownload, tikwmDownload,
   siputzxPinterest, siputzxPinterestSearch,
   // Social via Worker
   proxySocialDownload,

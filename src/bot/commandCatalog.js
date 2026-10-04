@@ -50,7 +50,7 @@ const CATALOG = [
   { name: 'instagram', category: 'downloads', emoji: '📸', description: 'Baixa post/reels Instagram', native: true },
   { name: 'fb', category: 'downloads', emoji: '📘', description: 'Baixa vídeo Facebook', native: true },
   { name: 'twitter', category: 'downloads', emoji: '🐦', description: 'Baixa do Twitter/X', native: true },
-  { name: 'spotify', category: 'downloads', emoji: '🎧', description: 'Baixa música do Spotify', native: true },
+  { name: 'spotify', category: 'downloads', emoji: '🎧', description: 'Abre música e coleções oficiais no Spotify', native: true },
   { name: 'soundcloud', category: 'downloads', emoji: '☁️', description: 'Baixa do SoundCloud', native: true },
   { name: 'ytd', category: 'downloads', emoji: '🎵', description: 'Download áudio YouTube por URL (disparado por botão)', native: true },
   { name: 'gyt', category: 'downloads', emoji: '🎬', description: 'Download vídeo YouTube por URL (disparado por botão)', native: true },

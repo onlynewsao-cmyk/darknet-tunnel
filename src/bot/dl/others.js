@@ -5,11 +5,11 @@
  * Instagram: Cloudflare Worker → Cobalt
  * Facebook: Cloudflare Worker → Cobalt
  * Twitter: Cloudflare Worker → Cobalt
- * Spotify: spotifydown → Cobalt → YouTube fallback
+ * Spotify: link oficial (não baixa nem substitui a fonte)
  * SoundCloud: Cloudflare Worker → Cobalt → YouTube fallback
  * Pinterest: siputzx → Cobalt → Bing images
  */
-const { tryApis, cobaltDownload, tikwmDownload, spotifydownDownload, siputzxPinterest, siputzxPinterestSearch, proxySocialDownload, loaderYoutubeAudio } = require('./helpers');
+const { tryApis, cobaltDownload, tikwmDownload, siputzxPinterest, siputzxPinterestSearch, proxySocialDownload, loaderYoutubeAudio } = require('./helpers');
 
 // ==================== TIKTOK ====================
 async function tiktok(url) {
@@ -102,25 +102,17 @@ async function twitter(url) {
 }
 
 // ==================== SPOTIFY ====================
+// O Spotify protege os streams licenciados; não há MP3 oficial para redistribuir.
+// Portanto esta API de compatibilidade devolve somente a referência canónica.
 async function spotify(url) {
-  const spotResult = await spotifydownDownload(url);
-  if (spotResult && spotResult.url) {
-    return { title: spotResult.title, url: spotResult.url, author: spotResult.author, thumbnail: spotResult.thumbnail, duration: spotResult.duration };
-  }
-
-  try {
-    const cobaltUrl = await cobaltDownload(url, 'audio');
-    if (cobaltUrl) return { title: 'Spotify', url: cobaltUrl };
-  } catch (e) {}
-
-  // Fallback: entrega o ÁUDIO via busca YouTube (yt-dlp) — a música chega na mesma.
-  try {
-    const dl = require('../downloader');
-    const r = await dl.spotify(url);
-    if (r) return r;
-  } catch (e) { console.log('[SPOTIFY] fallback yt-dlp falhou:', e.message?.slice(0, 80)); }
-
-  throw new Error('❌ Não consegui baixar do Spotify. Envia o NOME da música (ex: spotify nome da música) ou usa !play <nome>.');
+  const { isOfficialSpotifyUrl, parseSpotifyLink } = require('../spotifyTiers');
+  if (!isOfficialSpotifyUrl(url)) throw new Error('Envia um link oficial spotify.com ou spotify.link.');
+  const { tipo, id } = parseSpotifyLink(url);
+  const officialUrl = tipo && id ? `https://open.spotify.com/${tipo}/${id}` : String(url);
+  return {
+    title: 'Spotify oficial', url: officialUrl, officialUrl,
+    source: 'spotify-official', isOfficialLink: true,
+  };
 }
 
 // ==================== SOUNDCLOUD ====================

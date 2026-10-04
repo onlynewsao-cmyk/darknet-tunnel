@@ -4,7 +4,7 @@
  *  • freefireapis.lat keyless → cartão do guerreiro (uid + região)
  *  • infoff/ffinfo legado agora tenta a API gratuita antes do token NYX
  *  • colecção Spotify: via EMBED (trackList {title,subtitle}) entre o
- *    spotifydown e a página clássica
+ *    fontes externas e a página clássica
  */
 'use strict';
 
@@ -109,16 +109,15 @@ const FAKE_FF = { success: true, result: {
       ] } } } } } }) + '</script></body></html>';
   const chamadas = [];
   const col = await tiers.colecaoSpotify('https://open.spotify.com/album/X1', { tipo: 'album', id: 'X1' }, {
-    fetchJson: async () => ({ nada: 1 }),                                 // spotifydown morto
     fetchHtml: async (u) => { chamadas.push(u); return u.includes('/embed/') ? embedHtml : '<html><title>shell</title></html>'; },
   });
-  assert.strictEqual(col.fonte, 'embed.spotify.com', 'EMBED é a prioridade 2 (viva)');
+  assert.strictEqual(col.fonte, 'open.spotify.com', 'EMBED oficial é a fonte usada');
   assert.strictEqual(col.nome, 'The Dark Side of the Moon', 'nome da colecção');
   assert.strictEqual(col.faixas.length, 3, '3 faixas extraídas');
   assert.strictEqual(col.faixas[0].artista, 'Pink Floyd');
   assert.strictEqual(col.faixas[2].ref, 'CCC', 'ref do uri spotify:track:');
   assert.ok(chamadas[0].includes('/embed/'), 'embed vem antes da página clássica');
-  console.log('✔ colecção Spotify: EMBED viva entre spotifydown e a página clássica');
+  console.log('✔ colecção Spotify: EMBED oficial');
 
   // ── 7. infoff legado tenta a gratuita primeiro ──────────────
   const fs2 = require('fs'), p2 = require('path');

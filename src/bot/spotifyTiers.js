@@ -1,24 +1,16 @@
 /**
- * DARK BOT — Spotify em 3 níveis (v7.98) 💚
+ * DARK BOT — catálogo Spotify oficial 💚
  *
- *  spotify / spotify1 / sp   → BAIXA  ⚡  48k  (pequeno, chega rápido)
- *  spotify2                  → MÉDIA  🎧  128k (equilíbrio)
- *  spotify3                  → MÁXIMA 💎  320k (estúdio)
- *
- * Os três aceitam: NOME (busca com lista até 8 resultados) e
- * LINKS de faixa, playlist, álbum, EP, CD (discografia) — episódios/
- * podcasts são ainda mais completos no próprio app.
- *
- * A qualidade é garantida DEPOIS do download: qualquer buffer oriundo
- * das fontes (SystemZone, spotifydown, yt-dlp…) passa pelo FFmpeg para
- * o bitrate do nível — nunca fica no "veio o que veio".
+ * Os comandos spotify, spotify1, spotify2, spotify3 e sp aceitam nome ou
+ * link de faixa, playlist, álbum, EP e CD. Eles partilham o endereço oficial
+ * do Spotify e metadados públicos, sem converter nem buscar áudio noutro site.
  */
 'use strict';
 
 const NIVEIS = {
-  1: { nome: 'BAIXA ⚡', bit: '48k',  dica: 'mais leve — poupa megas e chega rápido' },
-  2: { nome: 'MÉDIA 🎧', bit: '128k', dica: 'equilíbrio de estúdio' },
-  3: { nome: 'MÁXIMA 💎', bit: '320k', dica: 'qualidade máxima' },
+  1: { nome: 'SPOTIFY OFICIAL 💚', bit: '', dica: 'abre no player Spotify' },
+  2: { nome: 'SPOTIFY OFICIAL 💚', bit: '', dica: 'abre no player Spotify' },
+  3: { nome: 'SPOTIFY OFICIAL 💚', bit: '', dica: 'abre no player Spotify' },
 };
 
 /** Do nome do comando → nível. ('spotify', 'spotify1'/'sp' → 1, …) */
@@ -34,7 +26,16 @@ const RE_SPOTIFY = /(?:open\.)?spotify\.com\/(?:intl-[a-z-]{2,16}\/)?(track|albu
 /**
  * @returns {{tipo:'track'|'album'|'playlist'|'episode'|'show'|'artist'|void, id:string}}
  */
+function isOfficialSpotifyUrl(url) {
+  try {
+    const host = new URL(String(url || '')).hostname.toLowerCase();
+    return host === 'spotify.com' || host === 'www.spotify.com' ||
+      host === 'open.spotify.com' || host === 'spotify.link';
+  } catch { return false; }
+}
+
 function parseSpotifyLink(url) {
+  if (!isOfficialSpotifyUrl(url)) return { tipo: '', id: '' };
   const m = String(url || '').match(RE_SPOTIFY);
   if (!m) return { tipo: '', id: '' };
   return { tipo: m[1].toLowerCase(), id: m[2] };
@@ -47,7 +48,7 @@ function _faixa(nome, artista, ref = '') {
   nome = String(nome || '').trim();
   artista = String(artista || '').trim();
   if (!nome) return null;
-  return { nome, artista, ref, busca: `${artista ? artista + ' ' : ''}${nome} audio`.trim() };
+  return { nome, artista, ref };
 }
 
 function normalizarFaixas(arr) {
@@ -137,15 +138,14 @@ function colecaoDoHtml(html) {
   return { nome, faixas: normalizarFaixas(saco) };
 }
 
-// ── Resolução da colecção (máx diversidade de fontes) ─────────
+// ── Resolução oficial da colecção ───────────────────────────────
 /**
- * Tenta (1) api.spotifydown.com/trackList/<tipo>/<id>, (2) página EMBED
- * (open.spotify.com/embed/… — contém __NEXT_DATA__ com o trackList; a
- * página normal virou shell do Web Player sem dados) e (3) scrape da
- * página clássica. Injecções p/ testes: fetchJson, fetchHtml.
+ * Lê apenas páginas oficiais open.spotify.com. O embed é o formato de
+ * partilha do próprio Spotify e contém o trackList público para álbuns e
+ * playlists. Injecção `fetchHtml` existe para testes, sem fontes terceiras.
  */
 async function colecaoSpotify(url, { tipo, id } = {}, opts = {}) {
-  const fJson = opts.fetchJson || ((u) => require('./mediaHandler').fetchJson(u, 25000));
+  if (!TIPOS_COLECAO.has(tipo) || !id) throw new Error('Link Spotify de álbum ou playlist inválido.');
   const fHtml = opts.fetchHtml || (async (u) => {
     const b = await require('./mediaHandler').fetchBuffer(u, 5, {
       headers: { 'User-Agent': 'Mozilla/5.0 (X11; Linux) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36' },
@@ -154,40 +154,24 @@ async function colecaoSpotify(url, { tipo, id } = {}, opts = {}) {
     return b ? String(b) : '';
   });
 
-  // 1) spotifydown (quando está vivo) — vem estruturado
-  try {
-    const j = await fJson(`https://api.spotifydown.com/trackList/${tipo}/${id}`, 25000, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-    const arr = j?.trackList || j?.data?.trackList || j?.tracks || j?.items || [];
-    if (Array.isArray(arr) && arr.length) {
-      const nome = j?.metadata?.name || j?.name || '';
-      const faixas = normalizarFaixas(arr.map(t => _faixa(
-        t?.title || t?.name,
-        t?.artists || t?.artist || (Array.isArray(t?.artists) ? t.artists.map(a => a?.name).join(', ') : ''),
-        t?.id || ''
-      )));
-      if (faixas.length) return { nome, faixas, fonte: 'spotifydown' };
-    }
-  } catch {}
-
-  // 2) página EMBED (camiho de partilha oficial — vivo, com trackList)
   try {
     const html = await fHtml(`https://open.spotify.com/embed/${tipo}/${id}`);
     const r = colecaoDoHtml(html);
-    if (r.faixas.length) return { ...r, fonte: 'embed.spotify.com' };
+    if (r.faixas.length) return { ...r, fonte: 'open.spotify.com' };
   } catch {}
 
-  // 3) scrape da página open.spotify.com (shell actual: raramente traz dados)
+  // A página canónica ainda pode disponibilizar a lista em algumas regiões.
   try {
     const html = await fHtml(`https://open.spotify.com/${tipo}/${id}`);
     const r = colecaoDoHtml(html);
     if (r.faixas.length) return { ...r, fonte: 'open.spotify.com' };
   } catch {}
 
-  throw new Error('Não consegui ler essa colecção do Spotify (pode ser privada ou a fonte estar em manutenção).');
+  throw new Error('Não consegui ler essa colecção oficial do Spotify; ela pode ser privada ou estar indisponível.');
 }
 
 module.exports = {
-  NIVEIS, nivelDoComando, parseSpotifyLink,
+  NIVEIS, nivelDoComando, isOfficialSpotifyUrl, parseSpotifyLink,
   TIPOS_COLECAO, TIPOS_BLOQUEIO,
   normalizarFaixas, colecaoDoHtml, colecaoSpotify,
   MAX_FAIXAS: 20,

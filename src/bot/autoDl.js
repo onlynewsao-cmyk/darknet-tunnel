@@ -90,6 +90,17 @@ async function _processar(sock, jid, msg, { url, plataforma }) {
   const mediaHandler = require('./mediaHandler');
   const AUD = new Set(['youtube', 'spotify', 'soundcloud']);
 
+  // Spotify mantém a própria licença/DRM: o autoDL partilha a referência
+  // oficial, em vez de transferir áudio de YouTube ou de qualquer intermediário.
+  if (plataforma === 'spotify') {
+    const r = await dl.spotify(url);
+    if (!r?.officialUrl) throw new Error('link Spotify oficial indisponível');
+    await sock.sendMessage(jid, {
+      text: `💚 *SPOTIFY OFICIAL*\n▶️ Abre e reproduz no player Spotify.\n🔗 ${r.officialUrl}`,
+    }, { quoted: msg });
+    return;
+  }
+
   const r = await (AUD.has(plataforma)
     ? dl[plataforma === 'youtube' ? 'youtubeAudio' : plataforma](url)
     : dl[plataforma](url));

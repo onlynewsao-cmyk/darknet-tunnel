@@ -17,10 +17,9 @@ const yts = require('yt-search');
 const mediaHandler = require('./mediaHandler');
 const {
   systemZoneYtVideo,
-  systemZoneSpotifySearch, systemZoneSpotifyDownload,
   systemZoneSoundCloudSearch, systemZoneSoundCloudDownload,
   systemZoneTwitter,
-  tikwmDownload, spotifydownDownload,
+  tikwmDownload,
   siputzxPinterest, siputzxPinterestSearch,
   fetchMediaBuffer, searchYoutube,
 } = require('./dl/helpers');
@@ -368,39 +367,23 @@ async function instagram(url) {
 }
 
 // ==================== SPOTIFY / SOUNDCLOUD ====================
+/**
+ * Spotify não expõe os seus streams protegidos como MP3 redistribuível.
+ * Devolve exclusivamente uma URL do catálogo/player oficial; nunca executa
+ * busca, conversão ou download de áudio noutra plataforma.
+ */
 async function spotify(queryOrUrl) {
-  if (!isUrl(queryOrUrl)) {
-    const found = await systemZoneSpotifySearch(queryOrUrl, 8);
-    if (found?.[0]?.url) queryOrUrl = found[0].url;
+  const { isOfficialSpotifyUrl, parseSpotifyLink } = require('./spotifyTiers');
+  const texto = String(queryOrUrl || '').trim();
+  if (!texto) throw new Error('Indica um nome ou link Spotify.');
+  if (!isUrl(texto)) {
+    const officialUrl = `https://open.spotify.com/search/${encodeURIComponent(texto)}`;
+    return { title: texto, url: officialUrl, officialUrl, source: 'spotify-official', isOfficialLink: true };
   }
-  if (isUrl(queryOrUrl) && /spotify\.com/.test(queryOrUrl)) {
-    const z = await systemZoneSpotifyDownload(queryOrUrl);
-    if (z?.url) {
-      const buffer = await fetchMediaBuffer(z.url, 90000);
-      if (buffer && buffer.length > 2048) return { title: z.title, author: z.author, thumb: z.thumbnail, url: '', buffer, mimetype: 'audio/mpeg', quality: 'Spotify · SystemZone', fileName: `${safeTitle(z.title)}.mp3` };
-      return { title: z.title, url: z.url, author: z.author };
-    }
-    const spotResult = await spotifydownDownload(queryOrUrl);
-    if (spotResult && spotResult.url) {
-      try {
-        const buffer = await fetchMediaBuffer(spotResult.url, 60000);
-        if (buffer && buffer.length > 2048) {
-          return { title: spotResult.title, author: spotResult.author, thumb: spotResult.thumbnail, url: '', buffer, mimetype: 'audio/mpeg', quality: 'Spotify 160kbps', fileName: `${safeTitle(spotResult.title)}.mp3` };
-        }
-      } catch (e) {}
-      return { title: spotResult.title, url: spotResult.url, author: spotResult.author };
-    }
-  }
-  let query = isUrl(queryOrUrl) ? queryOrUrl : `${queryOrUrl} audio`;
-  if (/spotify\.com/.test(String(queryOrUrl))) {
-    // v7.54: resolve "artista — título" via oEmbed (sem auth) para o fallback acertar na música
-    try {
-      const oe = await mediaHandler.fetchJson('https://open.spotify.com/oembed?url=' + encodeURIComponent(queryOrUrl), 15000);
-      if (oe?.title) query = `${oe.author_name || ''} ${oe.title} audio`.trim();
-    } catch {}
-  }
-  try { return await downloadAudioFile(query, { bitrate: '160k', label: 'Spotify fallback' }); }
-  catch { return downloadAudioFile(String(queryOrUrl).replace(/https?:\/\/\S+/g, '').trim() || 'spotify', { bitrate: '160k', label: 'Spotify fallback' }); }
+  if (!isOfficialSpotifyUrl(texto)) throw new Error('Envia um link oficial spotify.com ou spotify.link.');
+  const { tipo, id } = parseSpotifyLink(texto);
+  const officialUrl = tipo && id ? `https://open.spotify.com/${tipo}/${id}` : texto;
+  return { title: 'Spotify oficial', url: officialUrl, officialUrl, source: 'spotify-official', isOfficialLink: true };
 }
 
 async function soundcloud(queryOrUrl) {

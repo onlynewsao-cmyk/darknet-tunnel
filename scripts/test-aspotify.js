@@ -1,209 +1,118 @@
-#!/usr/bin/env node
-/**
- * Teste: Spotify 3 níveis (v7.98) 💚
- * spotify/spotify1/sp → BAIXA 48k · spotify2 → MÉDIA 128k · spotify3 → MÁXIMA 320k
- * Nome com lista · links de faixa/playlist/álbum/EP/CD · re-encode de nivel.
- */
 'use strict';
-
-process.env.MONGODB_URI = '';
-process.env.FFMPEG_PATH = '/bin/true';  // qualquer toque FFmpeg real fica fora do teste
-
+/**
+ * Contrato Spotify estrito:
+ * - o bot só partilha URL do Spotify e metadados públicos;
+ * - não envia buffer/audio para faixa, álbum, EP, CD ou playlist;
+ * - não usa YouTube, Cobalt, spotifydown ou outro fallback no caminho Spotify.
+ */
 const assert = require('assert');
-const fs5 = require('fs');
-const path5 = require('path');
-
-// ── mocks plásticos ───────────────────────────────────────────
-const Module = require('module');
-const _orig = Module.prototype.require;
-
-const rec = { getAudio: [], reenc: [], dlSpotify: [], search: [] };
-const _listaSel = { chamadas: [] };
-Module.prototype.require = function (id) {
-  const s = String(id);
-  if (s.endsWith('dl/others') || s.endsWith('/others')) {
-    return {
-      spotify: async (url) => { rec.dlSpotify.push(url); return { title: 'Musica Zona', author: 'Art Z', url: 'https://cdn.example/z.mp3' }; },
-      soundcloud: async () => { throw new Error('fora do escopo'); },
-    };
-  }
-  if (s.endsWith('/dl/helpers') || s.endsWith('dl/helpers')) {
-    return {
-      systemZoneSpotifySearch: async (q, n) => { rec.search.push([q, n]); return [
-        { title: 'Musica A', artist: 'Art A', url: 'https://open.spotify.com/track/AAAAAAA1' },
-        { title: 'Musica B', artist: 'Art B', url: 'https://open.spotify.com/track/BBBBBBB2' },
-      ]; },
-    };
-  }
-  if (s.endsWith('/mediaHandler') || s.endsWith('mediaHandler')) {
-    return {
-      fetchBuffer: async () => Buffer.alloc(3000, 7),
-      fetchJson: async () => ({}),
-      isAudioBytes: () => true,
-      cleanThumb: (x) => x,
-    };
-  }
-  if (s.endsWith('/ytdl') || s === '../ytdl' || s.endsWith('bot/ytdl')) {
-    return {
-      getAudio: async (q, quality) => { rec.getAudio.push([q, quality]); return { title: 'YT: Tema', author: 'Canal', buffer: Buffer.alloc(4000, 9) }; },
-      extractAudioFromBuffer: async (buf, bit) => { rec.reenc.push([buf.length, bit]); return Buffer.alloc(5000, 1); },
-      searchVideoList: async () => [],
-    };
-  }
-  if (s.endsWith('listaEscolha')) {
-    return { mostrar: async (sock, msg, ctx, o) => { _listaSel.chamadas.push(o); return { uso: o }; }, tentarNumero: async () => false, _pendentes: new Map(), _key: () => 'k' };
-  }
-  return _orig.apply(this, arguments);
-};
-
+const fs = require('fs');
+const path = require('path');
 const tiers = require('../src/bot/spotifyTiers');
+const downloader = require('../src/bot/downloader');
+const others = require('../src/bot/dl/others');
 
-const sent = [];
-const _logs = [];
-const _cl = console.log;
-console.log = (...a) => { _logs.push(a.join(' ')); _cl(...a); };
-const sockF = {
-  sendMessage: async (j, c) => { sent.push(c); return { key: { id: 'k1' } }; },
-};
-const ctxF = { remoteJid: 'PV@s.whatsapp.net', senderNumber: '2449', isGroup: false, prefix: '!' };
-const msgF = { key: { id: 'm1', remoteJid: 'PV@s.whatsapp.net' } };
+let checks = 0;
+function ok(condition, label) {
+  assert.ok(condition, label);
+  checks++;
+  console.log('✔', label);
+}
+
+function mockSock(sent) {
+  return {
+    sendMessage: async (_jid, content) => {
+      sent.push(content);
+      return { key: { id: 'sent' } };
+    },
+  };
+}
 
 (async () => {
-  console.log('=== Spotify 3 níveis (v7.98) ===');
+  console.log('=== Spotify oficial estrito ===');
 
-  // ── 1. Níveis e links ───────────────────────────────────────
-  assert.strictEqual(tiers.nivelDoComando('spotify'), 1);
-  assert.strictEqual(tiers.nivelDoComando('spotify1'), 1);
-  assert.strictEqual(tiers.nivelDoComando('sp'), 1);
-  assert.strictEqual(tiers.nivelDoComando('spotify2'), 2);
-  assert.strictEqual(tiers.nivelDoComando('spotify3'), 3);
-  assert.strictEqual(tiers.NIVEIS[1].bit, '48k', 'nível 1 = 48k');
-  assert.strictEqual(tiers.NIVEIS[2].bit, '128k', 'nível 2 = 128k');
-  assert.strictEqual(tiers.NIVEIS[3].bit, '320k', 'nível 3 = 320k');
+  // ── URLs oficiais e canonização ──────────────────────────────
+  const faixa = 'https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC?si=x';
+  const album = 'https://open.spotify.com/intl-pt/album/4LH4d3cOWNNsVw41Gqt2kv'; // álbum / EP / CD
+  const playlist = 'https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M';
+  ok(tiers.isOfficialSpotifyUrl(faixa), 'aceita open.spotify.com');
+  ok(tiers.isOfficialSpotifyUrl('https://spotify.link/abc123'), 'aceita spotify.link oficial');
+  ok(!tiers.isOfficialSpotifyUrl('https://notspotify.com/track/AAAA'), 'rejeita domínio parecido');
+  ok(!tiers.isOfficialSpotifyUrl('https://youtu.be/abc'), 'rejeita YouTube');
+  ok(tiers.parseSpotifyLink(faixa).tipo === 'track', 'interpreta faixa');
+  ok(tiers.parseSpotifyLink(album).tipo === 'album', 'interpreta álbum, EP e CD como album');
+  ok(tiers.parseSpotifyLink(playlist).tipo === 'playlist', 'interpreta playlist');
 
-  let p = tiers.parseSpotifyLink('https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC?si=x');
-  assert.deepStrictEqual(p, { tipo: 'track', id: '4uLU6hMCjMI75M1A2tKUQC' });
-  p = tiers.parseSpotifyLink('https://open.spotify.com/intl-pt/album/4LH4d3cOWNNsVw41Gqt2kv');
-  assert.deepStrictEqual(p, { tipo: 'album', id: '4LH4d3cOWNNsVw41Gqt2kv' });
-  p = tiers.parseSpotifyLink('https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M');
-  assert.deepStrictEqual(p.tipo, 'playlist');
-  p = tiers.parseSpotifyLink('https://open.spotify.com/episode/6kAsbP8pxwaU2kPibKTuHE');
-  assert.deepStrictEqual(p.tipo, 'episode');
-  assert.strictEqual(tiers.parseSpotifyLink('https://youtu.be/xyz').tipo, '');
-  console.log('✔ níveis (48k/128k/320k) + parsing de links');
-
-  // ── 2. Colecção — caminho spotifydown ───────────────────────
-  const col1 = await tiers.colecaoSpotify('https://open.spotify.com/album/ALB1', { tipo: 'album', id: 'ALB1' }, {
-    fetchJson: async () => ({ metadata: { name: 'Meu Disco' }, trackList: [
-      { title: 'Faixa Um', artists: 'Zeca' }, { title: 'Faixa Dois', artists: 'Zeca' }, { title: 'Faixa Um', artists: 'Zeca' },
-    ] }),
-    fetchHtml: async () => '',
+  // ── Metadados vêm exclusivamente de open.spotify.com ─────────
+  const urlsLidas = [];
+  const embed = '<script id="__NEXT_DATA__" type="application/json">' + JSON.stringify({
+    props: { pageProps: { state: { data: { entity: { title: 'EP Oficial', trackList: [
+      { uri: 'spotify:track:AAA', title: 'Faixa Um', subtitle: 'Artista' },
+      { uri: 'spotify:track:BBB', title: 'Faixa Dois', subtitle: 'Artista' },
+    ] } } } } } }) + '</script>';
+  const col = await tiers.colecaoSpotify(album, { tipo: 'album', id: '4LH4d3cOWNNsVw41Gqt2kv' }, {
+    fetchHtml: async (url) => { urlsLidas.push(url); return embed; },
   });
-  assert.strictEqual(col1.nome, 'Meu Disco');
-  assert.strictEqual(col1.faixas.length, 2, 'dedupe');
-  assert.strictEqual(col1.faixas[0].busca, 'Zeca Faixa Um audio');
-  console.log('✔ colecção via spotifydown (com dedupe e busca pronta)');
+  ok(col.fonte === 'open.spotify.com', 'coleção é identificada como fonte oficial');
+  ok(col.faixas.length === 2 && col.faixas[0].nome === 'Faixa Um', 'lê as faixas do embed Spotify');
+  ok(urlsLidas.every(url => /^https:\/\/open\.spotify\.com\//.test(url)), 'metadados só consultam open.spotify.com');
 
-  // ── 3. Colecção — scrape __NEXT_DATA__ ──────────────────────
-  const htmlFake = '<html><head><title>Minha Playlist | Spotify</title></head><body>' +
-    '<script id="__NEXT_DATA__" type="application/json">' + JSON.stringify({
-      props: { pageProps: { state: { data: { entity: { name: 'AfroHits 2024', items: [
-        { name: 'Tema Um', artists: [{ profile: { name: 'DJ Alpha' } }], duration: '3:10' },
-        { name: 'Tema Dois', artists: [{ profile: { name: 'DJ Beta' } }], duration: '2:55' },
-      ] } } } } },
-    }) + '</script></body></html>';
-  const col2 = await tiers.colecaoSpotify('https://open.spotify.com/playlist/PL99', { tipo: 'playlist', id: 'PL99' }, {
-    fetchJson: async () => ({ nada: true }),
-    fetchHtml: async () => htmlFake,
-  });
-  assert.strictEqual(col2.nome, 'AfroHits 2024');
-  assert.strictEqual(col2.faixas.length, 2);
-  assert.strictEqual(col2.faixas[1].artista, 'DJ Beta');
-  assert.ok(['embed.spotify.com', 'open.spotify.com'].includes(col2.fonte), 'a via de página (embed/clássica) capturou');
-  console.log('✔ colecção via scrape __NEXT_DATA__ (fallback persistente)');
+  // ── Adaptadores legados continuam seguros ─────────────────────
+  const dFaixa = await downloader.spotify(faixa);
+  ok(dFaixa.isOfficialLink && dFaixa.source === 'spotify-official', 'downloader marca faixa como Spotify oficial');
+  ok(!dFaixa.buffer && dFaixa.officialUrl === 'https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC', 'downloader não entrega buffer/MP3');
+  const dBusca = await downloader.spotify('Rick Astley');
+  ok(dBusca.officialUrl === 'https://open.spotify.com/search/Rick%20Astley', 'nome abre pesquisa oficial Spotify');
+  const oPlaylist = await others.spotify(playlist);
+  ok(oPlaylist.isOfficialLink && oPlaylist.officialUrl === playlist, 'adaptador dl/others preserva playlist oficial');
 
-  // ── 4. Cases: registo + desempacho de uma faixa por nível ───
-  const reg = {};
-  require('../src/bot/cases/downloads2')((names, fn) => { for (const n of names) reg[n] = fn; });
-  assert.ok(reg.spotify && reg.spotify1 && reg.sp && reg.spotify2 && reg.spotify3, '3 níveis registados');
+  // ── O comando nunca envia áudio ───────────────────────────────
+  const comandos = {};
+  require('../src/bot/cases/downloads2')((nomes, fn) => nomes.forEach(nome => { comandos[nome] = fn; }));
+  ok(['spotify', 'spotify1', 'sp', 'spotify2', 'spotify3'].every(nome => comandos[nome]), 'todos os aliases Spotify estão registados');
 
-  sent.length = 0; rec.reenc.length = 0;
-  await reg.spotify2({ sock: sockF, msg: msgF, ctx: ctxF, args: ['https://open.spotify.com/track/AAAAAAA1'], prefix: '!', reply: async (t) => t, command: 'spotify2' });
-  const aud1 = sent.find(c => c.audio);
-  assert.ok(aud1, 'spotify2 enviou áudio');
-  assert.ok(_logs.some(l => /Spotify · MÉDIA 🎧 \(128k\)/.test(l)), 'rótulo médio no log de envio');
-  assert.strictEqual(aud1.audio.length, 5000, 'buffer é o bitwise MÉDIA (re-encode aplicado)');
-  assert.strictEqual(rec.reenc.some(([, b]) => b === '128k'), true, 're-encode em 128k correu');
+  const ctx = { remoteJid: 'grupo@g.us' };
+  const msg = { key: { id: 'm1', remoteJid: ctx.remoteJid } };
+  let sent = [];
+  await comandos.spotify2({ sock: mockSock(sent), msg, ctx, args: [faixa], prefix: '!', command: 'spotify2', reply: async () => {} });
+  const textoFaixa = sent.find(x => x.text)?.text || '';
+  ok(/SPOTIFY OFICIAL/.test(textoFaixa) && textoFaixa.includes('https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC'), 'faixa retorna link canónico oficial');
+  ok(!sent.some(x => x.audio || x.document || x.video), 'faixa não envia mídia binária de outra origem');
 
-  sent.length = 0; rec.reenc.length = 0; rec.getAudio.length = 0;
-  await reg.spotify3({ sock: sockF, msg: msgF, ctx: ctxF, args: ['https://open.spotify.com/track/AAAAAAA1'], prefix: '!', reply: async (t) => t, command: 'spotify3' });
-  const aud2 = sent.find(c => c.audio);
-  assert.ok(_logs.some(l => /Spotify · MÁXIMA 💎 \(320k\)/.test(l)), 'rótulo máximo no log');
-  assert.strictEqual(rec.reenc.some(([, b]) => b === '320k'), true, 're-encode 320k');
-  sent.length = 0; rec.reenc.length = 0;
-  await reg.spotify({ sock: sockF, msg: msgF, ctx: ctxF, args: ['https://open.spotify.com/track/AAAAAAA1'], prefix: '!', reply: async (t) => t, command: 'spotify' });
-  const aud3 = sent.find(c => c.audio);
-  assert.ok(_logs.some(l => /Spotify · BAIXA ⚡ \(48k\)/.test(l)), 'rótulo baixo no log');
-  assert.strictEqual(rec.reenc.some(([, b]) => b === '48k'), true, 're-encode 48k');
-  console.log('✔ faixa única: buffer sempre normalizado para o nível');
+  const originalColecao = tiers.colecaoSpotify;
+  tiers.colecaoSpotify = async () => ({ nome: 'CD Oficial', faixas: [{ nome: 'A', artista: 'B' }, { nome: 'C', artista: 'D' }], fonte: 'open.spotify.com' });
+  sent = [];
+  await comandos.spotify3({ sock: mockSock(sent), msg, ctx, args: [album], prefix: '!', command: 'spotify3', reply: async () => {} });
+  const textoAlbum = sent.find(x => x.text)?.text || '';
+  ok(/CD Oficial/.test(textoAlbum) && /1\. A — B/.test(textoAlbum), 'álbum/EP/CD retorna metadados e link oficial');
+  ok(!sent.some(x => x.audio || x.document || x.video), 'álbum/EP/CD não envia MP3');
 
-  // ── 5. Colecção fim-a-fim (mock do tiers.colecaoSpotify?) ───
-  // Forçamos o pd chegar à colecção: monkeypatch via cache
-  const tiersMod = require('../src/bot/spotifyTiers');
-  const _oldCol = tiersMod.colecaoSpotify;
-  tiersMod.colecaoSpotify = async () => ({ nome: 'Discoteca Vibe', faixas: [
-    { nome: 'Faixa Um', artista: 'Zeca', busca: 'Zeca Faixa Um audio', ref: '' },
-    { nome: 'Faixa Dois', artista: 'Zeca', busca: 'Zeca Faixa Dois audio', ref: '' },
-    { nome: 'Faixa Três', artista: 'Zeca', busca: 'Zeca Faixa Três audio', ref: '' },
-  ], fonte: 'teste' });
-  sent.length = 0; rec.getAudio.length = 0; rec.dlSpotify.length = 0;
-  await reg.spotify2({ sock: sockF, msg: msgF, ctx: ctxF, args: ['https://open.spotify.com/album/ALB2'], prefix: '!', reply: async (t) => t, command: 'spotify2' });
-  tiersMod.colecaoSpotify = _oldCol;
-  const auds = sent.filter(c => c.audio);
-  assert.strictEqual(auds.length, 3, '3 faixas entregues');
-  const cabeca = sent.find(c => /Discoteca Vibe/.test(c.text || ''));
-  assert.ok(cabeca && /MÉDIA 🎧\*? \(128k\)/.test(cabeca.text), 'cartão de cabeçalho com o nível');
-  const resumo = sent.find(c => /3\/3\*? enviadas/.test(c.text || ''));
-  assert.ok(resumo, 'resumo no fim');
-  assert.deepStrictEqual(rec.getAudio.map(a => a[1]), ['128k', '128k', '128k'], 'todas no nível MÉDIA');
-  console.log('✔ álbum/playlist enviado com cabeçalho, nível de tier em todas as faixas e resumo');
+  sent = [];
+  await comandos.spotify({ sock: mockSock(sent), msg, ctx, args: [playlist], prefix: '!', command: 'spotify', reply: async () => {} });
+  const textoPlaylist = sent.find(x => x.text)?.text || '';
+  ok(textoPlaylist.includes(playlist) && /CD Oficial/.test(textoPlaylist), 'playlist retorna link oficial e faixas');
+  tiers.colecaoSpotify = originalColecao;
 
-  // ── 6. Nome → lista faz o pick no nível certo ───────────────
-  _listaSel.chamadas.length = 0;
-  sent.length = 0; rec.reenc.length = 0;
-  await reg.spotify3({ sock: sockF, msg: msgF, ctx: ctxF, args: ['drake', 'hotline', 'bling'], prefix: '!', reply: async (t) => t, command: 'spotify3' });
-  assert.strictEqual(_listaSel.chamadas.length, 1, 'lista mostrada');
-  const chamada = _listaSel.chamadas[0];
-  assert.ok(/MÁXIMA 💎 \(320k\)/.test(chamada.titulo), 'lista anuncia o nível');
-  await chamada.aoEscolher({ item: chamada.itens[0] });
-  const aud4 = sent.find(c => c.audio);
-  assert.ok(aud4, 'audio após pick');
-  assert.strictEqual(rec.reenc.some(([, b]) => b === '320k'), true, 'pick no nível MÁXIMA');
-  console.log('✔ busca por nome: lista + pick no nível');
+  sent = [];
+  await comandos.sp({ sock: mockSock(sent), msg, ctx, args: ['minha', 'busca'], prefix: '!', command: 'sp', reply: async () => {} });
+  const textoBusca = sent.find(x => x.text)?.text || '';
+  ok(textoBusca.includes('https://open.spotify.com/search/minha%20busca'), 'busca textual abre pesquisa no catálogo Spotify');
 
-  // ── 7. Episódio/podcast bloqueado com jeitinho ──────────────
-  const replies = [];
-  await reg.spotify2({ sock: sockF, msg: msgF, ctx: ctxF, args: ['https://open.spotify.com/episode/EP1XYZ'], prefix: '!', reply: async (t) => { replies.push(t); return t; }, command: 'spotify2' });
-  assert.ok(replies.some(t => /episódio/.test(t) && /playlist\/álbum\/EP\/CD/.test(t)), 'episódio explica');
-  console.log('✔ episódio/podcast avisa com clareza');
+  // ── Auditoria estática dos caminhos Spotify ───────────────────
+  const root = path.join(__dirname, '..', 'src', 'bot');
+  const commandSrc = fs.readFileSync(path.join(root, 'cases', 'downloads2.js'), 'utf8');
+  const spotifySlice = commandSrc.slice(commandSrc.indexOf('SPOTIFY OFICIAL'), commandSrc.indexOf('// ═══ SOUNDCLOUD'));
+  ok(!/getAudio|sendAudio|yt-search|youtubeAudio|cobalt|spotifydown|downloadAudioFile/i.test(spotifySlice), 'comando Spotify não possui fallback de download');
+  for (const rel of ['downloader.js', path.join('dl', 'others.js')]) {
+    const src = fs.readFileSync(path.join(root, rel), 'utf8');
+    const at = src.indexOf('async function spotify(');
+    const scope = src.slice(at, src.indexOf('async function soundcloud(', at));
+    ok(!/yt-dlp|youtube|cobalt|spotifydown|downloadAudioFile|fetchMediaBuffer/i.test(scope), `${rel}: caminho Spotify sem fonte alternativa`);
+  }
+  const autoSrc = fs.readFileSync(path.join(root, 'autoDl.js'), 'utf8');
+  const autoAt = autoSrc.indexOf("if (plataforma === 'spotify')");
+  const autoScope = autoSrc.slice(autoAt, autoSrc.indexOf('const r =', autoAt));
+  ok(!/yt-dlp|youtube|cobalt|spotifydown|downloadAudioFile|fetchMediaBuffer/i.test(autoScope), 'autoDl: Spotify só partilha referência oficial');
 
-  // ── 8. Uso sem query → tabela dos níveis ────────────────────
-  const rep2 = [];
-  await reg.spotify1({ sock: sockF, msg: msgF, ctx: ctxF, args: [], prefix: '!', reply: async (t) => { rep2.push(t); return t; }, command: 'spotify1' });
-  assert.ok(/BAIXA ⚡\*? \(48k\)/.test(rep2[0]) && /spotify2/.test(rep2[0]) && /spotify3/.test(rep2[0]), 'uso mostra os 3 níveis');
-  console.log('✔ ajuda mostra o mapa dos níveis');
-
-  // ── 9. Estático ─────────────────────────────────────────────
-  const d2 = fs5.readFileSync(path5.join(__dirname, '..', 'src', 'bot', 'cases', 'downloads2.js'), 'utf8');
-  assert.ok(/extractAudioFromBuffer/.test(d2), 'normalização no case');
-  assert.ok(/registerCase\(\['spotify2'\]/.test(d2) && /registerCase\(\['spotify3'\]/.test(d2), 'níveis separados');
-  assert.ok(!/\['spotify', 'spotify2'/.test(d2), 'spotify2 já não é alias de spotify');
-  const ytdlSrc = fs5.readFileSync(path5.join(__dirname, '..', 'src', 'bot', 'ytdl.js'), 'utf8');
-  assert.ok(/extractAudioFromBuffer }/.test(ytdlSrc), 'ytdl exporta o normalizador');
-  const sdSrc = fs5.readFileSync(path5.join(__dirname, '..', 'src', 'bot', 'submenuData.js'), 'utf8');
-  assert.ok(/spotify1:'downloads'.*spotify3:'downloads'/s.test(sdSrc), 'spotify1/3 no submenu downloads');
-  console.log('✔ ganchos e registo correctos');
-
-  console.log('\nOK / test-aspotify — tudo passou (v7.98)');
-  process.exit(0);
-})().catch(e => { console.error('ERRO FATAL:', e); process.exit(1); });
+  console.log(`\nOK / test-aspotify — ${checks} verificações Spotify oficial estrito`);
+})().catch(error => { console.error('ERRO FATAL:', error); process.exit(1); });

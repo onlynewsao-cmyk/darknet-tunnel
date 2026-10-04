@@ -18,20 +18,22 @@ const t = (n, c, e) => { e = e || ''; c ? ok++ : fail++; console.log('  ' + (c ?
 
 const ROOT = path.join(__dirname, '..', 'src', 'bot');
 
-// ── 1. dl/others.js tem fallback yt-dlp (downloader) nas 5 redes ──
-console.log('\n╔═══ 1. Fallback yt-dlp nas redes sociais ═══╗');
+// ── 1. Redes sociais mantêm fallback; Spotify é estritamente oficial ──
+console.log('\n╔═══ 1. Fontes por plataforma ═══╗');
 {
   const src = fs.readFileSync(path.join(ROOT, 'dl', 'others.js'), 'utf8');
   const fn = (nome) => {
     const i = src.indexOf('async function ' + nome + '(');
     if (i < 0) return '';
-    const j = src.indexOf('throw new Error', i);
-    return src.slice(i, j > i ? j : i + 3000);
+    const next = src.indexOf('\nasync function ', i + 1);
+    return src.slice(i, next > i ? next : src.length);
   };
-  for (const nome of ['instagram', 'facebook', 'twitter', 'spotify', 'soundcloud']) {
-    const body = fn(nome);
-    t(`${nome} → fallback downloader (yt-dlp)`, body.includes("require('../downloader')"), '');
+  for (const nome of ['instagram', 'facebook', 'twitter', 'soundcloud']) {
+    t(`${nome} → fallback downloader (yt-dlp)`, fn(nome).includes("require('../downloader')"), '');
   }
+  const spotify = fn('spotify');
+  t('spotify → somente referência oficial', spotify.includes("source: 'spotify-official'") && spotify.includes('isOfficialSpotifyUrl'), '');
+  t('spotify não cai em fonte alternativa', !/require\('\.\.\/downloader'\)|cobalt|spotifydown|youtube|yt-dlp/i.test(spotify), '');
 }
 
 // ── 2. downloader.twitter tem fallback yt-dlp ──
