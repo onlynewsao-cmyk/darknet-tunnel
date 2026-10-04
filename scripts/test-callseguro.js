@@ -2,7 +2,7 @@
 /** v7.51 — CALL-SEGURO: garantia de ZERO chamadas automáticas.
  * Uma chamada de saída não pedida pelo Dono = ban instantâneo do número.
  * Este teste trava TODOS os caminhos de saída: comandos, NL, AURA,
- * autoCall, callback, e o anti-troll do atendimento. */
+ * autoCall, callback e o atendimento de entrada — exclusivo do Dono. */
 delete process.env.AUTO_CALL;
 process.env.OWNER_NUMBER = '244900000001';
 process.env.OWNER_NAME = 'Dark Net';
@@ -30,7 +30,10 @@ Module.prototype.require = function (id) {
   if (/liveVoip/.test(s)) return { disponivel: async () => false };
   if (/models[\\/]User/.test(s)) return { findOne: (q) => w(q.number === KNOWN ? { number: q.number, nome: 'Amigo' } : null) };
   if (/models[\\/]/.test(s)) return { find: () => w([]), findOne: () => w(null), findOneAndUpdate: async () => null, countDocuments: async () => 0, create: async () => ({}) };
-  if (s.endsWith('botConfigCache')) return { get: async (k, d) => d, set: async () => {} };
+  if (s.endsWith('botConfigCache')) return {
+    get: async (k, d) => k === 'owner_lid' ? '213907088089212@lid' : d,
+    set: async () => {},
+  };
   return orig.apply(this, arguments);
 };
 const ch = require('../src/bot/caseHandler'); ch.loadCases();
@@ -108,17 +111,28 @@ async function run(cmd, num, group, args = []) {
   const cb = await CH.tentarCallbackVozReal(mkSock([]), { id: 'c1' }, { ownerCall: false });
   C('callback não-dono: so_dono', cb && cb.ok === false && cb.motivo === 'so_dono', JSON.stringify(cb));
 
-  // ── 7. ENTRADA: desconhecido → silêncio; conhecido → atender 1×; 2.ª → cooldown ──
-  const sentI = []; let rej = 0;
-  const sockI = mkSock(sentI); sockI.rejectCall = async () => { rej++; return {}; };
+  // ── 7. ENTRADA: voz e vídeo são SÓ do Dono ─────────────────
+  // Não existe exceção para contactos conhecidos ou modos antigos: terceiros
+  // recebem apenas rejectCall, sem texto, PTT, callback, IA ou sessão activa.
+  const sentI = []; let rej = 0; let accepts = 0;
+  const sockI = mkSock(sentI);
+  sockI.rejectCall = async () => { rej++; return {}; };
+  sockI.acceptCall = async () => { accepts++; return {}; };
+
   const unk = await CH.onCall(sockI, { id: 'u1', from: '999000111@s.whatsapp.net', status: 'offer' }, {});
-  C('desconhecido: silencio, rejeita, ZERO texto', unk.modo === 'silencio' && rej === 1 && sentI.length === 0, JSON.stringify({ m: unk.modo, rej, sent: sentI.length }));
-  const c1 = await CH.onCall(sockI, { id: 'k1', from: KNOWN + '@s.whatsapp.net', status: 'offer' }, {});
-  C('conhecido 1.ª: atende', c1.modo === 'atender' && !c1.ignorado, JSON.stringify(c1).slice(0, 150));
-  const rejAntes = rej, sentAntes = sentI.length;
-  const c2 = await CH.onCall(sockI, { id: 'k2', from: KNOWN + '@s.whatsapp.net', status: 'offer' }, {});
-  C('conhecido 2.ª seguida: cooldown_antitroll', c2.motivo === 'cooldown_antitroll' && c2.ignorado === true, JSON.stringify(c2).slice(0, 150));
-  C('cooldown: sem texto novo', sentI.length === sentAntes, `antes=${sentAntes} depois=${sentI.length} rej=${rej - rejAntes}`);
+  C('desconhecido: rejeita em silêncio, ZERO texto', unk.motivo === 'so_dono' && unk.ignorado === true && rej === 1 && sentI.length === 0 && accepts === 0, JSON.stringify({ m: unk.modo, rej, sent: sentI.length, accepts }));
+  const known = await CH.onCall(sockI, { id: 'k1', from: KNOWN + '@s.whatsapp.net', status: 'offer' }, {});
+  C('contacto conhecido também NÃO é atendido', known.motivo === 'so_dono' && rej === 2 && sentI.length === 0 && accepts === 0, JSON.stringify({ m: known.modo, rej, sent: sentI.length, accepts }));
+
+  const ownerVoice = await CH.onCall(sockI, { id: 'owner-v1', from: OWNER + '@s.whatsapp.net', status: 'offer', isVideo: false }, { ownerNumber: OWNER });
+  C('Dono: chamada de voz é atendida', ownerVoice.modo === 'atender' && !ownerVoice.ignorado && accepts === 1 && sentI.length === 1, JSON.stringify(ownerVoice).slice(0, 150));
+  const sentAntes = sentI.length;
+  const ownerDuplicate = await CH.onCall(sockI, { id: 'owner-v1', from: OWNER + '@s.whatsapp.net', status: 'offer', isVideo: false }, { ownerNumber: OWNER });
+  C('evento repetido do Dono não duplica atendimento', ownerDuplicate.motivo === 'ja_processada' && accepts === 1 && sentI.length === sentAntes, JSON.stringify(ownerDuplicate));
+  const ownerVideo = await CH.onCall(sockI, { id: 'owner-v2', from: OWNER + '@s.whatsapp.net', status: 'offer', isVideo: true }, { ownerNumber: OWNER });
+  C('Dono: chamada de vídeo é atendida', ownerVideo.modo === 'atender' && !ownerVideo.ignorado && accepts === 2 && sentI.length === sentAntes + 1, JSON.stringify(ownerVideo).slice(0, 150));
+  const ownerLid = await CH.onCall(sockI, { id: 'owner-lid', from: '213907088089212@lid', status: 'offer' }, { ownerNumber: OWNER });
+  C('LID guardado do Dono também é autorizado', ownerLid.modo === 'atender' && !ownerLid.ignorado && accepts === 3, JSON.stringify(ownerLid).slice(0, 150));
 
   console.log(`\nCALL-SEGURO: ${ok} OK / ${fail} FAIL`);
   process.exit(fail ? 1 : 0);

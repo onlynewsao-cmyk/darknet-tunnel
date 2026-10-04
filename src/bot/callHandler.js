@@ -30,6 +30,34 @@ function jidNum(jid) {
   return String(jid || '').split(':')[0].split('@')[0].replace(/\D/g, '');
 }
 
+// Compara JIDs sem o dispositivo (":12") mas preserva o domínio: um LID
+// não pode ser confundido com um número de telefone só por ter os mesmos dígitos.
+function jidBase(jid) {
+  return String(jid || '').trim().toLowerCase().replace(/:[^@]+(?=@)/, '');
+}
+
+function mesmoJid(a, b) {
+  const aa = jidBase(a);
+  const bb = jidBase(b);
+  return !!aa && !!bb && aa === bb;
+}
+
+// Limites de rede não podem deixar timers pendurados a cada chamada. Isso é
+// importante para o socket manter-se responsivo após offers repetidos.
+async function comTimeout(fn, ms, mensagem) {
+  let timer = null;
+  try {
+    return await Promise.race([
+      Promise.resolve().then(fn),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(mensagem || `timeout ${ms}ms`)), ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 function ehDespedida(texto) {
   const t = String(texto || '')
     .toLowerCase()
@@ -69,11 +97,13 @@ async function _persistirModos() {
 
 async function getMode(jid, isOwner) {
   await _carregarModos();
+  // Chamada de voz/vídeo é uma superfície sensível: nunca há atendimento
+  // automático para outra pessoa, mesmo que tenha ficado um modo antigo na BD.
+  if (!isOwner) return 'silencio';
   const k = String(jid || '');
   if (_modosMem.has(k)) return _modosMem.get(k);
   const porNum = [..._modosMem.entries()].find(([id]) => jidNum(id) === jidNum(k));
   if (porNum) return porNum[1];
-  // Primeiro passo: ATENDE sempre, a não ser que o Dono mude o modo.
   return 'atender';
 }
 
@@ -153,10 +183,11 @@ function marcarActiva(from, call, isOwner) {
     soAtendeu: true,
   };
   _activas.set(String(from), rec);
-  setTimeout(() => {
+  const timer = setTimeout(() => {
     const cur = _activas.get(String(from));
     if (cur && Date.now() - cur.ultimo >= JANELA_MS) _activas.delete(String(from));
   }, JANELA_MS + 1000);
+  timer.unref?.();
   return rec;
 }
 
@@ -179,10 +210,7 @@ async function tentarAceitarChamada(sock, call) {
   const LIMITE_MS = 1500;
   const tentar = async (nome, fn) => {
     try {
-      await Promise.race([
-        fn(),
-        new Promise((_, rej) => setTimeout(() => rej(new Error(`timeout ${LIMITE_MS}ms`)), LIMITE_MS)),
-      ]);
+      await comTimeout(fn, LIMITE_MS, `timeout ${LIMITE_MS}ms`);
       tentativas.push({ metodo: nome, ok: true });
       return true;
     } catch (e) {
@@ -214,10 +242,7 @@ async function tentarAceitarChamada(sock, call) {
   // Sem preaccept o servidor não considera a chamada estabelecida.
   try {
     const A = require('./atenderChamada');
-    const r = await Promise.race([
-      A.atender(sock, call),
-      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout 4000ms')), 4000)),
-    ]);
+    const r = await comTimeout(() => A.atender(sock, call), 4000, 'timeout 4000ms');
     if (r && r.atendeu) {
       tentativas.push({ metodo: 'handshake_completo', ok: true, passos: r.passos });
       return { ok: true, metodo: 'handshake_completo', tentativas };
@@ -469,18 +494,15 @@ async function tentarCallbackVozReal(sock, call, { ownerCall, isVideo, saudacao 
   const alvo = numero + '@s.whatsapp.net';
   let r = null;
   try {
-    r = await Promise.race([
-      live.ligarAoVivo(numero, {
-        saudacao,
-        onEscuta: async (wavBuf) => {
-          try {
-            marcarActiva(alvo, { id: 'vozrtp-cb-' + Date.now(), isVideo: false }, ownerCall);
-            await continuarConversa(sock, alvo, wavBuf, { pushName: '' });
-          } catch {}
-        },
-      }),
-      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout voip 30s')), 30000)),
-    ]);
+    r = await comTimeout(() => live.ligarAoVivo(numero, {
+      saudacao,
+      onEscuta: async (wavBuf) => {
+        try {
+          marcarActiva(alvo, { id: 'vozrtp-cb-' + Date.now(), isVideo: false }, ownerCall);
+          await continuarConversa(sock, alvo, wavBuf, { pushName: '' });
+        } catch {}
+      },
+    }), 30000, 'timeout voip 30s');
   } catch (e) {
     return { ok: false, motivo: 'falhou', detalhe: String(e?.message || e).slice(0, 80) };
   }
@@ -503,14 +525,6 @@ async function onCall(sock, call, { ownerJid, ownerNumber, isOwner } = {}) {
   const from = call.from;
   if (!from) return { ok: true, ignorado: true, motivo: 'sem_from' };
 
-  if (callId && _seen.has(callId)) {
-    return { ok: true, ignorado: true, motivo: 'ja_processada' };
-  }
-  if (callId) {
-    _seen.add(callId);
-    setTimeout(() => _seen.delete(callId), 120000);
-  }
-
   const fromNumber = jidNum(from);
   const botNumber = jidNum(sock.user?.id);
   if (fromNumber && botNumber && fromNumber === botNumber) {
@@ -519,30 +533,44 @@ async function onCall(sock, call, { ownerJid, ownerNumber, isOwner } = {}) {
 
   const ownerNum = String(ownerNumber || config.owner?.number || '').replace(/\D/g, '');
   const donoJid = ownerJid || (ownerNum ? ownerNum + '@s.whatsapp.net' : '');
-  const ownerCall = !!(isOwner || (ownerNum && fromNumber === ownerNum));
-  let modo = await getMode(from, ownerCall);
+  // O WhatsApp moderno pode entregar uma chamada pelo LID, cujo número não é
+  // o número público do Dono. Mantemos o LID guardado como identidade válida.
+  let ownerLid = '';
+  try { ownerLid = await require('./botConfigCache').get('owner_lid', ''); } catch {}
+  const ownerCall = !!(
+    isOwner ||
+    (ownerNum && fromNumber === ownerNum) ||
+    mesmoJid(from, donoJid) ||
+    (ownerLid && mesmoJid(from, ownerLid))
+  );
   const isVideo = !!call.isVideo;
 
-  // v7.44 ANTI-RESTRIÇÃO: responder automaticamente (texto + callback) a
-  // chamadas de números DESCONHECIDOS é exactamente o padrão que a Meta
-  // marca como "mensagens automáticas/em massa" (conta ficou restrita a
-  // 06/09 depois de um bot ligar para o PV). Para quem nunca falou
-  // connosco: rejeita em silêncio. Só o Dono (e quem o Dono definiu
-  // modo explícito) recebe atendimento/callback.
-  if (!ownerCall && !modoExplicito(from)) {
-    let conhecido = false;
-    try {
-      const User = require('../database/models/User');
-      conhecido = !!(await User.findOne({ number: fromNumber }).select('_id').lean().catch(() => null));
-    } catch {}
-    if (!conhecido) modo = 'silencio';
+  // POLÍTICA ESTRITA: voz e vídeo são exclusivamente do Dono. Para qualquer
+  // outra pessoa apenas encerra o offer, sem texto, PTT, callback, IA ou
+  // tentativa de handshake. Assim não há mensagens/ligação automáticas em
+  // massa — o principal comportamento que expõe a conta a restrições.
+  if (!ownerCall) {
+    try { await sock.rejectCall(call.id, from); } catch {}
+    return { ok: true, modo: 'silencio', motivo: 'so_dono', ignorado: true };
   }
 
-  console.log(`[Call] offer de ${fromNumber} (${isVideo ? 'vídeo' : 'voz'}) modo=${modo}`);
+  // O dedupe só é necessário para chamadas autorizadas. Não guardar IDs de
+  // terceiros evita que spam de offers ocupe memória durante dois minutos.
+  if (callId && _seen.has(callId)) {
+    return { ok: true, ignorado: true, motivo: 'ja_processada' };
+  }
+  if (callId) {
+    _seen.add(callId);
+    const timer = setTimeout(() => _seen.delete(callId), 120000);
+    timer.unref?.();
+  }
+
+  const modo = await getMode(from, true);
+  console.log(`[Call] offer do Dono ${fromNumber || jidBase(from)} (${isVideo ? 'vídeo' : 'voz'}) modo=${modo}`);
 
   if (modo === 'silencio') {
     try { await sock.rejectCall(call.id, from); } catch {}
-    return { ok: true, modo: 'silencio', motivo: 'desconhecido' };
+    return { ok: true, modo: 'silencio', motivo: 'modo_dono', ignorado: true };
   }
 
   if (modo === 'ignorar') {
@@ -569,19 +597,10 @@ async function onCall(sock, call, { ownerJid, ownerNumber, isOwner } = {}) {
     return { ok: true, modo: 'rejeitar', tipo };
   }
 
-  // ── ATENDER ──────────────────────────────────────────────
-  // v7.51 ANTI-TROLL: sem isto, um troll a ligar 50× seguidas recebia 50
-  // saudações automáticas (padrão de spam = risco de ban). Não-dono: 1
-  // atendimento automático por número a cada 5 min; o resto rejeita calado.
-  if (!ownerCall) {
-    const ck = 'at' + fromNumber;
-    const ult = _callbackCooldown.get(ck) || 0;
-    if (Date.now() - ult < 5 * 60 * 1000) {
-      try { await sock.rejectCall(call.id, from); } catch {}
-      return { ok: true, modo: 'atender', tipo: isVideo ? 'vídeo' : 'voz', motivo: 'cooldown_antitroll', ignorado: true };
-    }
-    _callbackCooldown.set(ck, Date.now());
-  }
+  // ── ATENDER (exclusivamente o Dono) ───────────────────────
+  // A guarda estrita acima devolve todos os outros callers antes de qualquer
+  // TTS, callback, IA ou handshake. Assim não existe atendimento automático
+  // que possa escalar para spam ou instabilidade.
   // v6.76: marcar PRIMEIRO (para as notas de voz que cheguem já contarem
   // como turnos da chamada) e falar LOGO A SEGUIR. As tentativas de aceitar
   // o sinal ficam para o fim, em segundo plano: nenhuma delas funciona

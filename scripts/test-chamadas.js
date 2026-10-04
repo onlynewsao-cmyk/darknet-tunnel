@@ -65,27 +65,26 @@ function mkSock() {
   // ── B. Modos ────────────────────────────────────────────────
   console.log('\n▸ B. Modos de chamada');
   t('Padrão do Dono é atender', (await C.getMode(OWNER, true)) === 'atender', await C.getMode(OWNER, true));
-  t('Padrão de qualquer um é atender', (await C.getMode(ZE, false)) === 'atender', await C.getMode(ZE, false));
+  t('Padrão de qualquer outra pessoa é silêncio', (await C.getMode(ZE, false)) === 'silencio', await C.getMode(ZE, false));
   const sm = await C.setMode(ZE, 'atender');
-  t('setMode grava', sm.ok && (await C.getMode(ZE, false)) === 'atender', '');
-  t('Persiste no MongoDB', !!STORE['darkbot_call_modes_v1'], JSON.stringify(STORE['darkbot_call_modes_v1'] || {}).slice(0, 50));
+  t('modo antigo de terceiro não fura a política', sm.ok && (await C.getMode(ZE, false)) === 'silencio', '');
+  t('Persistência continua disponível para o Dono', !!STORE['darkbot_call_modes_v1'], JSON.stringify(STORE['darkbot_call_modes_v1'] || {}).slice(0, 50));
   t('Modo inválido é recusado', !(await C.setMode(ZE, 'voar')).ok, '');
   await C.setMode(ZE, 'rejeitar');
 
-  // ── C. Rejeitar ─────────────────────────────────────────────
-  console.log('\n▸ C. REJEITAR (estranho)');
+  // ── C. Terceiros são sempre rejeitados em silêncio ─────────
+  console.log('\n▸ C. TERCEIRO: silêncio total');
   const s1 = mkSock();
   const r1 = await C.onCall(s1, { id: 'c1', from: ZE, status: 'offer', isVideo: false }, { ownerJid: OWNER, ownerNumber: '244945280380' });
-  t('Rejeita mesmo', r1.modo === 'rejeitar' && s1.acts.includes('reject:' + ZE), s1.acts.join(','));
-  t('Avisa quem ligou', s1.msgs.some(m => m.j === ZE), '');
-  t('Notifica o Dono', s1.msgs.some(m => m.j === OWNER && /ligou/i.test(m.text || '')), '');
+  t('Encerra a chamada do terceiro', r1.motivo === 'so_dono' && s1.acts.includes('reject:' + ZE), s1.acts.join(','));
+  t('Não envia texto, áudio nem notificação', s1.msgs.length === 0, JSON.stringify(s1.msgs));
 
-  // ── D. Ignorar ──────────────────────────────────────────────
-  console.log('\n▸ D. IGNORAR');
+  // ── D. Nem modo explícito antigo muda a regra ───────────────
+  console.log('\n▸ D. MODO ANTIGO NÃO CONTORNA A POLÍTICA');
   await C.setMode(ZE, 'ignorar');
   const s2 = mkSock();
   const r2 = await C.onCall(s2, { id: 'c2', from: ZE, status: 'offer' }, { ownerJid: OWNER });
-  t('Não mexe em nada', r2.modo === 'ignorar' && s2.acts.length === 0 && s2.msgs.length === 0, '');
+  t('Continua a rejeitar em silêncio', r2.motivo === 'so_dono' && s2.acts.length === 1 && s2.msgs.length === 0, JSON.stringify(r2));
 
   // ── E. Atender ──────────────────────────────────────────────
   console.log('\n▸ E. ATENDER (o Dono liga)');

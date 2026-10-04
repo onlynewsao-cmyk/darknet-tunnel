@@ -7,7 +7,7 @@
  *   • Sem sessão VoIP → cai no fluxo PTT (fala saudação por nota de voz)
  *   • Vídeo → nunca faz callback (cai no PTT)
  *   • Cooldown: 2.ª chamada em 60 s não volta a ligar
- *   • Não-dono sem modo explícito → não liga de volta (cai no PTT)
+ *   • Não-dono → rejeição silenciosa, sem callback, PTT ou texto
  *
  * Uso: node scripts/test-callback.js
  */
@@ -136,7 +136,7 @@ function makeSock() {
   }
 
   // ══════════════════════════════════════════════════════════
-  console.log('\n╔═══ 5. Não-dono sem modo explícito → PTT ═══╗');
+  console.log('\n╔═══ 5. Não-dono → rejeição silenciosa ═══╗');
   // ══════════════════════════════════════════════════════════
   {
     fakeLive._disponivel = true; fakeLive._sessao = true; fakeLive._ligacoes = [];
