@@ -509,7 +509,7 @@ async function _stepFinalizar(sock, msg, ctx) {
   if (ctx.isGroup) {
     try {
       const regioes = require('./regions');
-      territorio = await regioes.getCountryForGroup(ctx.remoteJid);
+      territorio = await regioes.getCountryForGroup(ctx.remoteJid, ctx.groupName);
       if (territorio) regioes.marcarJogadorNoPais(p, territorio);
     } catch {}
   }

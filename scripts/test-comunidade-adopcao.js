@@ -100,7 +100,7 @@ function mundo({ donoDentro = true, donoAdmin = false, extra = [] } = {}) {
   t('Reconhece que já é admin', ad3.dono.admin && ad3.dono.acoes.length === 0, JSON.stringify(ad3.dono.acoes));
   t('Só gastou a query do scan', s3.contar() === 1, s3.q.join(', '));
 
-  console.log('\n▸ F. Fluxo completo: adopta + cria os 6 grupos do RPG');
+  console.log('\n▸ F. Fluxo completo: adopta + cria os 8 espaços do RPG');
   C._groupCache.clear();
   const s4 = mundo({ donoDentro: true, donoAdmin: true });
   const R = await C.initCommunity(s4, OWNER, { rescan: true });
@@ -108,17 +108,17 @@ function mundo({ donoDentro = true, donoAdmin = false, extra = [] } = {}) {
   t('Adoptou em vez de criar', comm.ok && /adoptada/.test(comm.name), comm.name);
   t('Não chamou communityCreate', !s4.q.includes('communityCreate'), 'ok');
   const criados = R.filter(r => r.ok && r.type !== 'community').length;
-  t('Criou os 6 grupos do RPG', criados === 6, criados + '/6');
+  t('Criou os 8 espaços do RPG', criados === 8, criados + '/8');
   // O Arsenal reaproveita o "Comunicados" que já existia, por isso só
-  // 5 grupos NOVOS são criados: 2 originais + 5 novos = 7 ligados.
+  // 7 grupos NOVOS são criados: 2 originais + 7 novos = 9 ligados.
   const dentro = Object.values(s4.grupos).filter(g => g.linkedParent === 'comm1@g.us').length;
-  t('Todos ligados à comunidade', dentro === 7, dentro + ' (2 originais + 5 novos)');
+  t('Todos ligados à comunidade', dentro === 9, dentro + ' (2 originais + 7 novos)');
   t('Arsenal reaproveitou o Comunicados', C._groupCache.get('arsenal') === 'avisos@g.us', C._groupCache.get('arsenal'));
   t('Novos grupos nasceram DENTRO da comunidade',
     Object.values(s4.grupos).filter(g => /Arena das Sombras|Lazer e Memes/.test(g.subject || '')).every(g => g.linkedParent === 'comm1@g.us'), 'ok');
 
   console.log('\n▸ G. Correr 2x não duplica');
-  // reaproveita o estado do teste F (o _groupCache já tem os 6)
+  // reaproveita o estado do teste F (o _groupCache já tem os 8)
   const s5 = mundo({ donoDentro: true, donoAdmin: true });
   const R2 = await C.initCommunity(s5, OWNER, { rescan: true });
   const novos = s5.q.filter(x => x === 'create').length;

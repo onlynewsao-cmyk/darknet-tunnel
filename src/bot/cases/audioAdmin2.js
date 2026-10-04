@@ -256,11 +256,16 @@ module.exports = function registerAudioAdmin2(registerCase) {
         // A atribuição é persistida e evita repetir país enquanto houver
         // regiões disponíveis; não faz chamadas WhatsApp, só uma escrita leve.
         let territorio = null;
-        if (cmd === 'modorpg' && isOn && ctx.isGroup) {
+        if (cmd === 'modorpg' && ctx.isGroup) {
           try {
             const regioes = require('../rpg/regions');
-            const r = await regioes.ensureGroupCountry(ctx.remoteJid);
-            if (r.ok) territorio = r.country;
+            // Ao desligar, este grupo deixa imediatamente de aparecer como
+            // país-território, mesmo que ainda exista cache visual em memória.
+            if (!isOn) regioes._groupCache?.delete(String(ctx.remoteJid));
+            else {
+              const r = await regioes.ensureGroupCountry(ctx.remoteJid, ctx.groupName);
+              if (r.ok) territorio = r.country;
+            }
           } catch {}
         }
         const label = cmd.replace('anti', 'ANTI-').replace(/([A-Z])/g, ' $1').toUpperCase().replace('  ', ' ');
@@ -281,8 +286,8 @@ module.exports = function registerAudioAdmin2(registerCase) {
               '🎭  Raças antigas, classes proibidas e clãs por fundar acordam.',
               '🗺️  Biomas por explorar, bosses por desafiar, tesouros por saquear.',
               territorio
-                ? `${territorio.flag}  *REGIÃO ATRIBUÍDA:* ${territorio.name} · cidade ${territorio.city}`
-                : '🌍  Região internacional preparada — vê com *!pais*.',
+                ? `${territorio.flag}  *TERRITÓRIO ABERTO:* ${territorio.name} · este grupo é o seu próprio país RPG`
+                : '🌍  Território internacional preparado — vê com *!pais*.',
               '💱  Trocas com todas as regiões: *!trocar ofertas*.',
               '',
               '🎮  *Começa a aventura:*',

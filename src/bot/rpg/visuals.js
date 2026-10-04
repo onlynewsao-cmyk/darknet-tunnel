@@ -22,7 +22,7 @@ const SCENES = {
   portals: {
     file: 'dark-ville-portals.jpg',
     title: '🌍 PORTAIS REGIONAIS',
-    caption: 'Cada portal leva a uma cidade do mundo internacional DARK RPG.',
+    caption: 'Cada portal liga DARK VILLE a um grupo-território do DARK RPG.',
   },
 };
 

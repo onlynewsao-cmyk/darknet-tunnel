@@ -87,19 +87,20 @@ function test(label, condition, details = '') {
 (async () => {
   console.log('\n╔══ DARK RPG — MUNDO INTERNACIONAL ══╗');
 
-  console.log('\n▸ A. País automático por grupo com Modo RPG');
-  const luanda = await regions.ensureGroupCountry('grupo-angola@g.us');
-  const brasil = await regions.ensureGroupCountry('grupo-brasil@g.us');
-  test('Primeiro grupo recebe Angola', luanda.ok && luanda.country.id === 'angola', luanda.country?.name);
-  test('Segundo grupo recebe outro país', brasil.ok && brasil.country.id === 'brasil', brasil.country?.name);
-  const duplicate = await regions.ensureGroupCountry('grupo-duplicado@g.us', 'Angola');
-  test('Não permite dois grupos no mesmo país', !duplicate.ok && /já pertence/.test(duplicate.error), duplicate.error);
+  console.log('\n▸ A. Cada grupo com Modo RPG é um país-território');
+  const luanda = await regions.ensureGroupCountry('grupo-angola@g.us', 'Reino Kwanza');
+  const brasil = await regions.ensureGroupCountry('grupo-brasil@g.us', 'Império Aurora');
+  test('O território usa o nome exacto do primeiro grupo', luanda.ok && luanda.country.name === 'Reino Kwanza', luanda.country?.name);
+  test('O segundo grupo é outro território com o próprio nome', brasil.ok && brasil.country.name === 'Império Aurora', brasil.country?.name);
+  const sameName = await regions.ensureGroupCountry('grupo-duplicado@g.us', 'Reino Kwanza');
+  settings.forEach(s => { s.modorpg = true; });
   const active = await regions.activeRegions();
-  test('Status internacional lista cidades activas', active.length === 2 && active.every(x => x.country?.city), String(active.length));
+  test('Dois grupos podem ter o mesmo nome, mas são territórios separados', sameName.ok && sameName.country.id !== luanda.country.id, sameName.country?.id);
+  test('Status internacional lista grupos com Modo RPG activo', active.length === 3 && active.every(x => x.country?.isGroupTerritory), String(active.length));
 
   console.log('\n▸ B. Inventário é global; mercado usa escrow');
   const offer = await trade.criarOferta({
-    sellerNumber: '244900000001', sellerName: 'Kito', sellerCountry: 'Angola',
+    sellerNumber: '244900000001', sellerName: 'Kito', sellerCountry: luanda.country.name,
     offerItem: 'ferro', wantedItem: 'poção de mana',
   });
   test('Oferta remove item do vendedor para escrow', offer.ok && !players.get('244900000001').inventory.includes('ferro'), trade.codigo(offer.trade));
@@ -114,16 +115,16 @@ function test(label, condition, details = '') {
     JSON.stringify([...players.values()].map(p => p.inventory)));
 
   const second = await trade.criarOferta({
-    sellerNumber: '244900000001', sellerName: 'Kito', sellerCountry: 'Angola',
+    sellerNumber: '244900000001', sellerName: 'Kito', sellerCountry: luanda.country.name,
     offerItem: 'poção de vida', wantedItem: 'cristal',
   });
   const cancelled = await trade.cancelarOferta({ sellerNumber: '244900000001', id: trade.codigo(second.trade) });
   test('Cancelar devolve o escrow ao dono', cancelled.ok && players.get('244900000001').inventory.includes('poção de vida'), cancelled.trade?.status);
 
-  console.log('\n▸ C. Visual único por nível, classe e cidade; comandos no gate');
+  console.log('\n▸ C. Visual único por nível, classe e grupo-território; comandos no gate');
   const level8 = art.cardOptsFromPlayer({ whatsappNumber: '244900000001', name: 'Kito', level: 8, race: 'humano', class: 'guerreiro' }, { region: luanda.country });
   const level17 = art.cardOptsFromPlayer({ whatsappNumber: '244900000001', name: 'Kito', level: 17, race: 'humano', class: 'guerreiro' }, { region: brasil.country });
-  test('Prompt do card inclui tema regional e tier de nível', /Luanda Obsidiana/.test(level8.backgroundPrompt) && /level tier 2/.test(level17.backgroundPrompt));
+  test('Prompt do card inclui o grupo-território e tier de nível', /Reino Kwanza/.test(level8.backgroundPrompt) && /level tier 2/.test(level17.backgroundPrompt));
   test('Card muda cache/seed quando nível ou região muda', level8.backgroundCacheKey !== level17.backgroundCacheKey && level8.seed !== level17.seed);
   test('Gate reconhece regiões e mercado RPG',
     gate.RPG_CMDS.has('paises') && gate.RPG_CMDS.has('trocar') && gate.LIVRE_CHAR.has('pais'));

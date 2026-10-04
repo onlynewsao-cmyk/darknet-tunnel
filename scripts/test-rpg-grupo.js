@@ -5,8 +5,8 @@
  * 1. SELECCIONAR GRUPO DA COMUNIDADE (RPG):
  *    - discoverCommunityForGroup: parent do grupo → guardada → varrimento.
  *    - adoptGroupAs: registra o grupo, renomeia, descreve, liga e promove.
- *    - casos setarena/setdungeons/settrocas/setcavernas/setlazer/setarsenal
- *      + setgrupo registados.
+ *    - casos setreinos/setportais/setarena/setdungeons/settrocas/setcavernas/
+ *      setlazer/setarsenal + setgrupo registados.
  *
  * 2. AURA NÃO responde a comandos de bots:
  *    - pareceComando deteta QUALQUER prefixo de comando (! . / $ # ? * - …).
@@ -95,7 +95,7 @@ function mkSock(opts = {}) {
   {
     caseHandler.init();
     const { CASES } = caseHandler;
-    for (const c of ['setarena', 'setdungeons', 'settrocas', 'setcavernas', 'setlazer', 'setarsenal', 'setgrupo']) {
+    for (const c of ['setreinos', 'setportais', 'setarena', 'setdungeons', 'settrocas', 'setcavernas', 'setlazer', 'setarsenal', 'setgrupo']) {
       t(`case ${c} registado`, CASES.has(c));
     }
   }

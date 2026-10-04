@@ -24,6 +24,29 @@ const { profile } = require('../../mediaQuality');
 const SYSTEMZONE_API_URL = (process.env.SYSTEMZONE_API_URL || 'https://systemzone.store').replace(/\/$/, '');
 const SYSTEMZONE_API_KEY = process.env.SYSTEMZONE_API_KEY || 'freekey';
 
+// O clique do botão leva apenas a URL. Guardamos os metadados da busca por
+// alguns minutos para o vídeo manter título, autor e duração no envio final.
+const _videoMeta = new Map();
+const META_TTL = 15 * 60 * 1000;
+const META_MAX = 120;
+function _videoKey(value) {
+  const s = String(value || '');
+  return s.match(/[?&]v=([\w-]{11})|youtu\.be\/([\w-]{11})|\/shorts\/([\w-]{11})/)?.slice(1).find(Boolean) || s;
+}
+function _rememberVideos(results) {
+  const list = Array.isArray(results) ? results : [];
+  if (_videoMeta.size >= META_MAX) _videoMeta.clear();
+  for (const item of list) {
+    const key = _videoKey(item?.youtube_url || item?.url);
+    if (key) _videoMeta.set(key, { ...item, at: Date.now() });
+  }
+  return list;
+}
+function _rememberedVideo(value) {
+  const entry = _videoMeta.get(_videoKey(value));
+  return entry && Date.now() - entry.at < META_TTL ? entry : null;
+}
+
 // ─────────────────────────────────────────────
 // LAZY LOAD ButtonV2 (só quando necessário)
 // ─────────────────────────────────────────────
@@ -68,7 +91,7 @@ async function ytSearch(query) {
   try {
     const url = `${SYSTEMZONE_API_URL}/api/ytsearch?text=${encodeURIComponent(query)}&apikey=${encodeURIComponent(SYSTEMZONE_API_KEY)}`;
     const data = await mediaHandler.fetchJson(url, 20000);
-    if (data?.resultados?.length) return data.resultados;
+    if (data?.resultados?.length) return _rememberVideos(data.resultados);
     lastErr = new Error('API sem resultados');
   } catch (e) {
     lastErr = e;
@@ -77,7 +100,7 @@ async function ytSearch(query) {
   // 2º — busca local (yt-search) — nunca depende de API externa
   try {
     const local = await localYtSearch(query);
-    if (local.length) return local;
+    if (local.length) return _rememberVideos(local);
   } catch (e) {
     console.warn('[ytSearch] local falhou:', e.message?.slice(0, 80));
   }
@@ -146,6 +169,7 @@ async function ytAudio(urlOrQuery, quality = '128k') {
 // ─────────────────────────────────────────────
 async function ytVideo(urlOrQuery, quality = '720') {
   const q = profile('128k', quality);
+  const remembered = _rememberedVideo(urlOrQuery) || {};
   // 1º — API recebe a resolução pedida para acelerar a entrega e reduzir
   // o tamanho do ficheiro. O fallback local também recebe q.video.
   try {
@@ -156,10 +180,11 @@ async function ytVideo(urlOrQuery, quality = '720') {
     if (data?.status && u) {
       return {
         url: String(u).replace(/^http:\/\//i, 'https://'),
-        title: r?.title || 'Vídeo',
-        duration: r?.duration || '',
+        title: r?.title || remembered.title || 'Vídeo',
+        author: r?.author || remembered.author || '',
+        duration: r?.duration || remembered.duration || '',
         quality: r?.quality || q.apiVideo,
-        thumbnail: r?.thumbnail || '',
+        thumbnail: r?.thumbnail || remembered.thumbnail || '',
         source: 'SystemZone-ytmp4',
       };
     }
@@ -173,10 +198,11 @@ async function ytVideo(urlOrQuery, quality = '720') {
     const r = await ytdl.getVideo(urlOrQuery, q.video);
     return {
       buffer: r.buffer,
-      title: r.title || 'Vídeo',
-      duration: r.duration || '',
+      title: r.title || remembered.title || 'Vídeo',
+      author: r.author || remembered.author || '',
+      duration: r.duration || remembered.duration || '',
       quality: r.quality || quality + 'p',
-      thumbnail: r.thumb || '',
+      thumbnail: r.thumb || remembered.thumbnail || '',
       mimetype: r.mimetype || 'video/mp4',
       source: r.source || 'ytdl',
     };
@@ -192,7 +218,7 @@ async function ytVideo(urlOrQuery, quality = '720') {
 // ─────────────────────────────────────────────
 function playFallbackText(video, prefix) {
   const audioCmd = `${prefix}ytd ${video.youtube_url}`;
-  const videoCmd = `${prefix}gyt ${video.youtube_url} | mp4 | 720`;
+  const videoCmd = `${prefix}gyt ${video.youtube_url} | mp4 | 720 | ${video.duration || ''}`;
   return (
     `🎵 *${video.title}*\n` +
     `👤 ${video.author || 'Desconhecido'}\n` +
@@ -211,10 +237,11 @@ function playFallbackText(video, prefix) {
 // a usar o card normal e não passa por este fluxo.
 async function sendToxicPlayCard(sock, jid, video, prefix, quoted = null) {
   const audioCmd = `${prefix}ytd ${video.youtube_url}`;
-  const videoCmd = `${prefix}gyt ${video.youtube_url} | mp4 | 480`;
   const title = String(video.title || 'Música').slice(0, 70);
   const author = String(video.author || 'Canal desconhecido').slice(0, 60);
   const duration = video.duration || '—';
+  // A duração segue no ID invisível do botão para não se perder no download.
+  const videoCmd = `${prefix}gyt ${video.youtube_url} | mp4 | 480 | ${duration}`;
   const views = Number(video.views || 0).toLocaleString('pt-BR');
   const body =
     `╭━━━〔 ☠️ 𖤐 ᴅᴀʀᴋ ᴛᴏxɪᴄ ᴘʟᴀʏ 𖤐 ☠️ 〕━━━╮\n` +
@@ -255,7 +282,7 @@ async function sendToxicPlayCard(sock, jid, video, prefix, quoted = null) {
 // ─────────────────────────────────────────────
 async function sendPlayCard(sock, jid, video, prefix, quoted = null, bodyExtra = '') {
   const audioCmd = `${prefix}ytd ${video.youtube_url}`;
-  const videoCmd = `${prefix}gyt ${video.youtube_url} | mp4 | 720`;
+  const videoCmd = `${prefix}gyt ${video.youtube_url} | mp4 | 720 | ${video.duration || ''}`;
   const footer = (config.bot?.name ? `${config.bot.name} 🕸️ Dark Net Engine` : '© DARK BOT v6');
   const body =
     `👤 ${video.author || 'Desconhecido'}\n` +

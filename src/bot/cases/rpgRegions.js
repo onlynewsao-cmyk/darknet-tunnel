@@ -16,7 +16,7 @@ async function portalReply(sock, msg, ctx, title, lines) {
 }
 
 function descricao(country) {
-  return `${country.flag} *${country.name}* — ${country.city}\n` +
+  return `${country.flag} *${country.name}* — grupo-território RPG\n` +
     `└ 🗺️ ${country.biome}`;
 }
 
@@ -24,30 +24,27 @@ module.exports = function registerRPGRegions(registerCase) {
   registerCase(['pais', 'país', 'regiaorpg', 'região-rpg'], async ({ sock, msg, ctx, args, isOwner, isAdminFn }) => {
     const sub = String(args[0] || '').toLowerCase();
 
-    if (sub === 'definir' || sub === 'set') {
-      if (!ctx.isGroup) return tReply(sock, msg, ctx, '🌍 REGIÃO', ['Este comando só funciona dentro de um grupo.']);
+    if (sub === 'definir' || sub === 'set' || sub === 'sincronizar') {
+      if (!ctx.isGroup) return tReply(sock, msg, ctx, '🌍 TERRITÓRIO', ['Este comando só funciona dentro de um grupo.']);
       let admin = !!isOwner;
       if (!admin && typeof isAdminFn === 'function') {
         try { admin = await isAdminFn(); } catch {}
       }
-      if (!admin) return tReply(sock, msg, ctx, '🚫 REGIÃO', ['Só admins podem definir o país do grupo RPG.']);
-      const wanted = args.slice(1).join(' ');
-      if (!wanted) return tReply(sock, msg, ctx, '🌍 DEFINIR PAÍS', [
-        'Uso: *!pais definir <país>*',
-        'Ex.: *!pais definir Angola*',
-        'Usa *!paises* para ver os territórios livres/activos.',
-      ]);
-      const result = await regions.ensureGroupCountry(ctx.remoteJid, wanted);
-      if (!result.ok) return tReply(sock, msg, ctx, '⚠️ REGIÃO', [result.error]);
-      return portalReply(sock, msg, ctx, '🌍 REGIÃO DEFINIDA', [
+      if (!admin) return tReply(sock, msg, ctx, '🚫 TERRITÓRIO', ['Só admins podem sincronizar o território RPG do grupo.']);
+      // O país é o próprio grupo: não se escolhe uma lista fixa. Para mudar
+      // o território, muda o nome do grupo e usa este comando uma vez.
+      const result = await regions.ensureGroupCountry(ctx.remoteJid, ctx.groupName);
+      if (!result.ok) return tReply(sock, msg, ctx, '⚠️ TERRITÓRIO', [result.error]);
+      return portalReply(sock, msg, ctx, '🌍 TERRITÓRIO SINCRONIZADO', [
         descricao(result.country),
         '',
-        'Este grupo é agora uma cidade desta região no mundo DARK RPG.',
+        'Este grupo é o país desta região no mundo DARK RPG.',
+        '💡 Se mudares o nome do grupo, usa *!pais sincronizar* para actualizar o território.',
         '💱 O inventário e o mercado continuam ligados a DARK VILLE internacional.',
       ]);
     }
 
-    const country = ctx.isGroup ? await regions.getCountryForGroup(ctx.remoteJid) : null;
+    const country = ctx.isGroup ? await regions.getCountryForGroup(ctx.remoteJid, ctx.groupName) : null;
     if (sub === 'entrar' || sub === 'visitar') {
       if (!country) return tReply(sock, msg, ctx, '🌍 PORTAL REGIONAL', [
         'Este grupo ainda não tem uma região RPG.',
@@ -60,7 +57,7 @@ module.exports = function registerRPGRegions(registerCase) {
         descricao(country),
         '',
         `🪶 ${player.name}, a tua origem é agora *${country.name}*.`,
-        'Viaja, luta e negocia: DARK VILLE liga todas as regiões.',
+        'Viaja, luta e negocia: DARK VILLE liga todos os grupos-território.',
       ]);
     }
 
@@ -68,18 +65,18 @@ module.exports = function registerRPGRegions(registerCase) {
       return portalReply(sock, msg, ctx, '🏰 DARK VILLE — CENTRO INTERNACIONAL', [
         ...regions.citiesOfTheCommunity(),
         '',
-        'Cada grupo com *!modorpg on* recebe um país e uma cidade própria.',
-        'Usa *!paises* para ver as regiões activas ou *!trocar ofertas* para o mercado global.',
+        'Cada grupo com *!modorpg on* torna-se um país-território com o próprio nome.',
+        'Usa *!paises* para ver os grupos-território activos ou *!trocar ofertas* para o mercado global.',
       ]);
     }
 
     return portalReply(sock, msg, ctx, '🌍 REGIÃO DO GRUPO', [
       descricao(country),
       '',
-      '🎮 Aqui podes jogar o RPG desta região.',
+      '🎮 Aqui podes jogar o RPG deste grupo-território.',
       '💱 O mercado é internacional: *!trocar ofertas*.',
-      '🧭 Para tornar esta cidade a tua origem: *!pais entrar*.',
-      '📊 Regiões activas: *!paises*.',
+      '🧭 Para tornar este grupo a tua origem: *!pais entrar*.',
+      '📊 Territórios activos: *!paises*.',
     ]);
   }, true);
 
@@ -88,14 +85,14 @@ module.exports = function registerRPGRegions(registerCase) {
     const lines = [
       ...regions.citiesOfTheCommunity(),
       '',
-      '🌐 *REGIÕES ACTIVAS*',
+      '🌐 *GRUPOS-TERRITÓRIO ACTIVOS*',
     ];
     if (!active.length) {
-      lines.push('Ainda não há cidades regionais activas.', 'Um admin abre uma com *!modorpg on* num grupo.');
+      lines.push('Ainda não há grupos-território activos.', 'Um admin abre um com *!modorpg on* num grupo.');
     } else {
       for (const entry of active) {
         const c = entry.country;
-        lines.push(`${c.flag} *${c.name}* — ${c.city}${entry.active ? ' · 🎮 mundo aberto' : ''}`);
+        lines.push(`${c.flag} *${c.name}*${entry.active ? ' · 🎮 mundo aberto' : ''}`);
       }
     }
     lines.push('', '💱 *Mercado internacional:* !trocar ofertas');

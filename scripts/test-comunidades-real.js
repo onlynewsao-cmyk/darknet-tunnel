@@ -42,7 +42,7 @@ const sockOK={communityCreate:async()=>({id:'comm1@g.us'}),communityCreateGroup:
  groupFetchAllParticipating:async()=>({}),
  query:async(node)=>({tag:'iq',attrs:{},content:[{tag:'group',attrs:{id:'g'+(++n)},content:[]}]})};
 const r=await C.initCommunity(sockOK,OWNER,{criarSeNaoExistir:true,rescan:true,delayMs:0});
-t('Comunidade + 6 grupos criados', r.filter(x=>x.ok).length===7, r.filter(x=>x.ok).length+'/7');
+t('Comunidade + 8 espaços criados', r.filter(x=>x.ok).length===9, r.filter(x=>x.ok).length+'/9');
 t('Estado gravado no MongoDB', !!STORE['darkrpg_community_v1'], JSON.stringify(STORE['darkrpg_community_v1']||{}).slice(0,60));
 t('Arsenal ficou no cache', !!C._groupCache.get('arsenal'), C._groupCache.get('arsenal'));
 
@@ -51,7 +51,7 @@ delete require.cache[require.resolve(require('path').join(__dirname,'..','src','
 const C2=require(require('path').join(__dirname,'..','src','bot','rpg','community'));
 t('Antes do load, cache vazio', C2._groupCache.size===0, 'size='+C2._groupCache.size);
 await C2.loadState();
-t('Depois do loadState, recupera grupos', C2._groupCache.size===6, 'size='+C2._groupCache.size);
+t('Depois do loadState, recupera espaços', C2._groupCache.size===8, 'size='+C2._groupCache.size);
 t('Recupera o JID da comunidade', C2.getCommunityJid()==='comm1@g.us', C2.getCommunityJid());
 
 console.log('\n▸ C. addglb — o bug do "aldeia"');

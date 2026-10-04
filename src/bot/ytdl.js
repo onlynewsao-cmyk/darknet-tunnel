@@ -97,6 +97,21 @@ async function searchVideo(query) {
   if (isUrl(query)) {
     const m = String(query).match(/[?&v=]([a-zA-Z0-9_-]{11})|youtu\.be\/([a-zA-Z0-9_-]{11})/);
     const vid = m?.[1] || m?.[2] || '';
+    // O clique de um botão traz uma URL, não os metadados. Sem esta leitura
+    // o vídeo podia sair com o URL como título e “⏱️ ?”, mesmo sendo válido.
+    if (vid) {
+      try {
+        const detail = await yts({ videoId: vid });
+        const v = detail?.videoDetails || detail;
+        if (v?.title) return {
+          url: query, videoId: vid, title: v.title,
+          author: v.author?.name || v.author || v.channel?.name || '',
+          duration: v.timestamp || v.duration?.timestamp || '',
+          seconds: Number(v.seconds || v.lengthSeconds || 0),
+          thumb: v.thumbnail || v.image || `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`,
+        };
+      } catch {}
+    }
     return {
       url: query, videoId: vid,
       title: query, author: '', duration: '', seconds: 0,
@@ -143,8 +158,13 @@ async function ytdlpDownload(videoUrl, audioOnly = true, quality = '128k', maxHe
     // v7.4: formato inteligente — limita tamanho para WhatsApp (~15MB)
     // Usa AV1 quando disponível (menor tamanho) senão H.264
     const maxH = Number.parseInt(String(maxHeight).replace(/\D/g, ''), 10) || 720;
+    // WhatsApp Android é mais estável com AVC/H.264 + AAC. Alguns MP4 AV1,
+    // HEVC ou VP9 apareciam como vídeo recebido mas devolviam “não disponível”.
+    // Preferimos AVC/M4A e só então caímos para os formatos genéricos.
     args.push('-f',
-      `bestvideo[height<=${maxH}][ext=mp4][filesize<15M]+bestaudio[ext=m4a]/` +
+      `bestvideo[height<=${maxH}][ext=mp4][vcodec^=avc1][filesize<15M]+bestaudio[ext=m4a][acodec^=mp4a]/` +
+      `bestvideo[height<=${maxH}][ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a][acodec^=mp4a]/` +
+      `best[height<=${maxH}][ext=mp4][vcodec^=avc1][acodec^=mp4a]/` +
       `bestvideo[height<=${maxH}][ext=mp4]+bestaudio[ext=m4a]/` +
       `best[height<=${maxH}][ext=mp4]/` +
       `best[height<=${maxH}]`

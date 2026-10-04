@@ -51,6 +51,8 @@ module.exports = function registerRPGCommunity(registerCase) {
     return tReply(sock, msg, ctx, def.emoji + ' GRUPO DEFINIDO', linhas);
   }
 
+  registerCase(['setreinos'],  async (a) => definirGrupo({ ...a, tipo: 'reinos' }));
+  registerCase(['setportais'], async (a) => definirGrupo({ ...a, tipo: 'portais' }));
   registerCase(['setarena'],   async (a) => definirGrupo({ ...a, tipo: 'arena' }));
   registerCase(['setdungeons'], async (a) => definirGrupo({ ...a, tipo: 'dungeons' }));
   registerCase(['settrocas'],  async (a) => definirGrupo({ ...a, tipo: 'trocas' }));
@@ -64,10 +66,10 @@ module.exports = function registerRPGCommunity(registerCase) {
     if (!community.COMMUNITY_GROUPS[tipo]) {
       return tReply(sock, msg, ctx, '❓ Qual grupo?', [
         'Usa um destes:',
-        '⚔️ !setarena   🐉 !setdungeons   💰 !settrocas',
-        '⛏️ !setcavernas   😂 !setlazer   🏆 !setarsenal',
+        '👑 !setreinos   🌀 !setportais   ⚔️ !setarena   🐉 !setdungeons',
+        '💰 !settrocas   ⛏️ !setcavernas   😂 !setlazer   🏆 !setarsenal',
         '',
-        'Ou: !setgrupo <arena|dungeons|trocas|cavernas|lazer|arsenal>',
+        'Ou: !setgrupo <reinos|portais|arena|dungeons|trocas|cavernas|lazer|arsenal>',
       ]);
     }
     return definirGrupo({ sock, msg, ctx, isOwner, tipo });
@@ -517,6 +519,8 @@ module.exports = function registerRPGCommunity(registerCase) {
         R('nome', 'Mudar de nome — rebatiza o herói'),
         R('vidas', 'As tuas vidas — e como recuperá-las'),
         R('rgcard', 'Cartão de herói — a tua foto de perfil na arte (gif: rgcard gif)'),
+        R('rpgcard', 'Card rápido do herói — arte local e regional'),
+        R('rpggif', 'Avatar animado — cai para card se não houver vídeo'),
         R('reviver', 'Reviver depois de morrer — gastas gold'),
       ]});
       seccoes.push({ title: '⚔️ AVENTURA & COMBATE', rows: [
@@ -541,12 +545,13 @@ module.exports = function registerRPGCommunity(registerCase) {
         R('npc', 'Falar com NPCs — pistas e histórias'),
         R('ranking', 'Tabela de heróis — o topo de DARK VILLE'),
         R('mundial', 'Rank mundial — o mundo inteiro a competir'),
-        R('pais', 'A tua região, cidade e portal internacional'),
-        R('paises', 'Estado das cidades e países RPG activos'),
-        R('trocar', 'Mercado internacional — trocar itens entre regiões'),
+        R('pais', 'Este grupo é o teu país-território e portal'),
+        R('paises', 'Estado dos grupos-território RPG activos'),
+        R('trocar', 'Mercado internacional — trocar itens entre territórios'),
       ]});
     }
     seccoes.push({ title: '🛠️ LIVRO DO MUNDO', rows: [
+      R('cenariosrpg', 'Galeria — arena, mercado e portais com botões'),
       R('regrasrpg', 'Regras da comunidade — o pacto'),
       R('rpgguia', 'Guia do aventureiro — primeiros passos'),
     ]});

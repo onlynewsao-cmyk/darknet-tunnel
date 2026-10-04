@@ -57,16 +57,20 @@ async function sendAudioCard(sock, jid, quoted, r) {
   }
 }
 
-// ── Helper: envia vídeo MP4 ──────────────────────────────────
-async function sendVideoFile(sock, jid, quoted, buf, caption, title) {
+// ── Helper: envia vídeo MP4 reproduzível no WhatsApp ─────────
+async function sendVideoFile(sock, jid, quoted, buf, caption, title, opts = {}) {
   if (!buf || buf.length < 4096) throw new Error('vídeo vazio');
-  const isMP4 = buf.slice(4, 8).toString() === 'ftyp';
-  if (isMP4) {
-    return sock.sendMessage(jid, { video: buf, caption, mimetype: 'video/mp4' }, { quoted });
-  }
+  const compatible = await require('../videoCompat').prepareForWhatsApp(buf, {
+    maxHeight: opts.maxHeight || 480,
+  });
+  const duration = compatible.duration || opts.duration || '';
+  const finalCaption = duration && !/⏱️\s*(?:\?|—)?\s*(?:\||$)/.test(caption)
+    ? caption
+    : (duration ? String(caption).replace(/⏱️\s*(?:\?|—)?/, `⏱️ ${duration}`) : caption);
   return sock.sendMessage(jid, {
-    document: buf, fileName: `${(title || 'video').slice(0, 50)}.mp4`,
-    mimetype: 'video/mp4', caption,
+    video: compatible.buffer,
+    caption: finalCaption,
+    mimetype: 'video/mp4',
   }, { quoted });
 }
 
@@ -97,7 +101,7 @@ async function enviarCardPlay(sock, m, msg, video, prefix, Q, bodyExtra, toxic, 
       try { msgBtn.setThumbnail(video.thumbnail); } catch {}
     }
     msgBtn.addButton(`\uD83C\uDFB5 Baixar \u00C1udio (${Q.audio})`, `${prefix}ytd ${video.youtube_url} | ${Q.audio}`);
-    msgBtn.addButton(`\uD83C\uDFAC Baixar V\u00EDdeo (${Q.video}p)`, `${prefix}gyt ${video.youtube_url} | mp4 | ${Q.video}`);
+    msgBtn.addButton(`\uD83C\uDFAC Baixar V\u00EDdeo (${Q.video}p)`, `${prefix}gyt ${video.youtube_url} | mp4 | ${Q.video} | ${video.duration || ''}`);
     await msgBtn.send(m.chat, { quoted: msg });
     sent = true;
   } catch (e) {
@@ -233,22 +237,29 @@ module.exports = function registerDownloadCases(registerCase) {
     const parts = (text || args.join(' ')).split('|').map(s => s.trim());
     const url = parts[0];
     const resolution = parts[2] || parts[1] || '720';
+    // Os botões de !play incluem a duração como quarto campo; URLs manuais
+    // continuam compatíveis e simplesmente deixam este valor vazio.
+    const selectedDuration = parts[3] || '';
     if (!url) return reply('🎬 Uso: ' + prefix + 'gyt <url>');
 
     react('⏳');
     try {
       let r;
+      // O motor local prioriza MP4 AVC/AAC. A API externa às vezes devolvia
+      // um MP4 com codec que o WhatsApp Android recebia, mas não conseguia abrir.
       try {
-        r = await systemZeroPlay.ytVideo(url, resolution);
-        const buf = await mediaHandler.fetchBuffer(r.url);
-        r.buffer = buf;
-        if (!r.buffer || r.buffer.length < 4096) throw new Error('vídeo vazio');
-      } catch (firstError) {
         r = await ytdl.getVideo(url, resolution);
+      } catch (localError) {
+        r = await systemZeroPlay.ytVideo(url, resolution);
+        if (!r.buffer && r.url) r.buffer = await mediaHandler.fetchBuffer(r.url);
       }
       if (!r || !r.buffer || r.buffer.length < 4096) throw new Error('video vazio');
-      const cap = '🎬 *' + (r.title || 'Video') + '*\n👤 ' + (r.author || '') + '\n⏱️ ' + (r.duration || '?') + ' | 📺 ' + (r.quality || resolution + 'p');
-      await sendVideoFile(sock, ctx.remoteJid, msg, r.buffer, cap, r.title);
+      const duration = r.duration || selectedDuration || '?';
+      const cap = '🎬 *' + (r.title || 'Video') + '*\n👤 ' + (r.author || '') + '\n⏱️ ' + duration + ' | 📺 ' + (r.quality || resolution + 'p');
+      await sendVideoFile(sock, ctx.remoteJid, msg, r.buffer, cap, r.title, {
+        duration,
+        maxHeight: Number(String(resolution).replace(/\D/g, '')) || 480,
+      });
       react('✅');
     } catch (e) {
       react('❌');

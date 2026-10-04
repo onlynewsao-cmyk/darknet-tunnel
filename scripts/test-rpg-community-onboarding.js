@@ -69,16 +69,16 @@ function check(label, condition, details = '') {
   const comm = setup.find(row => row.type === 'community');
   const groupRows = setup.filter(row => community.COMMUNITY_GROUPS[row.type]);
   check('Comunidade DARK VILLE criada', comm?.ok && comm.jid === COMMUNITY, comm?.jid);
-  check('Os 6 grupos RPG foram criados', groupRows.length === 6 && groupRows.every(row => row.ok), `${groupRows.filter(row => row.ok).length}/6`);
+  check('Os 8 espaços RPG foram criados', groupRows.length === 8 && groupRows.every(row => row.ok), `${groupRows.filter(row => row.ok).length}/8`);
   check('Cada grupo foi criado dentro da comunidade',
-    calls.groups.length === 6 && calls.groups.every(g => g.parentJid === COMMUNITY),
+    calls.groups.length === 8 && calls.groups.every(g => g.parentJid === COMMUNITY),
     calls.groups.map(g => g.parentJid).join(', '));
   check('Todos os grupos são reportados como ligados', groupRows.every(row => row.linked), groupRows.map(row => row.linked).join(', '));
   check('Link de convite é obtido', comm?.convite === 'https://chat.whatsapp.com/DARKRPG-INVITE', comm?.convite);
   check('Privacidade 403 não é reportada como entrada', comm?.dono?.dentro === false && comm?.dono?.admin === false,
     JSON.stringify(comm?.dono));
   check('Estado de comunidade/grupos fica persistido',
-    STORE.darkrpg_community_v1?.communityJid === COMMUNITY && Object.keys(STORE.darkrpg_community_v1?.groups || {}).length === 6,
+    STORE.darkrpg_community_v1?.communityJid === COMMUNITY && Object.keys(STORE.darkrpg_community_v1?.groups || {}).length === 8,
     JSON.stringify(STORE.darkrpg_community_v1 || {}).slice(0, 90));
 
   console.log('\n▸ B. Dono entra pelo convite e usa !meadm');

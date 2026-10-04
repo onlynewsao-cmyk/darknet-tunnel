@@ -108,7 +108,7 @@ module.exports = function (registerCase) {
       // jogador a pediu. É uma leitura curta e só acontece no !rgcard.
       let region = null;
       if (ctx.isGroup) {
-        try { region = await require('../rpg/regions').getCountryForGroup(ctx.remoteJid); } catch {}
+        try { region = await require('../rpg/regions').getCountryForGroup(ctx.remoteJid, ctx.groupName); } catch {}
       }
       // v8.4: a arte NUNCA pode pendurar o comando — deadline 6s e queda
       // garantida para o gradiente local (o dia em que a IA dorme, o

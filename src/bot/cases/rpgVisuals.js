@@ -11,7 +11,7 @@ async function tReply(sock, msg, ctx, title, lines) {
 
 async function regionOf(ctx) {
   if (!ctx.isGroup) return null;
-  try { return await regions.getCountryForGroup(ctx.remoteJid); } catch { return null; }
+  try { return await regions.getCountryForGroup(ctx.remoteJid, ctx.groupName); } catch { return null; }
 }
 
 module.exports = function registerRPGVisuals(registerCase) {
@@ -24,7 +24,7 @@ module.exports = function registerRPGVisuals(registerCase) {
     return tReply(sock, msg, ctx, '🖼️ CENÁRIOS DO DARK RPG', [
       '⚔️ *Arena das Sombras* — a cena de cada batalha.',
       '💱 *Mercado Internacional* — trocas entre regiões.',
-      '🌍 *Portais Regionais* — viagens pelo mundo DARK VILLE.',
+      '🌍 *Portais Regionais* — viagens entre grupos-território.',
       '',
       `Usa *${p}lutar*, *${p}trocar ofertas* ou *${p}paises* para entrar em cada cenário.`,
     ]);

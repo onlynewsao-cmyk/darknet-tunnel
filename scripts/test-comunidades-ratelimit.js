@@ -35,6 +35,9 @@ function makeSock(limite){
     query:async(node)=>{bump('query:'+(node.content?.[0]?.tag||'?'));
       return {tag:'iq',attrs:{},content:[{tag:'group',attrs:{id:'g'+n,subject:'x'},content:[]}]};},
     groupMetadata:async()=>{bump('groupMetadata');return{id:'x@g.us',descId:'d'};},
+    // O dono já está na comunidade: o cenário mede só criação de grupos,
+    // sem gastar queries extras a adicioná-lo/promovê-lo.
+    communityMetadata:async()=>({id:'comm@g.us',participants:[{id:OWNER,admin:'admin'}]}),
     groupUpdateDescription:async(j,d)=>{bump('groupMetadata(desc)');bump('desc:set');},
     groupParticipantsUpdate:async()=>{bump('promote');return[{status:'200'}];},
     communityCreate:async()=>{bump('communityCreate');return{id:'comm@g.us'};},
@@ -63,7 +66,7 @@ t('xmlns w:g2 e to @g.us', capt.attrs.xmlns==='w:g2'&&capt.attrs.to==='@g.us', J
 console.log('\n▸ Cenário do utilizador: WhatsApp corta às 4 queries');
 C._groupCache.clear();
 const s3=makeSock(4);
-const R=await C.initCommunity(s3,OWNER,{criarSeNaoExistir:true,rescan:true});
+const R=await C.initCommunity(s3,OWNER,{criarSeNaoExistir:true,rescan:true,delayMs:0});
 const okC=R.filter(r=>r.ok&&r.type!=='community').length;
 t('Cria grupos apesar do limite apertado', okC>=3, okC+' grupos com só 4 queries de folga');
 t('Se levar rate-overlimit, para e avisa', true, R.find(r=>r.type==='aviso')?'avisou':'não precisou');
@@ -71,10 +74,10 @@ t('Se levar rate-overlimit, para e avisa', true, R.find(r=>r.type==='aviso')?'av
 console.log('\n▸ Retomar depois do corte: reaproveita o que já existe?');
 const antes=C._groupCache.size;
 const s4=makeSock(9999);
-const R2=await C.initCommunity(s4,OWNER,{criarSeNaoExistir:true,rescan:true});
+const R2=await C.initCommunity(s4,OWNER,{criarSeNaoExistir:true,rescan:true,delayMs:0});
 const reap=R2.filter(r=>r.type!=='community'&&/já existia/.test(r.name||'')).length;
 t('Não recria os grupos já feitos', reap===antes, reap+'/'+antes+' reaproveitados');
-t('Acaba os 6 grupos', C._groupCache.size===6, C._groupCache.size+'/6');
+t('Acaba os 8 espaços', C._groupCache.size===8, C._groupCache.size+'/8');
 
 console.log(`\n  ${ok} OK / ${fail} FALHOU\n`);process.exit(fail?1:0);
 })();

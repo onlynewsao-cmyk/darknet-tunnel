@@ -1,58 +1,51 @@
 'use strict';
 /**
- * DARK RPG — regiões internacionais
+ * DARK RPG — territórios por grupo.
  *
- * Cada grupo que abre o Modo RPG recebe um país/uma cidade do mundo.
- * A comunidade DARK VILLE continua a ser o centro: o mesmo herói,
- * inventário e mercado existem em todas as regiões.
+ * Um “país” não é uma lista fixa: é cada grupo que activou !modorpg on.
+ * O nome do território acompanha exactamente o nome do grupo. DARK VILLE é
+ * o centro internacional, com espaços próprios (reinos, portais, arena…).
  */
 
-const COUNTRIES = [
-  { id: 'angola', name: 'Angola', flag: '🇦🇴', city: 'Luanda Obsidiana', biome: 'Savanas de Ferro', accent: '#e63946' },
-  { id: 'brasil', name: 'Brasil', flag: '🇧🇷', city: 'São Paulo Neon', biome: 'Mata dos Ancestrais', accent: '#39b54a' },
-  { id: 'portugal', name: 'Portugal', flag: '🇵🇹', city: 'Lisboa Arcana', biome: 'Costa das Brumas', accent: '#1c75bc' },
-  { id: 'mocambique', name: 'Moçambique', flag: '🇲🇿', city: 'Maputo das Marés', biome: 'Ilhas Rubras', accent: '#f7b733' },
-  { id: 'caboverde', name: 'Cabo Verde', flag: '🇨🇻', city: 'Praia Celeste', biome: 'Arquipélago Solar', accent: '#2d9cdb' },
-  { id: 'saotome', name: 'São Tomé e Príncipe', flag: '🇸🇹', city: 'São Tomé Esmeralda', biome: 'Selva das Especiarias', accent: '#27ae60' },
-  { id: 'guinebissau', name: 'Guiné-Bissau', flag: '🇬🇼', city: 'Bissau dos Rios', biome: 'Mangais do Eclipse', accent: '#c0392b' },
-  { id: 'timorleste', name: 'Timor-Leste', flag: '🇹🇱', city: 'Díli do Amanhecer', biome: 'Montes da Aurora', accent: '#f2c94c' },
-  { id: 'africadosul', name: 'África do Sul', flag: '🇿🇦', city: 'Cidade do Cabo Astral', biome: 'Montanha da Mesa', accent: '#8e44ad' },
-  { id: 'nigeria', name: 'Nigéria', flag: '🇳🇬', city: 'Lagos Luminar', biome: 'Delta do Trovão', accent: '#168f4e' },
-  { id: 'rdcongo', name: 'República Democrática do Congo', flag: '🇨🇩', city: 'Kinshasa Profunda', biome: 'Selva do Congo', accent: '#ef476f' },
-  { id: 'franca', name: 'França', flag: '🇫🇷', city: 'Paris das Runas', biome: 'Bosque de Cristal', accent: '#3f51b5' },
-  { id: 'espanha', name: 'Espanha', flag: '🇪🇸', city: 'Madrid do Sol', biome: 'Planícies Carmesim', accent: '#f2994a' },
-  { id: 'reino_unido', name: 'Reino Unido', flag: '🇬🇧', city: 'Londres Nebulosa', biome: 'Pântano de Avalon', accent: '#6c5ce7' },
-  { id: 'eua', name: 'Estados Unidos', flag: '🇺🇸', city: 'Nova Iorque Nexus', biome: 'Torres do Multiverso', accent: '#e74c3c' },
-  { id: 'canada', name: 'Canadá', flag: '🇨🇦', city: 'Toronto Boreal', biome: 'Floresta de Gelo', accent: '#d63031' },
-  { id: 'mexico', name: 'México', flag: '🇲🇽', city: 'Cidade do México Solar', biome: 'Templos de Jade', accent: '#16a085' },
-  { id: 'argentina', name: 'Argentina', flag: '🇦🇷', city: 'Buenos Aires Lunar', biome: 'Pampas do Vento', accent: '#74b9ff' },
-  { id: 'japao', name: 'Japão', flag: '🇯🇵', city: 'Tóquio dos Portais', biome: 'Jardim de Sakura Sombria', accent: '#fd79a8' },
-  { id: 'coreiadosul', name: 'Coreia do Sul', flag: '🇰🇷', city: 'Seul das Sombras', biome: 'Distrito dos Caçadores', accent: '#6c5ce7' },
-  { id: 'india', name: 'Índia', flag: '🇮🇳', city: 'Nova Deli de Safira', biome: 'Deserto dos Monges', accent: '#f39c12' },
-  { id: 'turquia', name: 'Turquia', flag: '🇹🇷', city: 'Istambul das Pontes', biome: 'Bazar dos Djinns', accent: '#e74c3c' },
-  { id: 'alemanha', name: 'Alemanha', flag: '🇩🇪', city: 'Berlim Mecânica', biome: 'Floresta Negra', accent: '#2d3436' },
-  { id: 'italia', name: 'Itália', flag: '🇮🇹', city: 'Roma Eterna', biome: 'Ruínas do Império', accent: '#27ae60' },
-  { id: 'australia', name: 'Austrália', flag: '🇦🇺', city: 'Sydney Coral', biome: 'Outback dos Dragões', accent: '#0984e3' },
-];
-
-const BY_ID = new Map(COUNTRIES.map(country => [country.id, country]));
 const CACHE_TTL = 60 * 1000;
-const _groupCache = new Map(); // jid -> { country, at }
+const _groupCache = new Map(); // jid → { country, at }
+const ACCENTS = ['#a78bfa', '#60a5fa', '#34d399', '#f59e0b', '#fb7185', '#22d3ee', '#f472b6'];
 
 function normalizar(value) {
   return String(value || '')
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .toLowerCase().replace(/[^a-z0-9]/g, '');
 }
-
-function countryById(value) {
-  const n = normalizar(value);
-  if (!n) return null;
-  return COUNTRIES.find(country => normalizar(country.id) === n || normalizar(country.name) === n) || null;
+function _hash(value) {
+  let n = 2166136261;
+  for (const ch of String(value || '')) { n ^= ch.charCodeAt(0); n = Math.imul(n, 16777619); }
+  return n >>> 0;
 }
+function _cleanName(value, fallback = 'Território RPG') {
+  const name = String(value || '').replace(/[\u0000-\u001f]/g, ' ').trim().replace(/\s+/g, ' ');
+  return (name || fallback).slice(0, 80);
+}
+function clone(country) { return country ? { ...country } : null; }
 
-function clone(country) {
-  return country ? { ...country } : null;
+// Compatibilidade de exportação para instalações antigas. Países físicos não
+// são mais atribuídos; cada grupo é a região que representa.
+const COUNTRIES = [];
+function countryById() { return null; }
+
+function _regionFromDoc(doc = {}, groupName = '') {
+  const jid = String(doc.groupJid || '');
+  const name = _cleanName(groupName || doc.rpgRegionName || doc.groupName || doc.rpgCity || doc.rpgCountry, 'Grupo RPG');
+  return {
+    id: `group:${jid || normalizar(name)}`,
+    name,
+    // O grupo é um território próprio, não um país real escolhido pelo bot.
+    flag: '🏰',
+    city: name,
+    biome: `Território RPG de ${name}`,
+    accent: ACCENTS[_hash(jid || name) % ACCENTS.length],
+    groupJid: jid,
+    isGroupTerritory: true,
+  };
 }
 
 async function _lean(query) {
@@ -60,149 +53,106 @@ async function _lean(query) {
   if (typeof query.lean === 'function') return query.lean();
   return query;
 }
-
-// Mongoose faz buffer de queries durante ~10s sem ligação. Região é um
-// extra visual, portanto não pode atrasar um comando nem o setup do RPG.
 function _dbPronto(Model) {
   const state = Model?.db?.readyState;
   return state === undefined || state === 1;
 }
-
-async function _usedCountries(exceptJid = '') {
-  try {
-    const GroupSettings = require('../../database/models/GroupSettings');
-    if (!_dbPronto(GroupSettings)) return new Set();
-    let query = GroupSettings.find({ rpgCountry: { $exists: true, $ne: '' } });
-    if (query?.select) query = query.select('groupJid rpgCountry');
-    const docs = await _lean(query);
-    return new Set((Array.isArray(docs) ? docs : [])
-      .filter(doc => String(doc.groupJid || '') !== String(exceptJid || ''))
-      .map(doc => String(doc.rpgCountry || ''))
-      .filter(Boolean));
-  } catch {
-    return new Set();
-  }
-}
-
 function _remember(groupJid, country) {
   if (groupJid && country) _groupCache.set(String(groupJid), { country: clone(country), at: Date.now() });
   return clone(country);
 }
 
-/** Lê a região de um grupo com cache curto; não cria nem altera nada. */
-async function getCountryForGroup(groupJid) {
+/** Lê a região de um grupo. groupName atualiza a apresentação sem I/O extra. */
+async function getCountryForGroup(groupJid, groupName = '') {
   const jid = String(groupJid || '');
   if (!jid) return null;
   const cached = _groupCache.get(jid);
-  if (cached && Date.now() - cached.at < CACHE_TTL) return clone(cached.country);
+  if (cached && Date.now() - cached.at < CACHE_TTL) {
+    return groupName ? { ...clone(cached.country), name: _cleanName(groupName), city: _cleanName(groupName) } : clone(cached.country);
+  }
   try {
     const GroupSettings = require('../../database/models/GroupSettings');
     if (!_dbPronto(GroupSettings)) return null;
     const doc = await _lean(GroupSettings.findOne({ groupJid: jid }));
-    const country = countryById(doc?.rpgCountry);
-    return country ? _remember(jid, country) : null;
-  } catch {
-    return null;
-  }
+    // Só há país/território em grupos que efectivamente abriram o Modo RPG.
+    // Registos antigos de subgrupos da comunidade são ignorados aqui.
+    if (!doc?.modorpg) return null;
+    return _remember(jid, _regionFromDoc(doc, groupName));
+  } catch { return null; }
 }
 
 /**
- * Garante que um grupo tem um território. Países já usados são evitados
- * enquanto houver opções. Um admin pode pedir outro país com `!pais definir`.
+ * Cria/sincroniza o território do grupo. O próprio JID é a identidade estável
+ * e o nome é o assunto do grupo — dois grupos podem ter nomes iguais, mas
+ * continuam territórios separados porque os grupos são separados.
  */
-async function ensureGroupCountry(groupJid, preferred = null) {
+async function ensureGroupCountry(groupJid, groupName = '') {
   const jid = String(groupJid || '');
   if (!jid) return { ok: false, error: 'Grupo inválido.' };
-
-  const existing = await getCountryForGroup(jid);
-  if (existing && !preferred) return { ok: true, country: existing, existing: true };
-
-  const requested = preferred ? countryById(preferred) : null;
-  if (preferred && !requested) {
-    return { ok: false, error: 'País inválido. Usa !paises para ver as regiões disponíveis.' };
-  }
-
-  const used = await _usedCountries(jid);
-  if (requested && used.has(requested.id)) {
-    return { ok: false, error: `${requested.flag} ${requested.name} já pertence a outro grupo RPG.` };
-  }
-
-  // Se a lista esgotar, volta ao início: a comunidade pode crescer sem
-  // bloquear o Modo RPG, mas cada um dos primeiros grupos fica único.
-  const chosen = requested || COUNTRIES.find(country => !used.has(country.id)) || COUNTRIES[0];
   try {
     const GroupSettings = require('../../database/models/GroupSettings');
-    if (!_dbPronto(GroupSettings)) return { ok: false, error: 'Base de dados indisponível para guardar a região.' };
+    if (!_dbPronto(GroupSettings)) return { ok: false, error: 'Base de dados indisponível para guardar o território.' };
+    const old = await _lean(GroupSettings.findOne({ groupJid: jid }));
+    const name = _cleanName(groupName || old?.rpgRegionName || old?.groupName || old?.rpgCity || 'Grupo RPG');
     await GroupSettings.findOneAndUpdate(
       { groupJid: jid },
       {
         $set: {
-          rpgCountry: chosen.id,
-          rpgCity: chosen.city,
-          rpgCountryAssignedAt: new Date(),
+          groupName: name,
+          rpgCountry: `group:${jid}`,
+          rpgCity: name,
+          rpgRegionName: name,
         },
-        $setOnInsert: { groupJid: jid },
+        $setOnInsert: { groupJid: jid, rpgCountryAssignedAt: new Date() },
       },
       { upsert: true, new: true },
     );
     try { require('../hotCache').forgetGroup(jid); } catch {}
-    return { ok: true, country: _remember(jid, chosen), existing: !!existing };
+    return { ok: true, country: _remember(jid, _regionFromDoc({ groupJid: jid, groupName: name }, name)), existing: !!old?.rpgCountry };
   } catch (e) {
-    return { ok: false, error: 'Não consegui guardar a região: ' + (e.message || 'erro') };
+    return { ok: false, error: 'Não consegui guardar o território: ' + (e.message || 'erro') };
   }
 }
 
-/** Regista a cidade de origem/visita sem escrita adicional se já existir. */
+/** Regista a origem/visita pelo JID estável da região-grupo. */
 function marcarJogadorNoPais(player, country) {
   if (!player || !country) return false;
   let changed = false;
-  if (!player.homeCountry) {
-    player.homeCountry = country.id;
-    changed = true;
-  }
+  if (!player.homeCountry) { player.homeCountry = country.id; changed = true; }
   if (!Array.isArray(player.visitedCountries)) player.visitedCountries = [];
-  if (!player.visitedCountries.includes(country.id)) {
-    player.visitedCountries.push(country.id);
-    changed = true;
-  }
+  if (!player.visitedCountries.includes(country.id)) { player.visitedCountries.push(country.id); changed = true; }
   return changed;
 }
 
-/** Lista as regiões que já têm grupos RPG activos/configurados. */
+/** Lista somente os grupos onde o Modo RPG está ligado. */
 async function activeRegions(limit = 30) {
   try {
     const GroupSettings = require('../../database/models/GroupSettings');
     if (!_dbPronto(GroupSettings)) return [];
-    let query = GroupSettings.find({ rpgCountry: { $exists: true, $ne: '' } });
-    if (query?.select) query = query.select('groupJid rpgCountry rpgCity modorpg').limit(limit);
+    let query = GroupSettings.find({ modorpg: true });
+    if (query?.select) query = query.select('groupJid groupName rpgRegionName rpgCountry rpgCity modorpg').limit(limit);
     const docs = await _lean(query);
     return (Array.isArray(docs) ? docs : []).map(doc => ({
       groupJid: doc.groupJid,
-      active: !!doc.modorpg,
-      country: countryById(doc.rpgCountry),
-    })).filter(entry => entry.country);
-  } catch {
-    return [];
-  }
+      active: true,
+      country: _regionFromDoc(doc),
+    }));
+  } catch { return []; }
 }
 
 function citiesOfTheCommunity() {
   return [
-    '🏰 *Cidade Nexus* — centro internacional, portais e guildas',
-    '💱 *Mercado de DARK VILLE* — ofertas entre todas as regiões',
-    '⚔️ *Arena Mundial* — batalhas e rankings globais',
-    '🗺️ *Portais Regionais* — entrada nas cidades de cada país',
+    '🏰 *DARK VILLE* — centro internacional e praça dos aventureiros',
+    '👑 *Reinos & Embaixadas* — estados e alianças dos grupos-território',
+    '🌀 *Portais Regionais* — passagem para cada grupo com Modo RPG',
+    '⚔️ *Arena das Sombras* — batalhas e torneios separados',
+    '🐉 *Dungeons Proibidas* — bosses, raids e expedições separados',
+    '💱 *Mercado de DARK VILLE* — trocas entre todos os territórios',
   ];
 }
 
 module.exports = {
-  COUNTRIES,
-  countryById,
-  normalizar,
-  getCountryForGroup,
-  ensureGroupCountry,
-  marcarJogadorNoPais,
-  activeRegions,
-  citiesOfTheCommunity,
-  _groupCache,
+  COUNTRIES, countryById, normalizar,
+  getCountryForGroup, ensureGroupCountry, marcarJogadorNoPais,
+  activeRegions, citiesOfTheCommunity, _groupCache, _regionFromDoc,
 };

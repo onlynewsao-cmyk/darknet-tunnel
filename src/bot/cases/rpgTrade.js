@@ -66,7 +66,7 @@ module.exports = function registerRPGTrade(registerCase) {
         `Ex.: *${p}trocar oferecer ferro por poção de vida*`,
         'Vê os teus itens com *!inventario*.',
       ]);
-      const country = ctx.isGroup ? await regions.getCountryForGroup(ctx.remoteJid) : null;
+      const country = ctx.isGroup ? await regions.getCountryForGroup(ctx.remoteJid, ctx.groupName) : null;
       const result = await trade.criarOferta({
         sellerNumber: ctx.senderNumber,
         sellerName: ctx.pushName,

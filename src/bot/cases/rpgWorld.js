@@ -86,7 +86,7 @@ module.exports = function registerRPGWorld(registerCase) {
     if (ctx.isGroup) {
       try {
         const regioes = require('../rpg/regions');
-        territorio = await regioes.getCountryForGroup(ctx.remoteJid);
+        territorio = await regioes.getCountryForGroup(ctx.remoteJid, ctx.groupName);
         if (territorio) regioes.marcarJogadorNoPais(p, territorio);
       } catch {}
     }
