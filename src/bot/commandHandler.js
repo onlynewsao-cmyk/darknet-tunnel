@@ -664,11 +664,15 @@ async function _handleInner(sock, msg) {
   // Com multiprefixo ON: símbolo + comando conhecido = executa.
   // Com OFF (padrão): só os prefixos reais configurados funcionam.
   if (!prefixInfo) {
-    const _multiOn = await prefixEngine.estaMultiprefixo(ctx.remoteJid).catch(() => false);
-    if (!_multiOn) return false;
     const mAt = /^([@!#$&*+~^|=;°ºª\/©®™·•‣§¶¤])([a-zA-Z][\w-]{1,20})(?:\s|$)/.exec(text.trim());
-    const wGuess = mAt && mAt[2].toLowerCase();
-    if (wGuess) {
+    // Texto natural não é um comando sem prefixo. Ele precisa seguir para a
+    // Aura, regras por conversa e respostas directas. O retorno precoce que
+    // existia aqui silenciava TODO "aura, ..." e fazia a Aura parecer morta.
+    // Só tratamos/ignoramos algo quando há realmente símbolo + possível comando.
+    if (mAt) {
+      const _multiOn = await prefixEngine.estaMultiprefixo(ctx.remoteJid).catch(() => false);
+      if (!_multiOn) return false;
+      const wGuess = mAt[2].toLowerCase();
       const _ch = require('./caseHandler');
       let _known = _ch.hasCase(wGuess);
       if (!_known) { try { _known = typeof require('./nativeCommands')[wGuess] === 'function'; } catch {} }

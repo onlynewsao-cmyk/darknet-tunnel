@@ -1,16 +1,25 @@
 require('dotenv').config();
 const aura = require('../src/aura/auraHuman');
 const ai = require('../src/bot/ai');
+const config = require('../src/config');
 
 async function test() {
   console.log('🔍 DIAGNÓSTICO COMPLETO DA AURA');
   console.log('='.repeat(60));
 
-  // Test 1: Verificar se a IA responde
-  console.log('\n🧠 Teste 1: Resposta da IA (Groq)');
-  const r1 = await ai.chat('Oi, como você está?', 'Você é a Aura, uma jovem brasileira de 19 anos.', { userRole: 'owner' });
-  console.log('  Resposta:', r1?.slice(0, 150) || 'SEM RESPOSTA');
-  console.log('  Status:', r1 && !r1.startsWith('❌') ? '✅ FUNCIONA' : '❌ FALHA');
+  // Teste live só quando há uma chave configurada. Sem ela, esta máquina
+  // consegue validar os fallbacks locais da Aura, mas não um provider externo.
+  const hasAiKey = Boolean(config.ai?.groqApiKey || config.ai?.deepseekApiKey ||
+    config.ai?.geminiApiKey || config.ai?.openrouterApiKey || config.ai?.openaiApiKey);
+  console.log('\n🧠 Teste 1: Resposta da IA');
+  if (!hasAiKey) {
+    console.log('  Status: ⚠️ IGNORADO — nenhuma chave de IA está configurada neste ambiente.');
+  } else {
+    const r1 = await ai.chat('Oi, como você está?', 'Você é a Aura, uma jovem brasileira de 19 anos.', { userRole: 'owner' });
+    console.log('  Resposta:', r1?.slice(0, 150) || 'SEM RESPOSTA');
+    if (!r1 || r1.startsWith('❌')) throw new Error('Provider de IA configurado não respondeu.');
+    console.log('  Status: ✅ FUNCIONA');
+  }
 
   // Test 2: Verificar AURA completa
   console.log('\n🌹 Teste 2: AURA completa');
@@ -36,4 +45,6 @@ async function test() {
   console.log('\n' + '='.repeat(60));
 }
 
-test().catch(console.error);
+test()
+  .then(() => process.exit(0))
+  .catch((err) => { console.error(err); process.exit(1); });

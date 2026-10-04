@@ -92,7 +92,7 @@ function fallbackLocal(tipo, alvo) {
     const pool = [
       `Feito. Daqui para a frente trato-te com respeito, ${quem}.`,
       `Ok. Respeito-te. Sem teatro.`,
-      `Percebi. Vou tratar-te direito.`,
+      `Percebi. Vou tratar-te com respeito.`,
     ];
     return pool[Math.floor(Math.random() * pool.length)];
   }

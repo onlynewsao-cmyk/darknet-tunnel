@@ -7,8 +7,8 @@
  *    deixa de ser roubada pelo regex do `.ban`.
  * 2. STICKER-BAN — ensinar por conversa → confirmar como pessoa →
  *    responder com o sticker → remover a pessoa citada.
- * 3. RPG POR SELECÇÃO — !rpgstart abre listas clicáveis de raças →
- *    classes → ficha; o caminho escrito continua a funcionar.
+ * 3. RPG POR SELECÇÃO — o wizard de sete etapas pede nome → género →
+ *    idade → raça → classe → bio → stats, sem aceitar cliques antigos fora de etapa.
  *
  * Uso: node scripts/test-aura-printbugs2.js
  */
@@ -160,41 +160,54 @@ const ctxDe = (de = DONO) => ({
   const est2 = await stickerBan.estado();
   t('próximo sticker do Dono fica registado', rCap === true && est2.activa && !est2.pendente && est2.hash, JSON.stringify(est2));
 
-  // ═══ 3. RPG POR SELECÇÃO ═══
-  console.log('\n═══ 3. RPG — gerador de personagens por selecção ═══');
+  // ═══ 3. RPG — wizard actual de sete etapas ═══
+  // O gerador moderno pede primeiro o nome, depois género, idade, raça,
+  // classe, biografia e stats. Os antigos RPGPICK_R/C saltavam etapas e
+  // nunca devem voltar a criar personagens de forma implícita.
+  console.log('\n═══ 3. RPG — wizard de criação em 7 etapas ═══');
   const flow = require('../src/bot/rpg/createFlow');
   flow.pendentes().clear();
   const sockR = mkSock();
   const ctxR = ctxDe(DONO);
   ctxR.pushName = 'Dark';
 
-  // !rpgstart vazio → lista de raças (relay interactiva OU texto com as raças)
   await flow.start({ sock: sockR, msg: msgTexto('!rpgstart', DONO), ctx: ctxR, args: [] });
-  const tudoR = JSON.stringify(sockR.relay) + msgsDe(sockR);
-  t('!rpgstart abre a lista de RAÇAS (shinobi…saiyajin)', /shinobi/.test(tudoR) && /saiyajin/.test(tudoR));
+  let pend = flow.pendentes().get(DONO) || {};
+  t('!rpgstart pede um nome explícito (não usa o WhatsApp)',
+    pend.step === 'nome' && /rpgnome/i.test(msgsDe(sockR)), JSON.stringify(pend));
 
-  // clique RPGPICK_R_shinobi → guarda a raça e abre classes
   sockR.relay.length = 0; sockR.enviados.length = 0;
-  await flow.pick({ sock: sockR, msg: msgTexto('RPGPICK_R_shinobi', DONO), ctx: ctxR, token: 'RPGPICK_R_shinobi' });
-  const tudoC = JSON.stringify(sockR.relay) + msgsDe(sockR);
-  const pend = flow.pendentes().get(DONO) || {};
-  t('clique na raça → pendente com race=shinobi', pend.race === 'shinobi', JSON.stringify(pend));
-  t('abre a lista de CLASSES (RPGPICK_C_)', /RPGPICK_C_|guerreiro/.test(tudoC));
+  await flow.definirNome({ sock: sockR, msg: msgTexto('!rpgnome Kael', DONO), ctx: ctxR, args: ['Kael'] });
+  pend = flow.pendentes().get(DONO) || {};
+  t('nome abre a etapa de género (RPGCR_G_)', pend.step === 'genero' && /RPGCR_G_/.test(JSON.stringify(sockR.relay) + msgsDe(sockR)), JSON.stringify(pend));
 
-  // clique RPGPICK_C_pirata → personagem criado com bónus
+  await flow.pick({ sock: sockR, msg: msgTexto('RPGCR_G_masculino', DONO), ctx: ctxR, token: 'RPGCR_G_masculino' });
+  await flow.pick({ sock: sockR, msg: msgTexto('RPGCR_I_adulto', DONO), ctx: ctxR, token: 'RPGCR_I_adulto' });
+  pend = flow.pendentes().get(DONO) || {};
+  t('género e idade avançam até a lista de raças', pend.step === 'raca' && pend.gender === 'masculino' && pend.age === 25, JSON.stringify(pend));
+
+  await flow.pick({ sock: sockR, msg: msgTexto('RPGCR_R_shinobi', DONO), ctx: ctxR, token: 'RPGCR_R_shinobi' });
+  pend = flow.pendentes().get(DONO) || {};
+  t('raça shinobi fica guardada e abre as classes', pend.step === 'classe' && pend.race === 'shinobi', JSON.stringify(pend));
+
+  await flow.pick({ sock: sockR, msg: msgTexto('RPGCR_C_pirata', DONO), ctx: ctxR, token: 'RPGCR_C_pirata' });
+  await flow.pick({ sock: sockR, msg: msgTexto('RPGCR_B_soldado', DONO), ctx: ctxR, token: 'RPGCR_B_soldado' });
+  pend = flow.pendentes().get(DONO) || {};
+  t('classe e biografia chegam ao point-buy de stats', pend.step === 'stats' && pend.class === 'pirata' && pend.bioKey === 'soldado', JSON.stringify(pend));
+
   sockR.relay.length = 0; sockR.enviados.length = 0;
-  await flow.pick({ sock: sockR, msg: msgTexto('RPGPICK_C_pirata', DONO), ctx: ctxR, token: 'RPGPICK_C_pirata' });
+  await flow.pick({ sock: sockR, msg: msgTexto('RPGCR_S_CONFIRM', DONO), ctx: ctxR, token: 'RPGCR_S_CONFIRM' });
   const p = _players.get(DONO);
-  const strBase = 6 + (require('../src/bot/rpg/engine').ORIGINS.shinobi.bonus.str || 0);
-  t('personagem criado: raça shinobi + classe pirata', p && p.race === 'shinobi' && p.class === 'pirata', JSON.stringify({ race: p?.race, class: p?.class }));
-  t('bónus da origem aplicado nas stats', p && p.stats.str === strBase, `str=${p?.stats?.str} esperado=${strBase}`);
-  t('ficha final enviada', /PERSONAGEM CRIADO|personagem criado|Usa/i.test(msgsDe(sockR)), msgsDe(sockR).slice(0, 70));
+  t('wizard cria Kael shinobi pirata com bónus aplicados',
+    p && p.started && p.name === 'Kael' && p.race === 'shinobi' && p.class === 'pirata' && p.raceBonusApplied && p.stats.str > 6,
+    JSON.stringify({ name: p?.name, race: p?.race, class: p?.class, str: p?.stats?.str }));
+  t('ficha final é enviada ao concluir o wizard', /PERSONAGEM CRIADO|Kael/i.test(msgsDe(sockR)), msgsDe(sockR).slice(0, 70));
 
-  // caminho escrito continua: !rpgstart Zeca saiyajin hashira
-  sockR.relay.length = 0; sockR.enviados.length = 0;
-  await flow.start({ sock: sockR, msg: msgTexto('!rpgstart Zeca saiyajin hashira', DONO), ctx: ctxR, args: ['Zeca', 'saiyajin', 'hashira'] });
-  const p2 = _players.get(DONO);
-  t('caminho escrito !rpgstart Nome raça classe cria directo', p2 && p2.name === 'Zeca' && p2.race === 'saiyajin' && p2.class === 'hashira', JSON.stringify({ name: p2?.name, race: p2?.race, class: p2?.class }));
+  // Um clique antigo, sem wizard pendente, não pode alterar o personagem já criado.
+  const antes = JSON.stringify({ race: p?.race, class: p?.class, name: p?.name });
+  await flow.pick({ sock: sockR, msg: msgTexto('RPGPICK_R_saiyajin', DONO), ctx: ctxR, token: 'RPGPICK_R_saiyajin' });
+  const depois = JSON.stringify({ race: p?.race, class: p?.class, name: p?.name });
+  t('clique legado sem sessão não altera a personagem', antes === depois, depois);
 
   console.log(`\n${'═'.repeat(50)}\n${ok > 0 && fail === 0 ? '🎉' : '💀'} PRINTBUGS2: ${ok} OK / ${fail} FALHOU\n`);
   process.exit(fail === 0 ? 0 : 1);

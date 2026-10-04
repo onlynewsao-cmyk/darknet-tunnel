@@ -152,7 +152,9 @@ const CAPACIDADES = [
       /\b(ver|mostra|mostrar|puxa|recupera)\b.{0,12}\bconversa\b.{0,14}\b(com|do|da|de)\b/,
       /\b(o que|oq)\b.{0,12}\b(conversei|conversamos|falei)\b.{0,12}\b(com|do|da|de)\b/,
       /\b(mensagens?\s+antigas?|historico|histórico)\b.{0,16}\b(com|do|da|de|d[oa])\b/,
-      /\b(conversa|chat|pv)\b.{0,12}\b(com|do|da)\b.{0,16}\b([a-z0-9_\-]{2,30})\b/,
+      // Não ler o domínio chat.whatsapp.com de um convite como “chat com…”.
+      // Um link deve alcançar entrar_link, que vem mais abaixo no catálogo.
+      /(?<![\/:.])\b(conversa|chat|pv)\b.{0,12}\b(com|do|da)\b.{0,16}\b([a-z0-9_\-]{2,30})\b/,
     ],
   },
   {
