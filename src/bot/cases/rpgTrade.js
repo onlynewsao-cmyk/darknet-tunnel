@@ -3,9 +3,18 @@
 
 const trade = require('../rpg/trade');
 const regions = require('../rpg/regions');
+const visuals = require('../rpg/visuals');
 
 async function tReply(sock, msg, ctx, title, lines) {
   return require('../rpg/rpgTheme').rpgReply(sock, msg, ctx, title, lines);
+}
+
+// A cena é local, em cache e opcional: qualquer falha de media mantém o
+// mercado textual funcional. Enviamos apenas nas portas principais do fluxo.
+async function marketReply(sock, msg, ctx, title, lines) {
+  const sent = await tReply(sock, msg, ctx, title, lines);
+  await visuals.sendScene(sock, msg, ctx, 'market').catch(() => {});
+  return sent;
 }
 
 function separarOferta(args) {
@@ -24,7 +33,7 @@ module.exports = function registerRPGTrade(registerCase) {
     const sub = String(args[0] || '').toLowerCase();
 
     if (!sub || sub === 'ajuda' || sub === 'help') {
-      return tReply(sock, msg, ctx, '💱 MERCADO INTERNACIONAL', [
+      return marketReply(sock, msg, ctx, '💱 MERCADO INTERNACIONAL', [
         'DARK VILLE liga todas as cidades e países do RPG.',
         '',
         `• *${p}trocar ofertas* — ver ofertas abertas`,
@@ -40,11 +49,11 @@ module.exports = function registerRPGTrade(registerCase) {
 
     if (['ofertas', 'lista', 'list', 'mercado'].includes(sub)) {
       const offers = await trade.listarOfertas(10);
-      if (!offers.length) return tReply(sock, msg, ctx, '💱 MERCADO INTERNACIONAL', [
+      if (!offers.length) return marketReply(sock, msg, ctx, '💱 MERCADO INTERNACIONAL', [
         'Não há ofertas abertas agora.',
         `Sê o primeiro: *${p}trocar oferecer <item> por <item>*`,
       ]);
-      return tReply(sock, msg, ctx, '💱 OFERTAS INTERNACIONAIS', [
+      return marketReply(sock, msg, ctx, '💱 OFERTAS INTERNACIONAIS', [
         ...offers.flatMap(offer => [trade.linhaDaOferta(offer), '']),
         `Aceita: *${p}trocar aceitar <código>*`,
       ]);

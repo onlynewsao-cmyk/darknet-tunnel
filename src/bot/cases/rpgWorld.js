@@ -13,6 +13,7 @@
 
 const config = require('../../config');
 const world = require('../rpg/world');
+const visuals = require('../rpg/visuals');
 
 async function tReply(sock, msg, ctx, title, lines) {
   const rpgTheme = require('../rpg/rpgTheme');
@@ -28,7 +29,9 @@ module.exports = function registerRPGWorld(registerCase) {
     const p = await rpg.getPlayer(ctx.senderNumber);
     const linhas = world.mapa(p);
     await rpg.savePlayer(p);
-    return tReply(sock, msg, ctx, '🌍 MAPA DO MUNDO', linhas);
+    const sent = await tReply(sock, msg, ctx, '🌍 MAPA DO MUNDO', linhas);
+    await visuals.sendScene(sock, msg, ctx, 'portals').catch(() => {});
+    return sent;
   }, true);
 
   // ═══ VIAJAR ═══

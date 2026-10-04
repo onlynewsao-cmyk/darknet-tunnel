@@ -34,6 +34,8 @@ const LIVRE_CHAR = new Set([
   // Mapa internacional: regiões/cidades podem ser vistas antes da ficha.
   'pais', 'país', 'paises', 'países', 'statuspaises', 'statuspaíses', 'regiaorpg', 'região-rpg', 'regioesrpg',
   'world', 'mapa', 'biomas', 'mundomap',
+  // Galeria de cenários: pode ser vista antes de criar uma ficha.
+  'cenariosrpg', 'cenáriosrpg', 'galeriarpg', 'rpgcenarios', 'rpgcenas',
   // v11.2: a vitrine do multiverso abre sem personagem
   'personagens', 'personagem', 'heroes', 'heroi',
   'tecnicas', 'poderes', 'skills',
@@ -41,7 +43,9 @@ const LIVRE_CHAR = new Set([
 
 const RPG_CMDS = new Set([
   ...LIVRE_TUDO, ...LIVRE_CHAR,
-  'rg', 'ficha', 'perfilrpg', 'quest', 'historia', 'lutar', 'fight', 'combate',
+  'rg', 'ficha', 'perfilrpg', 'rpgcard', 'herocard', 'cartaoheroi', 'cardrpg',
+  'rpggif', 'herogif', 'gifrpg', 'animarrpg',
+  'quest', 'historia', 'lutar', 'fight', 'combate',
   'explorar', 'explore', 'descansar', 'rest', 'pocao', 'potion', 'reviver', 'revive',
   'guilda', 'guild', 'criarguilda', 'inventario', 'inv', 'bau', 'npc', 'falar', 'talk',
   // Mercado único entre as cidades internacionais.

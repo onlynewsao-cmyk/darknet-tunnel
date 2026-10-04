@@ -12,6 +12,7 @@ const ui = require('./ui');
 const config = require('../../config');
 const rpgTheme = require('./rpgTheme');
 const catalog = require('./catalog');
+const visuals = require('./visuals');
 
 const R = (a, b) => Math.floor(Math.random() * (b - a + 1)) + a;
 const P = (a) => a[Math.floor(Math.random() * a.length)];
@@ -313,6 +314,9 @@ async function iniciarCombateBoss(sock, msg, ctx, boss = {}, onVictory = null) {
     eventosVistos: [],
     eventosResolvidos: 0,
     tactical: null,
+    // A imagem sai só depois das duas mensagens textuais e dos controlos.
+    // Conserva a sequência que torna o combate legível e não bloqueia o turno.
+    visualPendente: true,
     expira: Date.now() + COMBAT_TTL,
     stats: getEffectiveStats(p),
     onVictory: typeof onVictory === 'function' ? onVictory : null,
@@ -349,6 +353,8 @@ async function iniciarCombate(sock, msg, ctx, tipo = 'normal') {
     eventosVistos: [],
     eventosResolvidos: 0,
     tactical: null,
+    // Enviada uma vez por combate, já depois do status/narrativa/botões.
+    visualPendente: true,
     expira: Date.now() + COMBAT_TTL,
     stats,
   });
@@ -436,6 +442,13 @@ async function _mostrarEstado(sock, msg, ctx, p) {
     if (!enviado) await sock.sendMessage(ctx.remoteJid, { text: controlos }, { quoted: msg }).catch(() => {});
   } catch {
     await sock.sendMessage(ctx.remoteJid, { text: controlos }, { quoted: msg }).catch(() => {});
+  }
+
+  // Não antecede nem substitui as três sessões do combate. O asset é local e
+  // tem falha silenciosa: sem upload/media, a aventura continua imediatamente.
+  if (c.visualPendente) {
+    c.visualPendente = false;
+    await visuals.sendCombatScene(sock, msg, ctx, p, c.enemy).catch(() => {});
   }
 }
 

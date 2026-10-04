@@ -3,9 +3,16 @@
 
 const regions = require('../rpg/regions');
 const rpg = require('../rpg/engine');
+const visuals = require('../rpg/visuals');
 
 async function tReply(sock, msg, ctx, title, lines) {
   return require('../rpg/rpgTheme').rpgReply(sock, msg, ctx, title, lines);
+}
+
+async function portalReply(sock, msg, ctx, title, lines) {
+  const sent = await tReply(sock, msg, ctx, title, lines);
+  await visuals.sendScene(sock, msg, ctx, 'portals').catch(() => {});
+  return sent;
 }
 
 function descricao(country) {
@@ -32,7 +39,7 @@ module.exports = function registerRPGRegions(registerCase) {
       ]);
       const result = await regions.ensureGroupCountry(ctx.remoteJid, wanted);
       if (!result.ok) return tReply(sock, msg, ctx, '⚠️ REGIÃO', [result.error]);
-      return tReply(sock, msg, ctx, '🌍 REGIÃO DEFINIDA', [
+      return portalReply(sock, msg, ctx, '🌍 REGIÃO DEFINIDA', [
         descricao(result.country),
         '',
         'Este grupo é agora uma cidade desta região no mundo DARK RPG.',
@@ -49,7 +56,7 @@ module.exports = function registerRPGRegions(registerCase) {
       const player = await rpg.getPlayer(ctx.senderNumber);
       regions.marcarJogadorNoPais(player, country);
       await rpg.savePlayer(player);
-      return tReply(sock, msg, ctx, '🧭 REGIÃO REGISTADA', [
+      return portalReply(sock, msg, ctx, '🧭 REGIÃO REGISTADA', [
         descricao(country),
         '',
         `🪶 ${player.name}, a tua origem é agora *${country.name}*.`,
@@ -58,7 +65,7 @@ module.exports = function registerRPGRegions(registerCase) {
     }
 
     if (!country) {
-      return tReply(sock, msg, ctx, '🏰 DARK VILLE — CENTRO INTERNACIONAL', [
+      return portalReply(sock, msg, ctx, '🏰 DARK VILLE — CENTRO INTERNACIONAL', [
         ...regions.citiesOfTheCommunity(),
         '',
         'Cada grupo com *!modorpg on* recebe um país e uma cidade própria.',
@@ -66,7 +73,7 @@ module.exports = function registerRPGRegions(registerCase) {
       ]);
     }
 
-    return tReply(sock, msg, ctx, '🌍 REGIÃO DO GRUPO', [
+    return portalReply(sock, msg, ctx, '🌍 REGIÃO DO GRUPO', [
       descricao(country),
       '',
       '🎮 Aqui podes jogar o RPG desta região.',
@@ -92,6 +99,6 @@ module.exports = function registerRPGRegions(registerCase) {
       }
     }
     lines.push('', '💱 *Mercado internacional:* !trocar ofertas');
-    return tReply(sock, msg, ctx, '🌍 DARK VILLE INTERNACIONAL', lines);
+    return portalReply(sock, msg, ctx, '🌍 DARK VILLE INTERNACIONAL', lines);
   }, true);
 };
