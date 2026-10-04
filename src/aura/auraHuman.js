@@ -1238,6 +1238,15 @@ function generateDynamicResponse(text, userRole, mood, userName, isOwner) {
   const conhecimentoOffline = respostaConhecimentoOffline(text, isOwner);
   if (conhecimentoOffline) return conhecimentoOffline;
 
+  // “Faz isso” sem um pedido pendente não pode disparar uma acção de grupo
+  // potencialmente barulhenta. Pede a acção concreta em vez de confirmar
+  // vazio com “Hmm, entendi”.
+  if (/^\s*(faz|fa[çc]a|pode fazer)(?:\s+(?:isso|a[ií]))?\s*[.!?]*\s*$/i.test(text)) {
+    return isOwner
+      ? 'Faço sim, Dark — diz só qual ação queres que eu execute.'
+      : 'Diz-me exatamente o que queres que eu faça.';
+  }
+
   // PERGUNTA GENÉRICA
   if (t.includes('?')) {
     return pick(isOwner ? [

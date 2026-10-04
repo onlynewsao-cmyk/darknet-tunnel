@@ -135,6 +135,8 @@ const txt1 = r => (r.respostas && r.respostas[0] && (r.respostas[0].text || (r.r
   const auraHuman = require(path.join(__dirname, '..', 'src', 'aura', 'auraHuman'));
   const sherlock = auraHuman.generateDynamicResponse('Você conhece Sherlock Holmes?', 'owner', 'normal', 'Dark', true);
   t('Pergunta factual offline responde de verdade', /detetive|arthur conan doyle/i.test(sherlock), sherlock);
+  const fazIsso = auraHuman.generateDynamicResponse('Faz isso', 'owner', 'normal', 'Dark', true);
+  t('"Faz isso" sem ação pendente pede clareza', /qual ação/i.test(fazIsso), fazIsso);
   const rLid = await correr(msgTexto('tudo bem?', { lid: true }));
   t('PV por LID responde (WhatsApp moderno)', falou(rLid), txt1(rLid));
 
