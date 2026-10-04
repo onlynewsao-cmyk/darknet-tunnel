@@ -8,10 +8,13 @@ const C = (n, c, x = '') => { if (c) { ok++; console.log('  ✅', n); } else { b
   console.log('test-call-voip');
   C('lib ≥1.1.3 instalada', require('@systemzero/baileys/package.json').version >= '1.1.3');
   C('opusscript instalado', (() => { try { require.resolve('opusscript'); return true; } catch { return false; } })());
-  const ev = new EventEmitter(); const played = []; let ended = null, stopped = 0;
+  const ev = new EventEmitter(); const played = []; let ended = null, stopped = 0, groupStarts = 0;
   const sock = { ev, calls: {}, user: { id: '1@s.whatsapp.net' },
+    groupMetadata: async () => ({ participants: [
+      { id: '1@s.whatsapp.net' }, { id: '2@lid' }, { id: '3@lid' },
+    ] }),
     startCall: async (jid) => { const callId = 'c1'; sock.calls[callId] = { status: 'offer', peer: jid }; setTimeout(() => { sock.calls[callId].status = 'accept'; ev.emit('call', [{ id: callId, status: 'accept', from: jid }]); }, 100); return { callId }; },
-    startGroupCall: async () => ({ callId: 'g1' }),
+    startGroupCall: async () => { groupStarts++; return { callId: 'g1', participantCount: 2 }; },
     playCallAudio: (id, pcm) => { played.push([id, pcm.length]); return true; },
     stopCallAudio: () => { stopped++; return true; }, endCall: async (id) => { ended = id; return true; },
     sendPresenceUpdate: async () => {} };
@@ -40,8 +43,15 @@ const C = (n, c, x = '') => { if (c) { ok++; console.log('  ✅', n); } else { b
   voip._resetLimites();
   // grupo
   const r3 = await voip.ligar(sock, '1@g.us');
-  C('grupo → callId sem esperar accept', r3.ok && r3.grupo && r3.callId === 'g1');
+  C('grupo → callId sem esperar accept', r3.ok && r3.grupo && r3.callId === 'g1' && r3.participantCount === 2);
   await voip.desligar(sock, '1@g.us');
+  voip._resetLimites();
+  const startsAntes = groupStarts;
+  sock.groupMetadata = async () => ({ participants: [
+    { id: '1@s.whatsapp.net' }, ...Array.from({ length: 7 }, (_, i) => ({ id: `${i + 2}@lid` })),
+  ] });
+  const r4 = await voip.ligar(sock, 'muito@g.us');
+  C('grupo com mais de 6 pessoas é bloqueado antes do offer', !r4.ok && /limite de 6 pessoas/.test(r4.motivo || '') && groupStarts === startsAntes, JSON.stringify(r4));
   // cases registados + brain
   const ch = require('../src/bot/caseHandler'); ch.init(); await new Promise(r => setTimeout(r, 1200));
   C("cases call/tocar/fala/pararmusica/desligar em chamadaVoz.js", ['call', 'ligar', 'tocar', 'fala', 'pararmusica', 'desligar'].every(k => ch.FILE_SOURCES.get(k)?.file === 'chamadaVoz.js'));

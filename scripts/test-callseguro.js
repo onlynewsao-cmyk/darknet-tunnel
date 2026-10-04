@@ -71,6 +71,12 @@ async function run(cmd, num, group, args = []) {
   C('!ligarnum não-dono: recusa + zero saída', /dono/i.test(t) && VOIP_OUT.length === 0, t.slice(0, 120));
   t = await run('videocall', FREE, false, [KNOWN]);
   C('!videocall não-dono: recusa + zero saída', /dono/i.test(t) && VOIP_OUT.length === 0 && BRIDGE_OUT.length === 0, t.slice(0, 120));
+  t = await run('tocar', FREE, false, ['qualquer', 'música']);
+  C('!tocar não-dono: não controla a chamada', /só o dark controla/i.test(t) && VOIP_OUT.length === 0 && BRIDGE_OUT.length === 0, t.slice(0, 120));
+  t = await run('fala', FREE, false, ['olá']);
+  C('!fala não-dono: não controla a chamada', /só o dark controla/i.test(t) && VOIP_OUT.length === 0 && BRIDGE_OUT.length === 0, t.slice(0, 120));
+  t = await run('desligar', FREE, false);
+  C('!desligar não-dono: não termina a chamada', /só o dark pode desligar/i.test(t) && VOIP_OUT.length === 0 && BRIDGE_OUT.length === 0, t.slice(0, 120));
 
   // ── 2. DONO continua a funcionar (gate não partiu o positivo) ──
   const v0 = VOIP_OUT.length;

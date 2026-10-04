@@ -35,6 +35,9 @@ const activas = new Map(); // chatJid → { callId, desde, tocando, jid }
 const MAX_DURACAO_MS = 20 * 60 * 1000;
 const COOLDOWN_MS = 2 * 60 * 1000;
 const MAX_POR_HORA = 6;
+// Política do Dark Bot: além do limite da plataforma, uma chamada iniciada
+// pelo bot pode convidar no máximo seis pessoas além do próprio bot.
+const MAX_PARTICIPANTES_GRUPO = 6;
 let _ultimaChamada = 0;
 const _historico = []; // timestamps
 
@@ -46,6 +49,38 @@ function ffmpegBin() {
   // ffmpeg-static só tem o binário se o postinstall correu; senão usa o do sistema
   try { const p = require('ffmpeg-static'); if (p && fs.existsSync(p)) return p; } catch {}
   return process.env.FFMPEG_PATH || 'ffmpeg';
+}
+
+function jidBase(jid) {
+  return String(jid || '').trim().toLowerCase().replace(/:[^@]+(?=@)/, '');
+}
+
+/**
+ * O SystemZero prepara uma chamada de grupo para todos os participantes que
+ * encontrar. Como não há argumento de selecção na API startGroupCall, temos
+ * de travar ANTES do offer grupos com mais de seis pessoas remotas.
+ */
+async function validarLimiteGrupo(sock, groupJid) {
+  if (typeof sock?.groupMetadata !== 'function') {
+    return { ok: false, motivo: 'não consegui confirmar os participantes do grupo' };
+  }
+  let meta;
+  try { meta = await sock.groupMetadata(groupJid); } catch {
+    return { ok: false, motivo: 'não consegui ler os participantes do grupo' };
+  }
+  const self = new Set([sock.user?.id, sock.user?.lid].map(jidBase).filter(Boolean));
+  const remotos = (meta?.participants || []).filter((p) => {
+    const ids = [p?.id, p?.lid].map(jidBase).filter(Boolean);
+    return ids.length > 0 && !ids.some(id => self.has(id));
+  });
+  if (remotos.length > MAX_PARTICIPANTES_GRUPO) {
+    return {
+      ok: false,
+      motivo: `limite de ${MAX_PARTICIPANTES_GRUPO} pessoas por chamada de grupo (há ${remotos.length} participantes)`,
+      participantes: remotos.length,
+    };
+  }
+  return { ok: true, participantes: remotos.length };
 }
 
 /** Qualquer áudio (mp3/ogg/m4a/wav) → PCM s16le mono 16 kHz (formato da lib). */
@@ -109,21 +144,27 @@ async function ligar(sock, chatJid, { esperar = 35000 } = {}) {
   while (_historico.length && agora - _historico[0] > 3600e3) _historico.shift();
   if (_historico.length >= MAX_POR_HORA) return { ok: false, motivo: 'limite de chamadas por hora (protecção anti-restrição)' };
   if (agora - _ultimaChamada < COOLDOWN_MS) return { ok: false, motivo: `espera ${Math.ceil((COOLDOWN_MS - (agora - _ultimaChamada)) / 1000)}s entre chamadas` };
-  _ultimaChamada = agora; _historico.push(agora);
   const grupo = String(chatJid).endsWith('@g.us');
+  const limiteGrupo = grupo ? await validarLimiteGrupo(sock, chatJid) : null;
+  if (limiteGrupo && !limiteGrupo.ok) return { ok: false, motivo: limiteGrupo.motivo };
+
+  _ultimaChamada = agora; _historico.push(agora);
   let callId;
+  let participantCount = 1;
   try {
     const r = grupo ? await sock.startGroupCall(chatJid, chatJid) : await sock.startCall(chatJid, chatJid);
     callId = r?.callId || r;
+    if (grupo) participantCount = Number(r?.participantCount || limiteGrupo?.participantes || 0);
   } catch (e) {
     return { ok: false, motivo: 'não consegui iniciar: ' + String(e.message).slice(0, 80) };
   }
   if (!callId) return { ok: false, motivo: 'sem callId' };
-  activas.set(chatJid, { callId, desde: Date.now(), tocando: null, jid: chatJid, grupo });
+  activas.set(chatJid, { callId, desde: Date.now(), tocando: null, jid: chatJid, grupo, participantCount });
   _vigiarFim(sock, chatJid, callId);
   // tecto de duração
-  setTimeout(() => { if (activas.get(chatJid)?.callId === callId) desligar(sock, chatJid).catch(() => {}); }, MAX_DURACAO_MS);
-  if (grupo) return { ok: true, callId, grupo: true }; // em grupo não há 'accept' único
+  const timer = setTimeout(() => { if (activas.get(chatJid)?.callId === callId) desligar(sock, chatJid).catch(() => {}); }, MAX_DURACAO_MS);
+  timer.unref?.();
+  if (grupo) return { ok: true, callId, grupo: true, participantCount }; // em grupo não há 'accept' único
   const atendeu = await esperarAtender(sock, callId, esperar);
   if (!atendeu) {
     activas.delete(chatJid);
@@ -186,4 +227,4 @@ function _resetLimites() { _ultimaChamada = 0; _historico.length = 0; }
 function activa(chatJid) { return activas.get(chatJid) || null; }
 function todas() { return [...activas.values()]; }
 
-module.exports = { _resetLimites, MAX_DURACAO_MS, COOLDOWN_MS, MAX_POR_HORA, suportado, paraPcm, ligar, tocarBuffer, tocarMusica, falar, parar, desligar, activa, todas, esperarAtender };
+module.exports = { _resetLimites, MAX_DURACAO_MS, COOLDOWN_MS, MAX_POR_HORA, MAX_PARTICIPANTES_GRUPO, suportado, paraPcm, validarLimiteGrupo, ligar, tocarBuffer, tocarMusica, falar, parar, desligar, activa, todas, esperarAtender };

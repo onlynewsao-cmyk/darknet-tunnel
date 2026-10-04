@@ -45,7 +45,9 @@ module.exports = function registerChamadaVoz(registerCase) {
     } catch {}
   });
 
-  registerCase(['tocar', 'tocarcall', 'playcall', 'calltocar'], async ({ sock, msg, ctx, text, reply, react, prefix }) => {
+  registerCase(['tocar', 'tocarcall', 'playcall', 'calltocar'], async ({ sock, msg, ctx, text, reply, react, prefix, isOwner }) => {
+    // Participantes podem ouvir; iniciar ou controlar a call é sempre do Dono.
+    if (!isOwner) return reply('🔒 Só o Dark controla a música da chamada.');
     if (!voip.activa(ctx.remoteJid)) return reply(`Primeiro liga-me: *${prefix}call*. Depois é só pedir a música. 📞`);
     if (!text) return reply(`Qual música? Ex: *${prefix}tocar Shakira Waka Waka*`);
     react('🔎');
@@ -64,7 +66,8 @@ module.exports = function registerChamadaVoz(registerCase) {
     }
   });
 
-  registerCase(['fala', 'falacall', 'dizcall', 'falanacall'], async ({ sock, ctx, text, reply, react, prefix }) => {
+  registerCase(['fala', 'falacall', 'dizcall', 'falanacall'], async ({ sock, ctx, text, reply, react, prefix, isOwner }) => {
+    if (!isOwner) return reply('🔒 Só o Dark controla a chamada.');
     if (!voip.activa(ctx.remoteJid)) return reply(`Não estou em chamada aqui. *${prefix}call* primeiro.`);
     if (!text) return reply(`O que queres que eu diga na chamada? Ex: *${prefix}fala bom dia a todos*`);
     react('🗣️');
@@ -73,14 +76,16 @@ module.exports = function registerChamadaVoz(registerCase) {
     react('✅');
   });
 
-  registerCase(['pararmusica', 'paramusica', 'stopcall', 'pausa', 'para'], async ({ sock, ctx, reply, react, prefix }) => {
+  registerCase(['pararmusica', 'paramusica', 'stopcall', 'pausa', 'para'], async ({ sock, ctx, reply, react, prefix, isOwner }) => {
+    if (!isOwner) return reply('🔒 Só o Dark controla a chamada.');
     if (!voip.activa(ctx.remoteJid)) return reply('Não há nada a tocar — não estamos em chamada.');
     voip.parar(sock, ctx.remoteJid);
     react('⏹️');
     return reply(`Parei. Queres outra? *${prefix}tocar nome* 🎵`);
   }, true);
 
-  registerCase(['desligar', 'desliga', 'desligacall', 'endcall', 'terminarchamada'], async ({ sock, ctx, reply, react }) => {
+  registerCase(['desligar', 'desliga', 'desligacall', 'endcall', 'terminarchamada'], async ({ sock, ctx, reply, react, isOwner }) => {
+    if (!isOwner) return reply('🔒 Só o Dark pode desligar a chamada.');
     if (!voip.activa(ctx.remoteJid)) {
       // conversa por notas de voz (callHandler antigo)?
       try { const c = require('../callHandler').terminar(ctx.remoteJid); if (c) return reply('Terminei a nossa conversa de voz. 🖤'); } catch {}
