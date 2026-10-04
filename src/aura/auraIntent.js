@@ -39,6 +39,69 @@ function isCommand(text) {
   return /^(manda|envia|mostra|faz|cria|troca|muda|coloca|bota|posta|gera|me da|me manda|quero|preciso|pode)\b/.test(t);
 }
 
+// ── Presença da Aura: compatibilidade para comandos em linguagem natural ──
+// O commandHandler usa este contrato para "aura acorda/dorme/estás aí".
+// Mantê-lo neste módulo evita que uma troca de personalidade deixe o owner
+// sem qualquer controlo e a Aura aparentemente muda nos grupos.
+const INTENT_WAKE = 'wake';
+const INTENT_SLEEP = 'sleep';
+const INTENT_STATUS = 'status';
+const WAKE_REPLIES = [
+  'Tô aqui. O que foi?',
+  'Voltei. Diz.',
+  'Acordada. Fala comigo.',
+];
+const WAKE_ALREADY = [
+  'Já tô aqui.',
+  'Nunca fui embora.',
+];
+const SLEEP_REPLIES = [
+  'Tá bem. Vou ficar quieta aqui.',
+  'Entendido. Dou espaço.',
+];
+const SLEEP_ALREADY = [
+  'Já estou quieta aqui.',
+  'Já tinha dado espaço.',
+];
+
+function pick(items, random = Math.random) {
+  const list = Array.isArray(items) ? items.filter(Boolean) : [];
+  if (!list.length) return '';
+  const n = Number(random());
+  return list[Math.max(0, Math.min(list.length - 1, Math.floor((Number.isFinite(n) ? n : 0) * list.length)))];
+}
+
+/**
+ * Detecta ordens explícitas do dono para a presença da Aura.
+ * Não reage a "que aura"/"mede minha aura", nem no privado (onde ela já
+ * está disponível), nem a membros comuns. Retorna `null` quando não é ordem.
+ */
+function detectAuraIntent(text, { isOwner = false, isGroup = false } = {}) {
+  if (!isOwner || !isGroup) return null;
+  const t = norm(text).replace(/[.!?]+$/g, '').trim();
+  if (!t) return null;
+
+  // Evita que a palavra "aura" em conversa comum altere o modo do grupo.
+  if (/\b(?:que|qual|minha|sua|tua) aura\b|\b(?:mede|medir|ler) (?:a )?(?:minha )?aura\b/.test(t)) return null;
+  const chamou = /\b(?:aura|pinkchyu|pinkchyuwu|gothchyu|lin)\b/.test(t);
+
+  // "vai dormir" é uma instrução inequívoca do dono no grupo e precisa
+  // continuar a funcionar mesmo sem repetir o nome da Aura.
+  const dormirSemNome = /^(?:vai )?(?:dormi|dorme|dormir|durma|descansa)(?: ai| aqui)?$/.test(t);
+  if ((chamou || dormirSemNome) && /\b(?:dormi|dorme|dormir|durma|descansa|sai daqui|modo (?:assistente|profissional)|fica quieta|fica em silencio)\b/.test(t)) {
+    return INTENT_SLEEP;
+  }
+
+  if (chamou && /\b(?:acorda|acordar|desperta|vem ca|volta|aparece|ativa|volta a ser tu|fica comigo)\b/.test(t)) {
+    return INTENT_WAKE;
+  }
+
+  if (chamou && /\b(?:ta ai|tas ai|esta ai|estas ai|acordada|online|presente|sumiu|sumiste)\b/.test(t)) {
+    return INTENT_STATUS;
+  }
+  return null;
+}
+
 // ── Análise de contexto de conversa ─────────────────────────
 /**
  * Analisa se a conversa é entre outros usuários
@@ -285,6 +348,9 @@ function isDirectSimple(text, { isGroup = false, isReply = false } = {}) {
 
 module.exports = {
   analyzeIntent,
+  detectAuraIntent,
+  INTENT_WAKE, INTENT_SLEEP, INTENT_STATUS,
+  WAKE_REPLIES, WAKE_ALREADY, SLEEP_REPLIES, SLEEP_ALREADY, pick,
   isDirectSimple,
   containsName,
   NOME_AURA,

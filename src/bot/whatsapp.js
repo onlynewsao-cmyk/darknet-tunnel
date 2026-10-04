@@ -33,23 +33,43 @@ const groupEvents     = require('./groupEvents');
 const AUTH_FOLDER = path.join(__dirname, '..', '..', 'data', 'auth');
 if (!fs.existsSync(AUTH_FOLDER)) fs.mkdirSync(AUTH_FOLDER, { recursive: true });
 
-// ── Keep-alive para Render Free ─────────────────────────────
+// ── Keep-alive do serviço hospedado ──────────────────────────
 let _keepAlive = null;
+function publicAppUrl(configuredUrl = '') {
+  const candidates = [
+    configuredUrl,
+    process.env.APP_URL,
+    process.env.RENDER_EXTERNAL_URL,
+    process.env.RAILWAY_STATIC_URL,
+    process.env.NORTHFLANK_PUBLIC_URL,
+    process.env.KOYEB_PUBLIC_DOMAIN && `https://${process.env.KOYEB_PUBLIC_DOMAIN}`,
+    process.env.RAILWAY_PUBLIC_DOMAIN && `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`,
+  ];
+  for (const raw of candidates) {
+    const url = String(raw || '').replace(/\/$/, '');
+    if (/^https?:\/\//i.test(url) && !/localhost|127\.0\.0\.1/i.test(url)) return url;
+  }
+  return '';
+}
 function startKeepAlive(url) {
-  if (_keepAlive || !url || url.includes('localhost')) return;
-  const lib = url.startsWith('https') ? require('https') : require('http');
+  const target = publicAppUrl(url);
+  if (_keepAlive || !target) return;
+  const lib = target.startsWith('https') ? require('https') : require('http');
   _keepAlive = setInterval(() => {
-    lib.get(`${url}/ping`, res => {
+    lib.get(`${target}/ping`, res => {
       console.log(`🏓 Keep-alive ${res.statusCode}`);
+      res.resume?.();
     }).on('error', () => {});
   }, 14 * 60 * 1000); // 14 min
-  console.log(`⏰ Keep-alive activo → ${url}`);
+  _keepAlive.unref?.();
+  console.log(`⏰ Keep-alive activo → ${target}`);
 }
 
 // ── Backoff de reconexão ─────────────────────────────────────
-// v7.44: mais lento — reconectar a cada 3 s depois de um corte do servidor
-// parece automação agressiva. Primeira tentativa aos 8 s, tecto 2 min.
-const BACKOFF = [8000, 15000, 30000, 60000, 120000];
+// Reconexão curta para cortes transitórios. Códigos sensíveis (403 e 440)
+// têm tratamento próprio abaixo e nunca entram neste ciclo rápido.
+// Assim um socket que caiu não deixa grupos com aluguel sem bot por minutos.
+const BACKOFF = [4000, 8000, 15000, 30000, 45000];
 let _attempt = 0;
 const nextDelay = () => BACKOFF[Math.min(_attempt++, BACKOFF.length - 1)];
 const resetDelay = () => { _attempt = 0; };
@@ -98,6 +118,7 @@ class WhatsAppBot {
     this.logs = [];
     this.mongoAuth = null;
     this._reconnectTimer = null;
+    this._healthTimer = null;
     // v9.14 — CENTRAL DE SESSÕES: quando uma slot guardada é promovida
     // (nova sessão que FUNCIONA), reinicia o socket principal já com as
     // credenciais dela em «creds» (trocadas pela sessionCenter).
@@ -112,6 +133,7 @@ class WhatsAppBot {
     // v12.9.3: vigia de GUARDAR SESSÃO (auto-backup 6h + auto-restauro no boot)
     try { require('./sessionBackup').arrancar(); } catch (e) { this.log('warn', 'sessionBackup: ' + String(e?.message || e).slice(0, 60)); }
     this._qrTimer = null;
+    this._startHealthWatchdog();
   }
 
   setIO(io) { this.io = io; }
@@ -175,6 +197,44 @@ class WhatsAppBot {
 
   _clearTimer() {
     if (this._reconnectTimer) { clearTimeout(this._reconnectTimer); this._reconnectTimer = null; }
+  }
+
+  /** Agenda UMA reconexão. Impede timers duplicados após vários eventos close. */
+  _scheduleReconnect(delayMs, reason = 'ligação interrompida') {
+    // Um close pode chegar enquanto `start()` ainda está a terminar (pair/QR).
+    // Nesse caso também precisamos guardar a recuperação; o timer único evita
+    // duplicar tentativas.
+    if (this._reconnectTimer || this.status === 'connected') return false;
+    const delaySafe = Math.max(1000, Number(delayMs) || 4000);
+    this._reconnectTimer = setTimeout(() => {
+      this._reconnectTimer = null;
+      this.starting = false;
+      this.start({ mode: 'qr' }).catch((e) => this.log('warn', 'reconexão falhou: ' + String(e?.message || e).slice(0, 80)));
+    }, delaySafe);
+    this._reconnectTimer.unref?.();
+    this.log('info', `Reconexão agendada em ${Math.ceil(delaySafe / 1000)}s (${reason}).`);
+    return true;
+  }
+
+  /**
+   * Uma queda de WebSocket nem sempre emite `connection: close` no ambiente
+   * hospedado. O vigia só age quando o socket está objectivamente fechado;
+   * não envia mensagens nem altera o fluxo de chats saudáveis.
+   */
+  _startHealthWatchdog() {
+    if (this._healthTimer) return;
+    this._healthTimer = setInterval(() => {
+      try {
+        if (this.status !== 'connected' || this.starting || this._reconnectTimer) return;
+        const ws = this.sock?.ws;
+        const fechado = ws?.isClosed === true || ws?.readyState === 3;
+        if (!fechado) return;
+        this.log('warn', 'Vigia detectou WebSocket fechado sem evento; a recuperar sessão.');
+        this.setStatus('disconnected', { reason: 'watchdog-ws-closed' });
+        this._scheduleReconnect(2000, 'vigia de saúde');
+      } catch {}
+    }, 30000);
+    this._healthTimer.unref?.();
   }
 
   /**
@@ -362,6 +422,7 @@ class WhatsAppBot {
         }
 
         if (connection === 'open') {
+          this._clearTimer();
           if (this._qrTimer) { clearTimeout(this._qrTimer); this._qrTimer = null; }
           resetDelay();
           this._conflitos = 0;
@@ -495,10 +556,7 @@ class WhatsAppBot {
             }
             const d = nextDelay();
             this.log('info', `Reconectando em ${d / 1000}s... (falhas seguidas: ${this._falhasSeguidas || 0})`);
-            this._reconnectTimer = setTimeout(() => {
-              this.starting = false;
-              this.start({ mode: 'qr' }).catch(() => {});
-            }, d);
+            this._scheduleReconnect(d, `fecho ${code || '?'}: ${String(reason).slice(0, 50)}`);
           }
         }
       });
@@ -640,6 +698,9 @@ class WhatsAppBot {
       this.setStatus('disconnected', { error: e.message });
       this.emit('bot:error', { message: e.message });
       console.error('[BOT START]', e.message);
+      // Falha de DNS/TLS/arranque não deve deixar o serviço morto até alguém
+      // abrir o painel. Logout/fresh são explícitos e ficam fora do retry.
+      if (!fresh) this._scheduleReconnect(nextDelay(), 'falha no arranque');
       throw e;
     }
   }
