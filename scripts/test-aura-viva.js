@@ -55,7 +55,7 @@ Module.prototype.require = function (id) {
     };
     const w = v => { const p = Promise.resolve(v); p.lean = () => Promise.resolve(v); p.select = () => p; p.sort = () => p; p.limit = () => p; p.catch = () => p; return p; };
     return {
-      findOne: () => w(nome === 'GroupSettings' ? { groupJid: 'g@g.us', botEnabled: true, auraMode: undefined } : doc),
+      findOne: () => w(nome === 'GroupSettings' ? { groupJid: 'g@g.us', botEnabled: true, auraMode: undefined, isHosted: true, hostedUntil: null } : doc),
       find: () => w([doc]), create: async () => doc, updateOne: async () => ({}),
       findOneAndUpdate: async () => doc, countDocuments: async () => 1,
       getOrCreate: async () => doc, deleteMany: async () => ({}), deleteOne: async () => ({}),

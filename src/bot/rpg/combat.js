@@ -455,7 +455,7 @@ async function _mostrarEstado(sock, msg, ctx, p) {
 // Enviar botões (helper)
 async function _enviarBotoes(sock, msg, ctx, corpo, botoes) {
   try {
-    const { generateWAMessageFromContent, proto } = require('@systemzero/baileys');
+    const { generateWAMessageFromContent, proto } = require('baileys-v6');
     const m = generateWAMessageFromContent(ctx.remoteJid, {
       interactiveMessage: proto.Message.InteractiveMessage.fromObject({
         body: { text: corpo },

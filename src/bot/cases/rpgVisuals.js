@@ -37,12 +37,14 @@ module.exports = function registerRPGVisuals(registerCase) {
     const region = await regionOf(ctx);
     try {
       const art = require('../welcomeArt');
+      let profilePicUrl = null;
+      try { profilePicUrl = (await require('../visualIdentity').resolveVisualProfile(sock, ctx.senderJid || ctx.senderNumber, { fallbackJid: ctx.remoteJid })).url || null; } catch {}
       const card = await art.heroCard(player, {
-        profilePicUrl: null,
+        profilePicUrl,
         region,
         jid: ctx.remoteJid,
         botName: 'DARK BOT',
-        fetchFn: async () => null,
+        localBackground: true,
       });
       await sock.sendMessage(ctx.remoteJid, {
         image: card,

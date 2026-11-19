@@ -91,12 +91,14 @@ async function fundo(o, opts = {}) {
   if (useCache && _backgroundCache.has(cacheKey)) return _backgroundCache.get(cacheKey);
 
   const criar = async () => {
-    const url = `${POLLI}/${encodeURIComponent(prompt)}?width=${W}&height=${H}&seed=${o.seed}&nologo=true`;
-    const b = await _fetch(url, { ...opts, timeoutMs: opts.timeoutMs || 2600 }).catch(() => null);
-    if (b && b.length > 3000) {
-      try {
-        return await sharp(b).resize(W, H, { fit: 'cover', kernel: sharp.kernel.lanczos3 }).jpeg({ quality: 92 }).toBuffer();
-      } catch {}
+    if (!opts.localBackground) {
+      const url = `${POLLI}/${encodeURIComponent(prompt)}?width=${W}&height=${H}&seed=${o.seed}&nologo=true`;
+      const b = await _fetch(url, { ...opts, timeoutMs: opts.timeoutMs || 2600 }).catch(() => null);
+      if (b && b.length > 3000) {
+        try {
+          return await sharp(b).resize(W, H, { fit: 'cover', kernel: sharp.kernel.lanczos3 }).jpeg({ quality: 92 }).toBuffer();
+        } catch {}
+      }
     }
     const svg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
       <defs>
@@ -240,7 +242,9 @@ function overlaySvg(o, frame = null) {
 async function artCard(opts = {}) {
   const o = _defaults(opts);
   const bg = await fundo(o, opts);
-  const ppBuf = opts.profilePicUrl ? await _fetch(opts.profilePicUrl, opts).catch(() => null) : null;
+  const ppBuf = opts.profilePicUrl
+    ? await _fetch(opts.profilePicUrl, { ...opts, timeoutMs: opts.profileTimeoutMs || 6000 }).catch(() => null)
+    : null;
   const pp = await _ppCircle(ppBuf, PP_SIZE, { ...o, initial: o.name });
   const ringPad = 14;
   const overlay = overlaySvg(o, null);
@@ -269,7 +273,9 @@ async function artGif(opts = {}) {
     .jpeg({ quality: 90 })
     .toBuffer();
 
-  const ppBuf = opts.profilePicUrl ? await _fetch(opts.profilePicUrl, opts).catch(() => null) : null;
+  const ppBuf = opts.profilePicUrl
+    ? await _fetch(opts.profilePicUrl, { ...opts, timeoutMs: opts.profileTimeoutMs || 6000 }).catch(() => null)
+    : null;
   const pp = await _ppCircle(ppBuf, PP_SIZE, { ...o, initial: o.name });
   const ringPad = 14;
 

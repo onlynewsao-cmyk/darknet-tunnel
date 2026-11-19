@@ -68,7 +68,7 @@ async function sendCombatScene(sock, msg, ctx, player, enemy) {
 async function sendHeroAnimation(sock, msg, ctx, player, { region = null, prefix = '!' } = {}) {
   const art = require('../welcomeArt');
   let profilePicUrl = null;
-  try { profilePicUrl = await sock.profilePictureUrl?.(ctx.senderJid || ctx.remoteJid, 'image'); } catch {}
+  try { profilePicUrl = (await require('../visualIdentity').resolveVisualProfile(sock, ctx.senderJid || ctx.senderNumber, { fallbackJid: ctx.remoteJid })).url || null; } catch {}
   const opts = { profilePicUrl, region, jid: ctx.remoteJid, botName: 'DARK BOT', frames: 10 };
   const video = await art.heroGif(player, opts);
   if (video?.length > 2048) {
@@ -78,7 +78,7 @@ async function sendHeroAnimation(sock, msg, ctx, player, { region = null, prefix
     }, { quoted: msg });
     return { ok: true, animated: true };
   }
-  const card = await art.heroCard(player, { ...opts, profilePicUrl: null, fetchFn: async () => null });
+  const card = await art.heroCard(player, { ...opts, localBackground: true });
   await sock.sendMessage(ctx.remoteJid, {
     image: card,
     caption: `🪶 *${player.name}* — card do herói\n> GIF indisponível neste host; enviei a arte personalizada sem atrasar a aventura.\n> Tenta novamente com *${prefix}rpggif* quando o host tiver ffmpeg.`,

@@ -1108,7 +1108,7 @@ function registerManagementCases() {
       code = (m.quoted.text || '').trim();
       if (!code && m.quoted.isDoc) {
         try {
-          const { downloadMediaMessage } = require('@systemzero/baileys');
+          const { downloadMediaMessage } = require('baileys-v6');
           const buf = await downloadMediaMessage(m.quoted.msg, 'buffer', {});
           if (buf && buf.length) code = buf.toString('utf8').trim();
         } catch (e) {

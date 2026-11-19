@@ -22,7 +22,7 @@ const {
   Browsers,
   makeCacheableSignalKeyStore,
   delay,
-} = require('@systemzero/baileys');
+} = require('baileys-v6');
 
 const pino = require('pino');
 const fs = require('fs');
@@ -301,7 +301,7 @@ class CallBaileys {
           if (!audio) return;
           const callHandler = require('./callHandler');
           if (!callHandler.chamadaActiva(jid)) return;
-          const { downloadMediaMessage } = require('@systemzero/baileys');
+          const { downloadMediaMessage } = require('baileys-v6');
           const buf = await downloadMediaMessage(msg, 'buffer', {}).catch(() => null);
           if (!buf || buf.length < 100) return;
           await callHandler.continuarConversa(this.sock, jid, buf, {

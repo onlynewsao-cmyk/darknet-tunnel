@@ -45,7 +45,7 @@ let _waVerTs = 0;
 async function _versaoWA() {
   if (_waVerCache && Date.now() - _waVerTs < 6 * 60 * 60 * 1000) return _waVerCache;
   try {
-    const baileys = require('@systemzero/baileys');
+    const baileys = require('baileys-v6');
     const latest = await Promise.race([
       baileys.fetchLatestBaileysVersion(),
       new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 4000)),
@@ -65,7 +65,7 @@ async function _versaoWA() {
 // 'Connection Closed': o WhatsApp só aceita pedidos de pair code de
 // plataformas reais (Ubuntu/macOS/Windows) e fecha o socket às restantes.
 async function _fabricaPadrao(prefixo) {
-  const baileys = require('@systemzero/baileys');
+  const baileys = require('baileys-v6');
   const makeWASocket = baileys.default || baileys.makeWASocket || baileys;
   const browser = baileys.Browsers?.ubuntu ? baileys.Browsers.ubuntu('Chrome') : ['Ubuntu', 'Chrome', '20.0.04'];
   const logger = require('pino')({ level: 'silent' });

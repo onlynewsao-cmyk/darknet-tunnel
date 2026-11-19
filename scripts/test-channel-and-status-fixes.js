@@ -4,7 +4,7 @@
  * 1. WhatsApp Channel (@newsletter) broadcast messages not triggering Aura / commands.
  * 2. WhatsApp Status feed (status@broadcast) not triggering Aura / commands.
  * 3. Group status handling in messageListener (admin group status not deleted / broken into black screen).
- * 4. Correct imports of @systemzero/baileys in channel & profile cases.
+ * 4. Correct imports of baileys-v6 in channel & profile cases.
  */
 
 const assert = require('assert');
@@ -17,7 +17,7 @@ Module.prototype.require = function (s) {
   if (s === 'bcryptjs') return { hash: async () => '', compare: async () => true, genSalt: async () => '' };
   if (s === 'axios') return { get: async () => ({ data: {} }), post: async () => ({ data: {} }) };
   if (s === 'yt-search') return async () => ({ videos: [] });
-  if (s === '@systemzero/baileys' || s.endsWith('/baileys')) {
+  if (s === 'baileys-v6' || s.endsWith('/baileys')) {
     return {
       downloadContentFromMessage: async function* () { yield Buffer.from('data'); },
       downloadMediaMessage: async () => Buffer.from('data'),
@@ -56,7 +56,7 @@ async function run() {
     require('../src/bot/cases/identidadeCanal')(reg);
     require('../src/bot/cases/perfilWhatsApp')(reg);
     require('../src/bot/cases/crescimento')(reg);
-    console.log('✓ Test 1: Cases (identidadeCanal, perfilWhatsApp, crescimento) loaded cleanly with @systemzero/baileys');
+    console.log('✓ Test 1: Cases (identidadeCanal, perfilWhatsApp, crescimento) loaded cleanly with baileys-v6');
   } catch (e) {
     assert.fail('Test 1 failed: ' + e.message);
   }

@@ -144,7 +144,7 @@ async function _enviarLista(sock, msg, ctx, titulo, subtitulo, corpo, rows, roda
   // explica a etapa actual. O texto numerado existe exclusivamente no fallback.
   try {
     const corpoTema = rpgTheme.rpgRender('', [corpo]);
-    const { generateWAMessageFromContent, proto } = require('@systemzero/baileys');
+    const { generateWAMessageFromContent, proto } = require('baileys-v6');
     const m = generateWAMessageFromContent(ctx.remoteJid, {
       interactiveMessage: proto.Message.InteractiveMessage.fromObject({
         body: proto.Message.InteractiveMessage.Body.fromObject({ text: corpoTema }),

@@ -509,33 +509,215 @@ async function userIsPremiumOrOwner(number, isOwner, msg) {
   return checkIsPremium(u);
 }
 
-// Quando ligado pelo Dono (!pvfree on), este gate vem ANTES de qualquer
-// automação/Aura/botão. Assim utilizadores Free em PV não recebem texto,
-// reação, convite ou resposta acidental; Premium e Dono permanecem normais.
-async function deveSilenciarFreeNoPv(ctx, msg, sock) {
+// No privado, a conta Free fica limitada à conversão normal de foto/vídeo
+// em sticker. O gate vem antes de AURA, listas e fluxos conversacionais para
+// não deixar uma rota lateral transformar o PV gratuito numa conta completa.
+const PV_FREE_STICKER_COMMANDS = new Set(['sticker', 's', 'fig', 'f', 'figurinha']);
+const _pvFreeNoticeAt = new Map();
+const PV_FREE_NOTICE_MS = 24 * 60 * 60 * 1000;
+const FREE_PV_AURA_LIMIT = 10;
+const _freePvAuraUsage = new Map();
+
+async function deveAvisarPvFree(chave, sender = '') {
+  const key = String(chave || '');
+  if (!key) return true;
+  const now = Date.now();
+  if (_pvFreeNoticeAt.size > 5000) {
+    for (const [k, at] of _pvFreeNoticeAt) if (now - at > PV_FREE_NOTICE_MS) _pvFreeNoticeAt.delete(k);
+  }
+  if (now - (_pvFreeNoticeAt.get(key) || 0) < PV_FREE_NOTICE_MS) return false;
+
+  // O mapa local cobre respostas repetidas no mesmo processo; a marca no
+  // perfil cobre reinícios, deploys e mais de um worker. Sem PN verificável
+  // (um LID sem mapeamento), não criamos um número: fica só no mapa local.
+  const number = userManager.normalizeNumber(sender);
+  if (number && User?.db?.readyState === 1) {
+    try {
+      const day = diaLuanda();
+      const updated = await User.findOneAndUpdate(
+        { whatsappNumber: number, freePvNoticeDate: { $ne: day } },
+        { $set: { freePvNoticeDate: day } },
+        { new: true }
+      ).lean();
+      if (!updated) {
+        _pvFreeNoticeAt.set(key, now);
+        return false;
+      }
+      require('./hotCache').forgetUser?.(number);
+    } catch (error) {
+      // Não abre o spam quando Mongo oscila; o limitador local ainda vale.
+      console.warn('[PV Free] aviso persistente indisponível:', error.message?.slice(0, 80));
+    }
+  }
+  _pvFreeNoticeAt.set(key, now);
+  return true;
+}
+
+async function avisarPvFree(sock, msg, ctx, prefix, noticeKey, sender = '') {
+  if (!(await deveAvisarPvFree(noticeKey, sender))) return;
+  const owner = String(config.owner?.number || '').replace(/\D/g, '');
+  await sock.sendMessage(ctx.remoteJid, {
+    text:
+      `🆓 *ACESSO FREE NO PRIVADO*\n\n` +
+      `No PV, contas Free podem criar stickers e usar a AURA em modo assistente por até *${FREE_PV_AURA_LIMIT} perguntas de texto/dia*. Responde a uma foto ou vídeo com *${prefix || config.bot.prefix || '!'}sticker*.\n\n` +
+      `⭐ Para usar todos os comandos, compra o *VIP*.\n` +
+      `🏠 Para activar o bot no teu grupo, adiciona-o e usa o *trial de 7 dias* ou contrata o aluguel.\n` +
+      (owner ? `📲 Contratação: wa.me/${owner}` : ''),
+  }, { quoted: msg }).catch(() => {});
+}
+
+// Um PV moderno pode chegar apenas como LID. Antes de aplicar cobrança ou
+// permissões, resolve-o pelo mapeamento oficial/cached do Baileys, sem supor
+// números a partir do LID. Assim Dono e VIP continuam reconhecidos.
+function diaLuanda() {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Africa/Luanda', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date());
+}
+
+async function consumirCotaAuraFree(user, sender) {
+  const number = userManager.normalizeNumber(sender);
+  const day = diaLuanda();
+  const key = `${number || 'anon'}:${day}`;
+
+  // Em produção, o incremento é atómico: duas mensagens simultâneas (ou
+  // dois workers) não podem transformar o limite 10 em 11. O filtro aceita
+  // a primeira pergunta de um dia novo ou uma cota ainda abaixo do máximo.
+  if (number && User?.db?.readyState === 1) {
+    try {
+      const sameDay = { $eq: [{ $ifNull: ['$freeAuraDate', ''] }, day] };
+      const updated = await User.findOneAndUpdate(
+        {
+          whatsappNumber: number,
+          $expr: {
+            $or: [
+              { $ne: [{ $ifNull: ['$freeAuraDate', ''] }, day] },
+              { $lt: [{ $ifNull: ['$freeAuraUsed', 0] }, FREE_PV_AURA_LIMIT] },
+            ],
+          },
+        },
+        [{
+          $set: {
+            freeAuraDate: day,
+            freeAuraUsed: {
+              $cond: [
+                sameDay,
+                { $add: [{ $ifNull: ['$freeAuraUsed', 0] }, 1] },
+                1,
+              ],
+            },
+          },
+        }],
+        { new: true }
+      ).lean();
+      if (!updated) return { allowed: false, used: FREE_PV_AURA_LIMIT };
+      const used = Math.max(0, Number(updated.freeAuraUsed) || 0);
+      _freePvAuraUsage.set(key, { used });
+      require('./hotCache').forgetUser?.(number);
+      return { allowed: true, used };
+    } catch (error) {
+      // Uma indisponibilidade breve do Mongo não deixa o PV ilimitado: cai
+      // para a cota local até a persistência voltar, sem atrasar a resposta.
+      console.warn('[PV Free] contador persistente indisponível:', error.message?.slice(0, 80));
+    }
+  }
+
+  let entry = _freePvAuraUsage.get(key);
+  if (!entry) {
+    const storedDay = String(user?.freeAuraDate || '');
+    const saved = Number(user?.freeAuraUsed || 0);
+    entry = { used: storedDay === day && Number.isFinite(saved) ? Math.max(0, saved) : 0 };
+  }
+  if (entry.used >= FREE_PV_AURA_LIMIT) return { allowed: false, used: entry.used };
+  entry.used += 1;
+  _freePvAuraUsage.set(key, entry);
+  return { allowed: true, used: entry.used };
+}
+
+async function responderAuraFreeLimitada(sock, msg, ctx, text, user, sender) {
+  const quota = await consumirCotaAuraFree(user, sender);
+  if (!quota.allowed) {
+    // Partilha a mesma chave da conversa com os comandos bloqueados: uma
+    // conta não recebe uma segunda peça comercial por ter atingido a cota.
+    await avisarPvFree(sock, msg, ctx, null, String(ctx?.remoteJid || ctx?.senderLid || sender || 'free-pv'), sender);
+    return;
+  }
+  const auraModes = require('../aura/auraModes');
+  const resposta = await auraModes.assistantRespond(String(text).slice(0, 700), {
+    botName: config.bot?.name || 'DARK BOT', userName: ctx.pushName || 'utilizador',
+    isGroup: false, remoteJid: ctx.remoteJid, senderNumber: sender,
+    isOwner: false, isVip: false, isAdmin: false, prefix: config.bot?.prefix || '!',
+    historyArray: [], groupContext: '', freePvLimited: true,
+  });
+  await sock.sendMessage(ctx.remoteJid, { text: String(resposta || 'Não consegui responder agora. Tenta novamente mais tarde.') }, { quoted: msg });
+}
+
+async function normalizarIdentidadePv(sock, msg, ctx) {
+  const fallback = userManager.normalizeNumber(ctx?.senderNumber);
+  try {
+    const ident = require('../aura/auraIdentidade');
+    const resolved = await ident.identificar(sock, msg, ctx);
+    const numero = userManager.normalizeNumber(resolved?.numero || fallback);
+    if (numero) {
+      ctx.senderNumber = numero;
+      ctx.senderJid = resolved?.jid || `${numero}@s.whatsapp.net`;
+    }
+    if (resolved?.lid) ctx.senderLid = String(resolved.lid);
+    return numero || fallback;
+  } catch { return fallback; }
+}
+
+async function bloquearPvFreeForaSticker(sock, msg, ctx, text) {
   if (ctx?.isGroup || msg?.key?.fromMe) return false;
-  const ativo = await botConfigCache.get('free_pv_silent', false).catch(() => false);
-  if (!(ativo === true || ativo === 'true' || ativo === 'on' || ativo === 1 || ativo === '1')) return false;
+  const noticeKey = String(ctx?.remoteJid || ctx?.senderLid || ctx?.senderNumber || 'free-pv');
+  try {
+    const sender = await normalizarIdentidadePv(sock, msg, ctx);
+    const [extraOwners, ownerNumDB, ownerLid] = await Promise.all([
+      botConfigCache.get('owner_numbers', []).catch(() => []),
+      botConfigCache.get('owner_number', '').catch(() => ''),
+      botConfigCache.get('owner_lid', '').catch(() => ''),
+    ]);
+    const ownerNumbers = (Array.isArray(extraOwners) ? extraOwners : String(extraOwners || '').split(/[\s,]+/))
+      .map(userManager.normalizeNumber)
+      .filter(Boolean);
+    const ownerFlags = require('./ownerIdentity').resolveOwnerFlags({
+      ctx, msg: msg || {}, sock, config,
+      dbOwnerNum: userManager.normalizeNumber(ownerNumDB), ownerLid, ownerNumbers,
+    });
+    Object.assign(ctx, ownerFlags);
+    if (ownerFlags.isOwner) return false;
 
-  const [extraOwners, ownerNumDB, ownerLid] = await Promise.all([
-    botConfigCache.get('owner_numbers', []).catch(() => []),
-    botConfigCache.get('owner_number', '').catch(() => ''),
-    botConfigCache.get('owner_lid', '').catch(() => ''),
-  ]);
-  const normalize = userManager.normalizeNumber;
-  const sender = normalize(ctx?.senderNumber);
-  const ownerNumbers = [config.owner?.number, ownerNumDB]
-    .concat(Array.isArray(extraOwners) ? extraOwners : String(extraOwners || '').split(/[\s,]+/))
-    .map(normalize)
-    .filter(Boolean);
-  const senderJid = String(msg?.key?.participant || msg?.key?.remoteJid || '');
-  const botNumber = normalize(String(sock?.user?.id || '').split(':')[0].split('@')[0]);
-  if (ownerNumbers.includes(sender) ||
-      require('./ownerIdentity').matchesOwnerLid(ctx, msg || {}, ownerLid) ||
-      (botNumber && sender === botNumber)) return false;
+    let user = await require('./hotCache').getUser(msg, sender).catch(() => null);
+    // Este gate vem antes do normalizador que cria o perfil do remetente.
+    // Criamos o registo Free apenas quando Mongo está disponível para a
+    // contagem sobreviver a reinícios; sem base, a protecção em memória vale.
+    if (!user && sender && User?.db?.readyState === 1) {
+      user = await userManager.identifyByWhatsApp(sender, ctx.pushName).catch(() => null);
+    }
+    if (checkIsPremium(user)) return false;
 
-  const user = await require('./hotCache').getUser(msg, sender).catch(() => null);
-  return !checkIsPremium(user);
+    const detected = await prefixEngine.detect(text, ctx.remoteJid).catch(() => null);
+    const command = String(detected?.rest || '').trim().split(/\s+/)[0].toLowerCase();
+    if (command && PV_FREE_STICKER_COMMANDS.has(command)) return false;
+
+    const perguntaLivre = String(text || '').trim();
+    if (!detected && perguntaLivre && perguntaLivre.length <= 700 && !pareceComando(perguntaLivre) && !hasMediaPayload(msg?.message)) {
+      // Free fala com AURA apenas no modo Assistente: texto, sem comandos,
+      // mídia, automações ou acções de WhatsApp, até 10 perguntas/dia.
+      await responderAuraFreeLimitada(sock, msg, ctx, perguntaLivre, user, sender);
+      return true;
+    }
+
+    // A orientação comercial só é entregue uma vez por conta/24h para não
+    // transformar tentativas repetidas em spam. O gate continua fechado.
+    await avisarPvFree(sock, msg, ctx, detected?.prefix, noticeKey, sender);
+    return true;
+  } catch {
+    // Falha fechada para Free no PV: não abre AURA/comandos; se possível,
+    // deixa apenas o mesmo aviso comercial com o limitador anti-spam.
+    await avisarPvFree(sock, msg, ctx, null, noticeKey, ctx?.senderNumber).catch(() => {});
+    return true;
+  }
 }
 
 // ── v6.94: aviso de grupo sem aluguel (a assistente ajuda, não se cala) ──
@@ -564,6 +746,69 @@ async function _avisoSemAluguel(sock, msg, ctx) {
   } catch (_) {}
 }
 
+/**
+ * Bloqueia ANTES da AURA, botões pendentes e fluxos conversacionais. O gate
+ * antigo ficava demasiado abaixo no handler: Dono/VIP e algumas automações
+ * textuais ainda conseguiam falar num grupo já sem serviço.
+ *
+ * Só o funil de contratação e a preferência local !onlyadm/!adm1/!soadm
+ * permanecem disponíveis. Não inferimos comandos de texto livre, para a AURA não voltar
+ * a responder a conversa casual num grupo inactivo.
+ */
+async function _allowInactiveGroupInput(msg, ctx, text) {
+  if (!ctx?.isGroup) return true;
+  let settings = null;
+  try { settings = await require('./hotCache').getGroupSettings(msg, ctx.remoteJid); } catch {}
+  if (require('./groupEntitlement').hasActiveEntitlement(settings)) return true;
+  // IDs de botão do próprio funil Premium não levam prefixo, mas só abrem o
+  // pedido de plano; devem continuar a funcionar num grupo ainda inactivo.
+  if (/^PREMIUM_(?:7|30|90)_\d+$/i.test(String(text || '').trim())) return true;
+
+  let detected = null;
+  try { detected = await prefixEngine.detect(text, ctx.remoteJid); } catch {}
+  const prefix = detected?.prefix || config.bot.prefix || '!';
+  let rental = false;
+  try { rental = !!detected && require('./cases/rental2').gateAllows(text, prefix); } catch {}
+  // !soadm é compatível com !onlyadm/!adm1: ambos mudam a mesma política
+  // local do bot, sem fechar o chat nativo do WhatsApp.
+  const localAdminControl = !!detected && /^\s*(?:onlyadm|adm1|soadm)(?:\s|$)/i.test(detected.rest || '');
+  return rental || localAdminControl;
+}
+
+/**
+ * Política única de “bot só para admins”. !onlyadm/!adm1 e !soadm são duas
+ * formas de configurar a mesma opção `onlyAdmins`; o comando !fechar continua
+ * a ser a acção explícita para fechar o chat do WhatsApp. O gate fica antes
+ * da AURA, menus, comandos e fluxos conversacionais para um membro comum não
+ * receber resposta por um caminho secundário.
+ */
+async function _adminsOnlyBlocksSender(sock, msg, ctx) {
+  if (!ctx?.isGroup) return false;
+  let gs = null;
+  try { gs = await require('./hotCache').getGroupSettings(msg, ctx.remoteJid); } catch {}
+  if (gs?.onlyAdmins !== true) return false;
+
+  try {
+    const [ownerLid, extraOwners, ownerNumDB] = await Promise.all([
+      botConfigCache.get('owner_lid', ''),
+      botConfigCache.get('owner_numbers', []),
+      botConfigCache.get('owner_number', ''),
+    ]);
+    const ownerNumbers = Array.isArray(extraOwners)
+      ? extraOwners.map(userManager.normalizeNumber).filter(Boolean)
+      : String(extraOwners || '').split(/[\s,]+/).map(userManager.normalizeNumber).filter(Boolean);
+    const flags = require('./ownerIdentity').resolveOwnerFlags({
+      ctx, msg, sock, config,
+      dbOwnerNum: userManager.normalizeNumber(String(ownerNumDB || '')),
+      ownerLid,
+      ownerNumbers,
+    });
+    if (flags.isOwner) return false;
+  } catch {}
+
+  return !(await isGroupAdminForHandler(sock, ctx));
+}
+
 async function _handleInner(sock, msg, turn) {
   let text = extractText(msg).trim();
   const hasIncomingMedia = hasMediaPayload(msg.message);
@@ -576,9 +821,23 @@ async function _handleInner(sock, msg, turn) {
   const ctx = getSenderInfo(msg, sock);
   // v12.9.50: Canais (@newsletter) e feeds de status nunca são processados como mensagens de chat/PV/comandos
   if (ctx.isChannel || ctx.isStatus) return false;
-  // Gate absoluto: deve acontecer antes de listas, regras, Aura, convites
-  // ou qualquer sendMessage. O Dono liga/desliga pelo comando !pvfree.
-  if (await deveSilenciarFreeNoPv(ctx, msg, sock)) return false;
+  // Política comercial do PV: Free não usa AURA/listas/comandos, excepto a
+  // conversão normal para sticker; Premium e Dono mantêm acesso completo.
+  if (await bloquearPvFreeForaSticker(sock, msg, ctx, text)) return true;
+  // Modo só-admin: AURA, menus e comandos ficam reservados a admins,
+  // subdonos e Dono — sem depender de fechar o chat no WhatsApp.
+  if (await _adminsOnlyBlocksSender(sock, msg, ctx)) return false;
+  // Grupo sem serviço não é uma versão reduzida para Dono/VIP: é inactivo.
+  // Isto barra a AURA e fluxos antigos antes de poderem responder; apenas o
+  // funil de trial/aluguel e !onlyadm/!adm1 chegam ao resto do handler.
+  if (ctx.isGroup && !(await _allowInactiveGroupInput(msg, ctx, text))) {
+    if (pareceComando(text)) {
+      const detected = await prefixEngine.detect(text, ctx.remoteJid).catch(() => null);
+      ctx.prefix = detected?.prefix || config.bot.prefix || '!';
+      await _avisoSemAluguel(sock, msg, ctx);
+    }
+    return false;
+  }
   const conversation = require('../aura/auraConversation');
   try {
     const control = conversation.process(text, ctx);
@@ -1181,7 +1440,15 @@ async function _handleInner(sock, msg, turn) {
         try {
           const GS = require('../database/models/GroupSettings');
           const agora = new Date();
-          const hs = await GS.find({ isHosted: true, hostedUntil: { $gt: agora } }).lean().catch(() => []);
+          const hs = await GS.find({
+            isHosted: true,
+            $or: [
+              { hostedUntil: null },
+              { hostedUntil: { $exists: false } },
+              { hostedUntil: '' },
+              { hostedUntil: { $gt: agora } },
+            ],
+          }).lean().catch(() => []);
           comAluguel = (hs || []).map(g => g.groupJid).filter(Boolean);
           const tr = await GS.find({ isHosted: false, trialExpiresAt: { $gt: agora } }).lean().catch(() => []);
           comTrial = (tr || []).map(g => g.groupJid).filter(Boolean);
@@ -1286,8 +1553,11 @@ async function _handleInner(sock, msg, turn) {
         // leva o aviso e fica bloqueado.
         let _gateOpen = false;
         try { _gateOpen = require('./cases/rental2').gateAllows(text, prefix); } catch {}
-        if (_gateOpen) {
-          // passa — o case do funil trata do resto
+        // !onlyadm/!adm1/!soadm é uma escolha local do admin. Não activa
+        // serviços nem automações; por isso continua acessível num grupo livre.
+        const _onlyAdminsToggle = /^\s*(?:onlyadm|adm1|soadm)(?:\s|$)/i.test(prefixInfo?.rest || '');
+        if (_gateOpen || _onlyAdminsToggle) {
+          // passa — o case do funil ou a configuração local trata do resto
         } else {
           // v7.36: o aviso só faz sentido quando a pessoa TENTOU um comando.
           // Antes disparava em qualquer mensagem (conversa normal) de cada
@@ -1599,7 +1869,7 @@ async function _handleInner(sock, msg, turn) {
     const callHandler = require('./callHandler');
     const _ptt = msg.message?.audioMessage;
     if (_ptt && !ctx.isGroup && callHandler.chamadaActiva(ctx.remoteJid)) {
-      const { downloadMediaMessage } = require('@systemzero/baileys');
+      const { downloadMediaMessage } = require('baileys-v6');
       const _buf = await downloadMediaMessage(msg, 'buffer', {}).catch(() => null);
       if (_buf && _buf.length > 100) {
         const r = await callHandler.continuarConversa(sock, ctx.remoteJid, _buf, {
@@ -1783,7 +2053,7 @@ async function _handleInner(sock, msg, turn) {
   }
   if (!msg.key?.fromMe && _audioEarly && (!ctx.isGroup || isBotMentioned || isReplyToBot || _audioConversationActive)) {
     try {
-      const { downloadMediaMessage } = require('@systemzero/baileys');
+      const { downloadMediaMessage } = require('baileys-v6');
       const _audioBuf = await downloadMediaMessage(msg, 'buffer', {});
       if (_audioBuf && _audioBuf.length > 500) {
         _voiceTranscript = String(await ai.transcribeAudio(_audioBuf, 'pt') || '').trim();
@@ -1860,12 +2130,16 @@ async function _handleInner(sock, msg, turn) {
     ctx.isAdmin = true;
     const grupoPolicy = require('../aura/auraGrupo');
     const auraCmdText = text.toLowerCase().trim();
+    // Uma ordem de marcação total é auto-contida e inequívoca. Para admin/Dono,
+    // ela vale como instrução directa mesmo sem repetir "AURA"; não abrimos a
+    // excepção para acções ambíguas ou destrutivas.
+    const explicitTagAll = /^(?:marca todos|tag all|chama todos|marca todo mundo|atenção todos|(?:marca|marcar|menciona|mencionar|chama|chamar)\s+(?:eles(?:\s+a[ií])?|elas(?:\s+a[ií])?|a[ií]|o pessoal|a galera|geral))(?:\s|$)/i.test(auraCmdText);
     const actionDirectedToAura = grupoPolicy.isDirectedToAura({
       isGroup: true,
       isBotMentioned,
       isReplyToAura: isReplyToBot,
       dest: ctx.dest,
-    });
+    }) || explicitTagAll;
     const auraCandidate = actionDirectedToAura
       ? auraCmdText
           .replace(/^(?:aura|a aura|da aura|pra aura|com a aura)[\s,:;]*\s*/i, '')
@@ -2540,9 +2814,26 @@ async function _handleInner(sock, msg, turn) {
             dest: ctx.dest || null, // v7.83
           });
           ctx._tomLeve = !!d.leve; // v7.83: falam DELA (indirecto) → resposta leve
-          // v7.40: STICKER solto em grupo não puxa resposta (nem do Dark) —
-          // só se for resposta a ela ou menção. No PV responde normal.
-          if (d.responde && ctx.isGroup && msg.message?.stickerMessage && !isBotMentioned && !isReplyToBot) {
+
+          // Consentimento de mídia: uma figurinha/foto/vídeo/documento solto
+          // não é uma pergunta. Não acorda a AURA, não activa conversa nem
+          // deixa uma descrição automática entrar no histórico/memória.
+          const _msgMedia = msg.message || {};
+          const _quotedMedia = getQuotedMessage(msg) || {};
+          const _passiveMediaType = _msgMedia.imageMessage || _quotedMedia.imageMessage ? 'imagem'
+            : _msgMedia.videoMessage || _quotedMedia.videoMessage ? 'video'
+              : _msgMedia.stickerMessage || _quotedMedia.stickerMessage ? 'sticker'
+                : _msgMedia.documentMessage || _quotedMedia.documentMessage ? 'documento' : '';
+          const _passiveText = String(cleanText || text || '').trim();
+          if (d.responde && _passiveMediaType && !_passiveText) {
+            _contaMsg(ctx.remoteJid);
+            return false;
+          }
+
+          // v7.40: sticker solto em grupo não puxa resposta (nem do Dark).
+          // A menção/citação, por si, também não autoriza descrever o sticker:
+          // só um pedido escrito de análise o fará no bloco de mídia abaixo.
+          if (d.responde && ctx.isGroup && _msgMedia.stickerMessage && !isBotMentioned && !isReplyToBot) {
             const pol = require('../aura/auraUniversal').politicaSticker({ isGroup: true, isReplyToBot, mencionada: isBotMentioned, isOwner });
             if (!pol.responde) {
               if (pol.reagir) sock.sendMessage(ctx.remoteJid, { react: { text: chooseAuraReaction('sticker', ctx), key: msg.key } }).catch(() => {});
@@ -2563,8 +2854,9 @@ async function _handleInner(sock, msg, turn) {
                 mood: require('../aura/auraHuman').getMood(ctx.remoteJid).mood,
                 perguntaDirecta: /\?/.test(text) || isBotMentioned || isReplyToBot,
               });
-              // v7.70: PV de cliente nunca dorme — a vontade só a cala fora do PV comercial (ou em flood extremo).
-              if (!q.responde && !_forcarContextual() && !vont.forcarRespostaPV({ isOwner, isGroup: ctx.isGroup, sat: vont.saturacao(ctx.remoteJid, ctx.senderNumber) })) {
+              // A vontade própria nunca ignora o Dono. Para os demais, PV e
+              // conversa explicitamente dirigida também continuam respondíveis.
+              if (!q.responde && !isOwner && !_forcarContextual() && !vont.forcarRespostaPV({ isOwner, isGroup: ctx.isGroup, sat: vont.saturacao(ctx.remoteJid, ctx.senderNumber) })) {
                 if (q.reagir) sock.sendMessage(ctx.remoteJid, { react: { text: q.reagir, key: msg.key } }).catch(() => {});
                 _contaMsg(ctx.remoteJid);
                 return false;
@@ -2588,6 +2880,13 @@ async function _handleInner(sock, msg, turn) {
       const _modes = _auraModes;
       const _awake = _auraAwakeHere;
 
+      // Também no modo Assistente: anexo visual sozinho não inicia conversa.
+      // Isto impede leitura/descrição automática fora do modo AURA acordado.
+      const _silentMedia = msg.message?.imageMessage || msg.message?.videoMessage || msg.message?.stickerMessage || msg.message?.documentMessage || getQuotedMessage(msg)?.stickerMessage;
+      if (_silentMedia && !String(cleanText || text || '').trim()) {
+        _contaMsg(ctx.remoteJid);
+        return false;
+      }
       const hasMedia = !!(msg.message?.imageMessage || msg.message?.videoMessage || msg.message?.audioMessage || msg.message?.stickerMessage || getQuotedMessage(msg)?.stickerMessage);
       if (!isReplyToBot && !auraTriggerActive && !isOwnerFreeText && cleanText.length < 2 && !hasMedia) return false;
 
@@ -2700,10 +2999,18 @@ async function _handleInner(sock, msg, turn) {
       let _isViewOnce = false;
       const msgObj = msg.message;
       const quotedObj = getQuotedMessage(msg);
+      const mediaConsent = require('../aura/auraMediaConsent');
+      const mediaRequestText = String(cleanText || text || '');
+      const allowImageAnalysis = !!msgObj?.imageMessage && mediaConsent.pediuAnaliseDeMidia({ texto: mediaRequestText, tipo: 'imagem' });
+      const allowVideoAnalysis = !!msgObj?.videoMessage && mediaConsent.pediuAnaliseDeMidia({ texto: mediaRequestText, tipo: 'video' });
+      const allowStickerAnalysis = !!(msgObj?.stickerMessage || quotedObj?.stickerMessage) && mediaConsent.pediuAnaliseDeMidia({ texto: mediaRequestText, tipo: 'sticker' });
+      const allowDocumentAnalysis = !!msgObj?.documentMessage && mediaConsent.pediuAnaliseDeMidia({ texto: mediaRequestText, tipo: 'documento' });
+      const allowVisualInspection = allowImageAnalysis || allowVideoAnalysis || allowStickerAnalysis || allowDocumentAnalysis;
 
-      // v12.2: detecta view-once e salva automaticamente
+      // View-once só é guardado/aberto quando a pessoa pediu análise. Receber
+      // mídia de visualização única não é autorização para a AURA observá-la.
       try {
-        if (isViewOncePayload(msg.message) || msgObj?.imageMessage?.viewOnce || msgObj?.videoMessage?.viewOnce) {
+        if (allowVisualInspection && (isViewOncePayload(msg.message) || msgObj?.imageMessage?.viewOnce || msgObj?.videoMessage?.viewOnce)) {
           _isViewOnce = true;
           console.log('[ViewOnce] Detectado no commandHandler — salvando...');
           const voMod = require('../aura/auraViewOnce');
@@ -2711,7 +3018,7 @@ async function _handleInner(sock, msg, turn) {
         }
       } catch (e) { console.warn('[ViewOnce] detect error', e.message?.slice(0,50)); }
 
-      if (msgObj?.imageMessage) {
+      if (msgObj?.imageMessage && allowImageAnalysis) {
         isImage = true;
         const caption = msgObj.imageMessage.caption || '';
         const viewOncePrefix = _isViewOnce ? '👁️‍🗨️ VIEW-ONCE (visualização única) — tu SALVOU e VÊS! ' : '';
@@ -2727,7 +3034,7 @@ async function _handleInner(sock, msg, turn) {
         if (!mediaContext) {
           mediaContext = `${viewOncePrefix}📸 Alguém enviou uma FOTO.${caption ? ` Legenda: "${caption}"` : ''} ${_isViewOnce ? 'Era view-once mas tu já salvou e vês!' : ''} Comenta apenas com base no conteúdo analisado; não inventes quem aparece nem detalhes que não sejam claros.`;
         }
-      } else if (msgObj?.videoMessage) {
+      } else if (msgObj?.videoMessage && allowVideoAnalysis) {
         isVideo = true;
         const caption = msgObj.videoMessage.caption || '';
         const isGif = msgObj.videoMessage.gifPlayback;
@@ -2758,7 +3065,7 @@ async function _handleInner(sock, msg, turn) {
             ? '🎧 Foi recebido um áudio de voz, mas não há transcrição disponível. Não finjas que conseguiste ouvir ou identificar o conteúdo.'
             : '🎵 Foi recebido um ficheiro de áudio sem transcrição disponível.';
         }
-      } else if (msgObj?.stickerMessage || quotedObj?.stickerMessage) {
+      } else if ((msgObj?.stickerMessage || quotedObj?.stickerMessage) && allowStickerAnalysis) {
         isSticker = true;
         const stkMeta = msgObj?.stickerMessage || quotedObj?.stickerMessage || {};
         const citado = !msgObj?.stickerMessage && !!quotedObj?.stickerMessage;
@@ -2767,7 +3074,7 @@ async function _handleInner(sock, msg, turn) {
           let stkBuf = null;
           const alvo = citado ? buildQuotedDownloadMessage(msg) : msg;
           try {
-            const { downloadMediaMessage } = require('@systemzero/baileys');
+            const { downloadMediaMessage } = require('baileys-v6');
             if (alvo) stkBuf = await downloadMediaMessage(alvo, 'buffer', {});
           } catch (e1) {
             console.warn('[Aura Sticker] downloadMediaMessage:', e1.message?.slice(0, 40));
@@ -2799,7 +3106,7 @@ async function _handleInner(sock, msg, turn) {
             ? '[Mandaram-te uma figurinha ANIMADA. Comenta o que VÊS no movimento.]'
             : '[Mandaram-te uma figurinha. Comenta o que VÊS nela.]';
         }
-      } else if (msgObj?.documentMessage) {
+      } else if (msgObj?.documentMessage && allowDocumentAnalysis) {
         // v7.8 — a AURA LÊ o documento (txt directo / PDF via Gemini)
         try {
           const am = require('../aura/auraMedia');
@@ -2817,7 +3124,8 @@ async function _handleInner(sock, msg, turn) {
 
       // v7.8 — a AURA LÊ links mandados na conversa
       const _urlNaMsg = String(cleanText || text || '').match(/https?:\/\/[^\s<>()"']+/i);
-      if (!mediaContext && _urlNaMsg) {
+      const allowLinkAnalysis = !!_urlNaMsg && mediaConsent.pediuAnaliseDeMidia({ texto: mediaRequestText, tipo: 'link' });
+      if (!mediaContext && _urlNaMsg && allowLinkAnalysis) {
         try {
           const am = require('../aura/auraMedia');
           const r = await am.lerLink(_urlNaMsg[0], require('./ai'));
@@ -3087,7 +3395,7 @@ async function _handleInner(sock, msg, turn) {
           let imgBuf = null;
           // Tentativa 1: downloadMediaMessage
           try {
-            const { downloadMediaMessage } = require('@systemzero/baileys');
+            const { downloadMediaMessage } = require('baileys-v6');
             imgBuf = await downloadMediaMessage(msg, 'buffer', {});
           } catch (e1) {
             console.warn('[Aura Vision] downloadMediaMessage falhou:', e1.message?.slice(0, 40));
@@ -3306,8 +3614,9 @@ Responde com naturalidade e concisão, sem inventar detalhes e sem fingir ser um
         const vont = require('../aura/auraVontade');
         const cer = require('../aura/auraCerebro');
         const v = vont.interpretarResposta(finalAnswer);
-        // v7.70: PV de cliente nunca dorme — o [SILENCIO] da IA vira resposta de cortesia (salvo flood extremo).
-        const _pvForca = _forcarContextual() || vont.forcarRespostaPV({ isOwner, isGroup: ctx.isGroup, sat: vont.saturacao(ctx.remoteJid, ctx.senderNumber) });
+        // O Dono, um PV de cliente e uma conversa dirigida não podem ser
+        // silenciados por decisão do modelo. Personalidade não sobrepõe ordem.
+        const _pvForca = isOwner || _forcarContextual() || vont.forcarRespostaPV({ isOwner, isGroup: ctx.isGroup, sat: vont.saturacao(ctx.remoteJid, ctx.senderNumber) });
         if (v.silencio && !_pvForca) {
           if (v.reagir) sock.sendMessage(ctx.remoteJid, { react: { text: v.reagir, key: msg.key } }).catch(() => {});
           console.log('[Aura] escolheu não responder');
@@ -3882,6 +4191,8 @@ Responde com naturalidade e concisão, sem inventar detalhes e sem fingir ser um
     advertir: 'warn',
     apagar: 'del', deletar: 'del',
     mute: 'silenciar', unmute: 'silenciar',
+    // Restrição de uso de comandos — !adm1 mantém compatibilidade curta.
+    adm1: 'onlyadm',
     adicionar: 'add',
     
     // ── INTERAÇÕES ──
@@ -3943,11 +4254,48 @@ Responde com naturalidade e concisão, sem inventar detalhes e sem fingir ser um
   if (ctx.isGroup && groupConfig) {
     const blocked = (groupConfig.blockedCommands || []).map(x => String(x).toLowerCase());
     const blockedSubs = (groupConfig.blockedSubmenus || []).map(x => String(x).toLowerCase());
-    const adminControlCmds = ['bloquearcmd','desbloquearcmd','cmdsgrupo','blockcmd','unblockcmd','setnomebot','inatividade','inativos','warn','unwarn','warnings','resetwarn','regras','setregras','motivacao','tagadmins','admins','setdesc','setnomegrupo','del','add','tempban','silenciar','limpar'];
+    const adminControlCmds = ['bloquearcmd','desbloquearcmd','cmdsgrupo','blockcmd','unblockcmd','setnomebot','inatividade','inativos','warn','unwarn','warnings','resetwarn','regras','setregras','motivacao','tagadmins','admins','setdesc','setnomegrupo','del','add','tempban','silenciar','limpar','onlyadm','soadm'];
     if (!isOwner && !adminControlCmds.includes(canonicalCommand) &&
         (blocked.includes(commandName) || blocked.includes(canonicalCommand) || blockedSubs.includes(commandName) || blockedSubs.includes(canonicalCommand))) {
       return false;
     }
+
+    // !onlyadm / !adm1 configura quem pode usar o bot inteiro no grupo.
+    // !soadm é o alias compatível da mesma política; !fechar controla apenas
+    // o chat nativo do WhatsApp.
+    if (canonicalCommand === 'onlyadm') {
+      const ehAdmin = isOwner || await isGroupAdminForHandler(sock, ctx);
+      if (!ehAdmin) {
+        await sock.sendMessage(ctx.remoteJid, {
+          text: '🛡️ Só administradores do grupo ou o Dono podem mudar esta opção.',
+        }, { quoted: msg });
+        return true;
+      }
+      const escolha = String(args[0] || '').trim().toLowerCase();
+      let proximo;
+      if (!escolha || ['toggle', 'alternar'].includes(escolha)) proximo = !groupConfig.onlyAdmins;
+      else if (['on', 'ligar', 'ativo', 'activar', 'ativar', '1'].includes(escolha)) proximo = true;
+      else if (['off', 'desligar', 'inativo', 'desactivar', 'desativar', '0'].includes(escolha)) proximo = false;
+      else if (['status', 'estado'].includes(escolha)) proximo = !!groupConfig.onlyAdmins;
+      else {
+        await sock.sendMessage(ctx.remoteJid, {
+          text: `Uso: *${prefix}onlyadm on* ou *${prefix}onlyadm off*\nTambém podes usar *${prefix}adm1* para alternar.`,
+        }, { quoted: msg });
+        return true;
+      }
+      if (!['status', 'estado'].includes(escolha)) {
+        groupConfig.onlyAdmins = proximo;
+        await groupConfig.save();
+        require('./hotCache').forgetGroup(ctx.remoteJid);
+      }
+      await sock.sendMessage(ctx.remoteJid, {
+        text: proximo
+          ? '🛡️ *BOT SÓ PARA ADMINS: ON*\n\nA partir de agora, o DARK BOT e a AURA só respondem a admins do grupo, subdonos e ao Dono. Membros normais ficam sem resposta.\n\nPara liberar todos: *' + prefix + 'onlyadm off*\nAlias: *' + prefix + 'soadm*'
+          : '🛡️ *BOT SÓ PARA ADMINS: OFF*\n\nOs membros voltam a poder usar o bot conforme as permissões do grupo.\n\nPara restringir: *' + prefix + 'onlyadm on*',
+      }, { quoted: msg });
+      return true;
+    }
+
     if (groupConfig.onlyAdmins && !isOwner && !(await isGroupAdminForHandler(sock, ctx))) return false;
   }
 
@@ -3962,33 +4310,8 @@ Responde com naturalidade e concisão, sem inventar detalhes e sem fingir ser um
     }
   }
 
-  // ── Limite free PV (50 cmds/dia — mais generoso para não frustrar) ──
-  // Comandos de info/ajuda não contam para o limite
-  const PV_EXEMPT = new Set(['menu','start','ping','info','dono','criador','aiapis','donos','help','cmds','comandos','vip','prefixos']);
-  if (!ctx.isGroup && !isOwner && !PV_EXEMPT.has(canonicalCommand || '')) {
-    try {
-      const FREE_PV_LIMIT = 50;
-      const todayStr = new Date().toISOString().slice(0, 10);
-      const pvUser = await require('./hotCache').getUser(msg, ctx.senderNumber); // v7.52: memo partilhado
-      if (!pvUser || !checkIsPremium(pvUser)) {
-        const sameDayCount = (pvUser?.pvCommandsDate === todayStr) ? (pvUser?.pvCommandsToday || 0) : 0;
-        if (sameDayCount >= FREE_PV_LIMIT) {
-          await sock.sendMessage(ctx.remoteJid, {
-            text:
-              `⏳ *Limite diário atingido*\n\n` +
-              `Utilizadores Free têm *${FREE_PV_LIMIT} comandos/dia* no chat privado.\n\n` +
-              `⭐ Upgrade para *Premium* e usa sem limites: *${prefix}vip*`,
-          }, { quoted: msg });
-          return true;
-        }
-        // Incrementa (não bloqueia se falhar)
-        User.findOneAndUpdate(
-          { whatsappNumber: ctx.senderNumber },
-          { pvCommandsToday: sameDayCount + 1, pvCommandsDate: todayStr }
-        ).catch(() => {});
-      }
-    } catch {}
-  }
+  // O antigo limite de 50 comandos/dia no PV foi substituído pelo acesso
+  // Free somente para !sticker, aplicado antes de AURA e dos cases.
 
   // ── Case Handler (switch/case engine) ─────────────────────────────
   // Executa antes dos pacotes — tem prioridade
@@ -4120,7 +4443,7 @@ Responde com naturalidade e concisão, sem inventar detalhes e sem fingir ser um
           const _errLine = formatResponse(_theme, commandName, 'error', ctx);
           const warnText = `${_errLine}\n\n${_sugLine}`;
           try {
-            const { generateWAMessageFromContent, proto } = require('@systemzero/baileys');
+            const { generateWAMessageFromContent, proto } = require('baileys-v6');
             const btnMsg = generateWAMessageFromContent(ctx.remoteJid, {
               interactiveMessage: proto.Message.InteractiveMessage.fromObject({
                 body:   proto.Message.InteractiveMessage.Body.fromObject({ text: warnText }),
@@ -4482,7 +4805,11 @@ async function handleConversationControl(sock, raw) {
   const conversation = require('../aura/auraConversation');
   const text = extractText(msg).trim();
   if (!conversation.controlIntent(text)) return false;
-  if (await deveSilenciarFreeNoPv(ctx, msg, sock)) return true;
+  if (await bloquearPvFreeForaSticker(sock, msg, ctx, text)) return true;
+  // Este caminho prioritário passa antes do handler normal; aplica a mesma
+  // política só-admin para um membro não receber resposta por !pausar,
+  // !retomar ou outro controlo conversacional.
+  if (await _adminsOnlyBlocksSender(sock, msg, ctx)) return true;
   const turn = conversation.begin(ctx);
   try {
     const result = conversation.process(text, ctx);
@@ -4514,4 +4841,4 @@ async function handle(sock, msg) {
   });
 }
 
-module.exports = { handle, noteIncomingConversation, handleConversationControl, extractText, getSenderInfo, fillVars, unwrapWhatsAppMessage, normalizeIncomingMsg, pareceComando, deveSilenciarFreeNoPv, fotosPedidas: _fotosPedidas };
+module.exports = { handle, noteIncomingConversation, handleConversationControl, extractText, getSenderInfo, fillVars, unwrapWhatsAppMessage, normalizeIncomingMsg, pareceComando, bloquearPvFreeForaSticker, fotosPedidas: _fotosPedidas };

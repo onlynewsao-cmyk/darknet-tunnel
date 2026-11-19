@@ -33,10 +33,22 @@ async function sendAudio(sock, jid, quoted, r) {
   }, { quoted });
 }
 
-// Helper: enviar vídeo
-async function sendVideo(sock, jid, quoted, r) {
-  const buf = r.buffer || await mediaHandler.fetchBuffer(r.url || r.download || r.download_url);
+// Helper: enviar vídeo. Fontes Facebook por vezes devolvem MP4 com HEVC,
+// AVC em perfil/pixel-format não suportado, ou índice problemático; o Android
+// mostra então tela verde. Para essa rota normalizamos para H.264 baseline,
+// AAC, yuv420p e faststart antes de enviar ao WhatsApp.
+async function sendVideo(sock, jid, quoted, r, opts = {}) {
+  let buf = r.buffer || await mediaHandler.fetchBuffer(r.url || r.download || r.download_url);
   if (!buf || buf.length < 4096) throw new Error('vídeo vazio');
+
+  if (opts.normalizeForWhatsApp) {
+    const compatible = await require('../videoCompat').prepareForWhatsApp(buf, {
+      maxHeight: opts.maxHeight || 720,
+      timeoutMs: 240000,
+    });
+    buf = compatible.buffer;
+  }
+
   const isMP4 = buf.slice(4, 8).toString() === 'ftyp';
   if (isMP4) return sock.sendMessage(jid, { video: buf, caption: `🎬 *${r.title || 'Vídeo'}*`, mimetype: 'video/mp4' }, { quoted });
   return sock.sendMessage(jid, { document: buf, fileName: `${(r.title || 'video').slice(0, 50)}.mp4`, mimetype: 'video/mp4', caption: `🎬 *${r.title || 'Vídeo'}*` }, { quoted });
@@ -133,7 +145,7 @@ module.exports = function registerDownloads2(registerCase) {
     try {
       const dl = require('../dl/others');
       const r = await dl.facebook(url);
-      await sendVideo(sock, ctx.remoteJid, msg, r);
+      await sendVideo(sock, ctx.remoteJid, msg, r, { normalizeForWhatsApp: true, maxHeight: 720 });
       sock.sendMessage(ctx.remoteJid, { react: { text: '✅', key: msg.key } });
     } catch (e) { sock.sendMessage(ctx.remoteJid, { react: { text: '❌', key: msg.key } }); return errReply(sock, msg, ctx, 'Facebook: ' + e.message); }
   });
@@ -658,7 +670,7 @@ module.exports = function registerDownloads2(registerCase) {
     const rows = selCmds.slice(0, 24).map(it => ({ title: `${it.emoji || '📥'} ${p}${it.cmd}`, description: (it.desc || '').slice(0, 72), id: `${p}${it.cmd}` }));
     if (rows.length) {
       try {
-        const { generateWAMessageFromContent, proto } = require('@systemzero/baileys');
+        const { generateWAMessageFromContent, proto } = require('baileys-v6');
         const m = generateWAMessageFromContent(ctx.remoteJid, {
           interactiveMessage: proto.Message.InteractiveMessage.fromObject({
             body: proto.Message.InteractiveMessage.Body.fromObject({ text: textBody }),

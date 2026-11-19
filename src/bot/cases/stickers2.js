@@ -17,12 +17,12 @@ async function getImageBuffer(msg) {
   if (msg.message?.stickerMessage || quoted?.stickerMessage) {
     const stkMsg = msg.message?.stickerMessage ? msg : { message: quoted, key: msg.key };
     try {
-      const { downloadMediaMessage } = require('@systemzero/baileys');
+      const { downloadMediaMessage } = require('baileys-v6');
       return await downloadMediaMessage(stkMsg, 'buffer', {});
     } catch { return null; }
   }
   try {
-    const { downloadMediaMessage } = require('@systemzero/baileys');
+    const { downloadMediaMessage } = require('baileys-v6');
     return await downloadMediaMessage(msg.message?.imageMessage ? msg : { message: quoted, key: msg.key }, 'buffer', {});
   } catch { return null; }
 }

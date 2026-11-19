@@ -65,7 +65,7 @@ function getViewOnceInfo(msg) {
 async function saveViewOnceMedia(msg, sock) {
   try {
     ensureDir();
-    const { downloadMediaMessage } = require('@systemzero/baileys');
+    const { downloadMediaMessage } = require('baileys-v6');
     const buf = await downloadMediaMessage(msg, 'buffer', {}).catch(() => null);
     if (!buf || buf.length < 100) return null;
     

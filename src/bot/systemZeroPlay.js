@@ -1,18 +1,18 @@
 /**
  * ╔══════════════════════════════════════════════════════════╗
- * ║   DARK BOT — SystemZero Play Engine v2 🎵                ║
- * ║   play / play2 / play3 com ButtonV2 real                 ║
+ * ║   DARK BOT — Play Engine v2 🎵                           ║
+ * ║   play / play2 / play3 com InteractiveMessage oficial                 ║
  * ╚══════════════════════════════════════════════════════════╝
  *
  * Fluxo:
  *  1. Busca a música: API systemzone.store → fallback yt-search (local)
- *  2. Mostra card ButtonV2 com thumbnail + 2 botões (Áudio / Vídeo)
+ *  2. Mostra card InteractiveMessage com thumbnail + 2 botões (Áudio / Vídeo)
  *  3. Clique no botão → dispara !ytd (áudio) ou !gyt (vídeo)
  *  4. !ytd / !gyt → API systemzone → fallback yt-dlp local
  *
  * v2: ytsearch() retorna { resultados } (formato exacto do código
  * de referência) + sendPlayCard com cascata de 3 níveis:
- *   ButtonV2 → interactive viewOnce → texto formatado
+ *   interactive viewOnce → texto formatado
  */
 
 'use strict';
@@ -45,22 +45,6 @@ function _rememberVideos(results) {
 function _rememberedVideo(value) {
   const entry = _videoMeta.get(_videoKey(value));
   return entry && Date.now() - entry.at < META_TTL ? entry : null;
-}
-
-// ─────────────────────────────────────────────
-// LAZY LOAD ButtonV2 (só quando necessário)
-// ─────────────────────────────────────────────
-let _ButtonV2 = null;
-function getButtonV2() {
-  if (_ButtonV2) return _ButtonV2;
-  try {
-    const mod = require('@systemzero/baileys/lib/MB.cjs');
-    _ButtonV2 = mod.ButtonV2;
-    return _ButtonV2;
-  } catch (e) {
-    console.warn('[SystemZeroPlay] MB.cjs indisponível:', e.message);
-    return null;
-  }
 }
 
 // ─────────────────────────────────────────────
@@ -260,21 +244,22 @@ async function sendToxicPlayCard(sock, jid, video, prefix, quoted = null, qualit
     `╰━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╯\n` +
     `☠️ 𝙰𝚄́𝙳𝙸𝙾 𝚘𝚞 𝚅𝙸́𝙳𝙴𝙾? 𝙲𝚕𝚒𝚚𝚞𝚎 𝚎 𝚍𝚎𝚒𝚡𝚊 𝚘 𝚖𝚘𝚝𝚘𝚛 𝚝𝚛𝚊𝚋𝚊𝚕𝚑𝚊𝚛. 🩸`;
   const footer = '☠️ DARK BOT 𖤐 Dark Net Engine 𖤐 ☠️';
-  const ButtonV2 = getButtonV2();
-  if (ButtonV2) {
-    try {
-      const card = new ButtonV2(sock);
-      card.setTitle(`☠️ ${title}`.slice(0, 60));
-      card.setBody(body);
-      card.setFooter(footer);
-      if (video.thumbnail) { try { card.setThumbnail(video.thumbnail); } catch {} }
-      // Rótulos curtos mantêm os dois botões na mesma linha.
-      card.addButton(`🩸 ÁUDIO ${audioQuality}`, audioCmd);
-      card.addButton(`☠️ VÍDEO ${videoQuality}p`, videoCmd);
-      await card.send(jid, { quoted });
-      return 'toxic-buttonv2';
-    } catch (e) { console.warn('[ToxicPlay] ButtonV2 falhou:', e.message?.slice(0, 80)); }
+  try {
+    const { sendButtonsWithImage, sendButtons } = require('./buttonHandler');
+    const buttons = [
+      { text: `🩸 ÁUDIO ${audioQuality}`, id: audioCmd },
+      { text: `☠️ VÍDEO ${videoQuality}p`, id: videoCmd },
+    ];
+    if (video.thumbnail) {
+      await sendButtonsWithImage(sock, jid, body, footer, video.thumbnail, buttons, quoted);
+    } else {
+      await sendButtons(sock, jid, body, footer, buttons, quoted);
+    }
+    return 'toxic-interactive';
+  } catch (e) {
+    console.warn('[ToxicPlay] interactive falhou:', e.message?.slice(0, 80));
   }
+
   // Se a implementação de botões não existir, entrega o mesmo visual em texto.
   await sock.sendMessage(jid, { text: `☠️ *${title}*\n\n${body}\n\n🩸 Áudio: \`${audioCmd}\`\n☠️ Vídeo: \`${videoCmd}\`\n\n${footer}` }, { quoted });
   return 'toxic-text';
@@ -282,7 +267,7 @@ async function sendToxicPlayCard(sock, jid, video, prefix, quoted = null, qualit
 
 // ─────────────────────────────────────────────
 // ENVIAR CARD COM BOTÕES — cascata robusta
-//   1º ButtonV2 (MB.cjs)  2º interactive viewOnce  3º texto
+//   interactive viewOnce → texto
 // ─────────────────────────────────────────────
 async function sendPlayCard(sock, jid, video, prefix, quoted = null, bodyExtra = '') {
   const audioCmd = `${prefix}ytd ${video.youtube_url}`;
@@ -293,27 +278,8 @@ async function sendPlayCard(sock, jid, video, prefix, quoted = null, bodyExtra =
     `⏱️ ${video.duration || '?'} • 👁️ ${Number(video.views || 0).toLocaleString('pt-BR')}\n\n` +
     (bodyExtra || '✦ ݁˖ Selecione o formato desejado ✦ ݁˖');
 
-  // 1º — ButtonV2 (código de referência)
-  const ButtonV2 = getButtonV2();
-  if (ButtonV2) {
-    try {
-      const msg = new ButtonV2(sock);
-      msg.setTitle(`${video.title}`.slice(0, 60));
-      msg.setBody(body);
-      msg.setFooter(footer);
-      if (video.thumbnail) {
-        try { msg.setThumbnail(video.thumbnail); } catch {}
-      }
-      msg.addButton('🎵 Baixar Áudio', audioCmd);
-      msg.addButton('🎬 Baixar Vídeo', videoCmd);
-      await msg.send(jid, { quoted });
-      return 'buttonv2';
-    } catch (e) {
-      console.warn('[PlayCard] ButtonV2 falhou:', e.message?.slice(0, 80));
-    }
-  }
 
-  // 2º — interactive viewOnce com thumbnail
+  // interactive viewOnce com thumbnail
   try {
     const { sendButtonsWithImage, sendButtons } = require('./buttonHandler');
     const title = `🎵 *${video.title}*\n\n${body}`;

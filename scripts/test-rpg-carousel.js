@@ -24,7 +24,7 @@ const fakeBaileys = {
 };
 const original = Module.prototype.require;
 Module.prototype.require = function patchedRequire(id) {
-  if (id === '@systemzero/baileys') return fakeBaileys;
+  if (id === 'baileys-v6') return fakeBaileys;
   if (id === './images') return { generateFromPrompt: async () => null };
   return original.apply(this, arguments);
 };

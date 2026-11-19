@@ -74,6 +74,15 @@ const batch = (...messages) => ({ type: 'notify', messages });
   const b = fixture();
   await b.router.process(b.bot, batch(message('earlier', 'normal', 'same@s.whatsapp.net'), message('control-later', 'ignora-me', 'same@s.whatsapp.net')));
   assert.equal(b.state.controls, 1); assert.equal(b.state.autoDl, 0, 'a later pause in a batch is applied before earlier expensive work');
+  // O mesmo evento chega por vezes como LID e em seguida como PN. Deve
+  // percorrer o handler apenas uma vez, mesmo com chat bruto diferente.
+  const aliases = fixture();
+  const lidCopy = { key: { id: 'same-event', remoteJid: '998877665544@lid', remoteJidAlt: '244911111111@s.whatsapp.net' }, message: { conversation: 'oi' } };
+  const pnCopy = { key: { id: 'same-event', remoteJid: '244911111111@s.whatsapp.net' }, message: { conversation: 'oi' } };
+  await aliases.router.process(aliases.bot, batch(lidCopy));
+  await aliases.router.process(aliases.bot, batch(pnCopy));
+  assert.equal(aliases.state.normal, 1, 'LID e PN alternativos do mesmo evento não podem gerar resposta duplicada');
+
   const c = fixture();
   await Promise.all(Array.from({ length: 12 }, (_, n) => c.router.process(c.bot, batch(message('fifo-' + n)))));
   assert.equal(c.state.max, 1); assert.deepEqual(c.state.starts, Array.from({ length: 12 }, (_, n) => 'fifo-' + n));

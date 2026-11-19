@@ -44,6 +44,7 @@
 const config = require('../config');
 const linkPolicy = require('./linkPolicy');
 const GroupSettings = require('../database/models/GroupSettings');
+const { hasActiveEntitlement } = require('./groupEntitlement');
 
 // ─────────────────────────────────────────────
 // PADRÕES DE DETECÇÃO
@@ -330,6 +331,9 @@ async function check(sock, msg) {
 
     // Config do grupo
     const gs = (await require('./hotCache').getGroupSettings(msg, remoteJid)) || {}; // v7.52: 1 query/msg partilhada
+    // Grupo sem trial/aluguel não recebe automação punitiva, mesmo que uma
+    // configuração antiga ou global tenha ficado ligada.
+    if (!hasActiveEntitlement(gs)) return false;
     // v7.35: interruptor global do dashboard (antilink_enabled) — liga em todos os grupos
     // que não desligaram explicitamente; se o grupo definiu, o grupo manda.
     let ativo = !!gs?.antilink;
@@ -384,7 +388,8 @@ async function check(sock, msg) {
     if (gs.antilinkVipImmune) {
       try {
         const u = await require('./hotCache').getUser(msg, senderNum); // v7.52: memo partilhado
-        const isPrem = u && (u.role === 'premium' || (u.premiumUntil && new Date(u.premiumUntil) > new Date()));
+        const isPrem = u && (u.role === 'owner' ||
+          (u.role === 'premium' && (!u.premiumUntil || new Date(u.premiumUntil) > new Date())));
         if (isPrem) return false;
       } catch {}
     }

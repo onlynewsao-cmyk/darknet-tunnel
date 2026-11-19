@@ -1,6 +1,6 @@
 /**
  * AURA PROFILE & ADVANCED ACTIONS
- * Funções reais usando @systemzero/baileys
+ * Funções reais usando baileys-v6
  * Apenas o Dark pode usar estas funções
  */
 

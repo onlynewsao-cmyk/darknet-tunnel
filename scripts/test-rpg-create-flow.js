@@ -107,7 +107,7 @@ stub(path.join(ROOT, 'src/bot/rpg/carousel.js'), {
     generateWAMessageFromContent: (_jid, message) => ({ key: { id: 'point-buy' }, message }),
   };
   Module.prototype.require = function patchedRequire(id) {
-    if (id === '@systemzero/baileys') return fakeBaileys;
+    if (id === 'baileys-v6') return fakeBaileys;
     return originalRequire.apply(this, arguments);
   };
   const interactivos = [];

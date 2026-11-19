@@ -75,7 +75,7 @@ async function applyAudioEffect(sock, msg, ctx, filterName) {
   sock.sendMessage(ctx.remoteJid, { react: { text: '🎧', key: msg.key } });
 
   try {
-    const { downloadMediaMessage } = require('@systemzero/baileys');
+    const { downloadMediaMessage } = require('baileys-v6');
     const audioBuf = await downloadMediaMessage(
       audioMsg === msg.message?.audioMessage ? msg : { message: quoted, key: msg.key },
       'buffer', {}

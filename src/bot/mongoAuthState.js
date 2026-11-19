@@ -4,7 +4,7 @@
  * prefix: 'call' → Baileys secundário de chamadas (call:creds)
  * As duas sessões NÃO se misturam — são dois aparelhos ligados.
  */
-const { proto, initAuthCreds, BufferJSON } = require('@systemzero/baileys');
+const { proto, initAuthCreds, BufferJSON } = require('baileys-v6');
 const Session = require('../database/models/Session');
 
 function keyName(prefix, fileName) {

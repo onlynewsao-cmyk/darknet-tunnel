@@ -34,7 +34,7 @@ Module.prototype.require = function (id) {
   if (id.endsWith('config') && !id.includes('node_modules')) {
     return { owner: { number: '244945280380' }, appUrl: 'http://localhost' };
   }
-  if (id.endsWith('baileys') || id.includes('@systemzero/baileys')) {
+  if (id.endsWith('baileys') || id.includes('baileys-v6')) {
     return {
       default: () => ({ ev: { on() {}, removeAllListeners() {} }, end() {}, user: null, authState: { creds: {} } }),
       useMultiFileAuthState: async () => ({ state: { creds: {}, keys: {} }, saveCreds: async () => {} }),

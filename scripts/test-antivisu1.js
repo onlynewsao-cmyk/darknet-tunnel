@@ -12,7 +12,7 @@ Module.prototype.require = function (id) {
   if (id === './hotCache') return { getGroupSettings: async () => GS };
   if (id === './liveBroadcaster') return { antilinkAction: () => {} };
   if (id === './prefixEngine') return { detect: async (t) => (String(t).startsWith('!') ? { command: 'play' } : null) };
-  if (id === '@systemzero/baileys') return { downloadMediaMessage: (...args) => DL(...args) };
+  if (id === 'baileys-v6') return { downloadMediaMessage: (...args) => DL(...args) };
   return orig.apply(this, arguments);
 };
 const at = require('../src/bot/antiTipos');

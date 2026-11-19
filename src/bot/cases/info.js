@@ -287,10 +287,9 @@ module.exports = function registerInfoCases(registerCase) {
       }
       faladores.sort((a, b2) => b2.n - a.n);
       const estado = (g) => {
-        const hosted = g.isHosted && g.hostedUntil && new Date(g.hostedUntil).getTime() > agora;
-        if (hosted) return '💎';
-        const trial = g.trialExpiresAt && new Date(g.trialExpiresAt).getTime() > agora;
-        if (trial) return '🆓';
+        if (require('../groupEntitlement').hasActiveEntitlement(g, agora)) {
+          return g.isHosted ? '💎' : '🆓';
+        }
         return '🔴';
       };
       const linhas = [...head(), `${b} 📅 Semana *${wk}* · ${ativos.length} grupo(s) com movimento`, ''];

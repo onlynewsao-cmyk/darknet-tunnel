@@ -47,8 +47,12 @@ function _msg(id, jid, texto, tsMs, de = '244923111222@s.whatsapp.net', pushName
 }
 const _origFind = GroupSettings.find.bind(GroupSettings);
 function gruposAcordados(lista) {
+  // A proactividade só pode existir em grupos com serviço activo.
+  const activos = lista.map(g => ({
+    isHosted: true, hostedUntil: new Date(Date.now() + 60_000), ...g,
+  }));
   GroupSettings.find = () => ({
-    select: () => ({ lean: async () => lista }),
+    select: () => ({ lean: async () => activos }),
   });
 }
 function semGrupos() {
@@ -94,6 +98,14 @@ const NOITE = new Date(); NOITE.setHours(23, 30, 0, 0);  // 23h30 — noite
   ok('falou espontaneamente no grupo acordado', r.ok === true, JSON.stringify(r));
   ok('modo quebrar_silencio', r.modo === 'quebrar_silencio', r.modo);
   ok('mensagem foi para o grupo certo', enviados.length === 1 && enviados[0].jid === GRUPO, JSON.stringify(enviados));
+
+  // Mesmo com opt-in global e histórico, um grupo que perdeu serviço não
+  // entra na lista de candidatos e a AURA não inicia conversa lá.
+  enviados.length = 0;
+  GroupSettings.find = () => ({ select: () => ({ lean: async () => [{ groupJid: GRUPO, groupName: 'Expirado', isHosted: false }] }) });
+  r = await proativa.tick({ sock, agora: DIA.getTime(), sorte: 0, sorteReacao: 0, texto: 'não enviar' });
+  ok('grupo sem serviço: AURA proactiva permanece calada', r.ok === false && enviados.length === 0, JSON.stringify(r));
+  gruposAcordados([{ groupJid: GRUPO, groupName: 'Grupo Teste' }]);
 
   console.log('\n═══ 4. LIMITE POR CHAT (não é rádio) ═══');
   r = await proativa.tick({ sock, agora: DIA.getTime() + 60000, sorte: 0.1, texto: 'outra vez' });

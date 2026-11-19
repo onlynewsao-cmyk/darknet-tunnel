@@ -1,4 +1,4 @@
-const { downloadMediaMessage } = require('@systemzero/baileys');
+const { downloadMediaMessage } = require('baileys-v6');
 const https = require('https');
 const http = require('http');
 const fs = require('fs');

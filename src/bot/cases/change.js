@@ -64,7 +64,7 @@ module.exports = function registerChangeCases(registerCase) {
       const currentThemeName = currentTheme.name || storedThemeName;
 
       const { generateWAMessageFromContent, proto } =
-        require('@systemzero/baileys');
+        require('baileys-v6');
 
       // ── Sem args → lista interativa de seleção ─────────────────────
       if (!args.length) {

@@ -9,6 +9,23 @@ const GroupSettings = require('../../database/models/GroupSettings');
 const User = require('../../database/models/User');
 const Payment = require('../../database/models/Payment');
 const botConfigCache = require('../botConfigCache');
+const { toMs } = require('../groupEntitlement');
+
+// O campo hostedUntil vazio representa aluguel permanente legado. Mantemos
+// essa compatibilidade em todos os cartões/renovações, sem aceitar datas
+// inválidas como serviço activo.
+function isPermanentHosted(gs) {
+  return !!gs?.isHosted && (gs.hostedUntil == null || gs.hostedUntil === '');
+}
+function isHostedActive(gs, now = Date.now()) {
+  return !!gs?.isHosted && (isPermanentHosted(gs) || toMs(gs.hostedUntil) > now);
+}
+function isTrialActive(gs, now = Date.now()) {
+  return toMs(gs?.trialExpiresAt) > now;
+}
+function hostedDaysLeft(gs, now = Date.now()) {
+  return isPermanentHosted(gs) ? null : Math.max(0, Math.ceil((toMs(gs?.hostedUntil) - now) / 86400000));
+}
 
 // v7.67: espelho em memória dos pedidos (o Mongo é a verdade; a memória
 // cobre testes + janelas sem DB). reference → pedido.
@@ -165,7 +182,7 @@ async function findPedido(ref) {
 // "PEDIDO N.º … / Fatura via Pix / Quantidade: 1 / Total … / Ver encomenda".
 // É só visual (o pagamento confirma-se com !paguei/!ativar).
 function buildPedidoOrder({ orderNum, title, total1000, currency, body, sellerJid, thumb }) {
-  const { proto } = require('@systemzero/baileys');
+  const { proto } = require('baileys-v6');
   const orderMessage = {
     orderId: String(orderNum || ''),
     itemCount: 1,
@@ -237,8 +254,14 @@ module.exports = function registerRental2(registerCase) {
       if (op === '-' && !isSubDono) return tReply(sock, msg, ctx, '🏠 ALUGUEL', ['❌ Só dono/subdono podem subtrair dias.']);
 
       const atual = await GroupSettings.findOne({ groupJid: targetJid }).lean().catch(() => null);
+      if (isPermanentHosted(atual)) {
+        return tReply(sock, msg, ctx, '🏠 ALUGUEL', [
+          '✅ Este grupo tem *aluguel permanente* ativo.',
+          'Não precisa somar dias. Para trocar para um prazo definido, cancela primeiro com *!cancelaraluguel*.',
+        ]);
+      }
       const agora = Date.now();
-      const fimAtual = atual?.isHosted && atual.hostedUntil ? new Date(atual.hostedUntil).getTime() : 0;
+      const fimAtual = isHostedActive(atual, agora) ? toMs(atual.hostedUntil) : 0;
       const restanteMs = Math.max(0, fimAtual - agora);
       const tinhaAtivo = restanteMs > 0;
 
@@ -299,7 +322,8 @@ module.exports = function registerRental2(registerCase) {
       const pay = await getPayData();
       const kz = prices[plan.id].kz, brl = prices[plan.id].brl;
       const gs0 = await GroupSettings.findOne({ groupJid: ctx.remoteJid }).lean().catch(() => null);
-      const renov = gs0?.isHosted && gs0.hostedUntil && new Date(gs0.hostedUntil) > new Date();
+      if (isPermanentHosted(gs0)) return reply('✅ Este grupo tem *aluguel permanente* activo; não precisa de renovação.');
+      const renov = isHostedActive(gs0);
       const ref = mkPedidoRef();
       await savePedido({
         reference: ref, planId: plan.id, dias: plan.dias, amountKz: kz, brl,
@@ -331,7 +355,7 @@ module.exports = function registerRental2(registerCase) {
       // v7.68: tenta primeiro o cartão NATIVO de fatura; se falhar cai no
       // cartão interativo e depois em texto (cadeia intacta).
       try {
-        const { generateWAMessageFromContent } = require('@systemzero/baileys');
+        const { generateWAMessageFromContent } = require('baileys-v6');
         let cardCur = 'BRL', cardTitle = 'Fatura via Pix', cardTotal = brl;
         if ((pay.mcIban || pay.mcExpress) && kz > 0) { cardCur = 'AOA'; cardTitle = 'Fatura Multicaixa'; cardTotal = kz; }
         else if (!(pay.pix && brl > 0) && kz > 0) { cardCur = 'AOA'; cardTitle = 'Fatura'; cardTotal = kz; }
@@ -349,7 +373,7 @@ module.exports = function registerRental2(registerCase) {
         return reply(pedidoTxt);
       } catch {}
       try {
-        const { generateWAMessageFromContent, proto } = require('@systemzero/baileys');
+        const { generateWAMessageFromContent, proto } = require('baileys-v6');
         const m = generateWAMessageFromContent(ctx.remoteJid, {
           interactiveMessage: proto.Message.InteractiveMessage.fromObject({
             body: proto.Message.InteractiveMessage.Body.fromObject({ text: pedidoTxt }),
@@ -371,7 +395,7 @@ module.exports = function registerRental2(registerCase) {
     }
 
     // Sem argumento → cartão de planos estilo System Zero (foto + lista)
-    const { generateWAMessageFromContent, proto, prepareWAMessageMedia } = require('@systemzero/baileys');
+    const { generateWAMessageFromContent, proto, prepareWAMessageMedia } = require('baileys-v6');
     const RE = require('../renderEngine');
     const t = await RE.getTheme(ctx.remoteJid);
 
@@ -379,11 +403,11 @@ module.exports = function registerRental2(registerCase) {
     let currentStatus = '🆓 Sem aluguel activo';
     if (ctx.isGroup) {
       const gs = await GroupSettings.findOne({ groupJid: ctx.remoteJid }).lean().catch(() => null);
-      if (gs?.isHosted && gs.hostedUntil && new Date(gs.hostedUntil) > new Date()) {
-        const daysLeft = Math.ceil((new Date(gs.hostedUntil) - Date.now()) / 86400000);
-        currentStatus = `🟢 Activo — ${daysLeft} dias restantes`;
-      } else if (gs?.trialExpiresAt && new Date(gs.trialExpiresAt) > new Date()) {
-        const daysLeft = Math.ceil((new Date(gs.trialExpiresAt) - Date.now()) / 86400000);
+      if (isHostedActive(gs)) {
+        const daysLeft = hostedDaysLeft(gs);
+        currentStatus = daysLeft == null ? '🟢 Aluguel permanente' : `🟢 Activo — ${daysLeft} dias restantes`;
+      } else if (isTrialActive(gs)) {
+        const daysLeft = Math.ceil((toMs(gs.trialExpiresAt) - Date.now()) / 86400000);
         currentStatus = `🆓 Trial — ${daysLeft} dias restantes`;
       }
     }
@@ -480,8 +504,10 @@ module.exports = function registerRental2(registerCase) {
     let alugTxt = '— (só em grupos)';
     if (ctx.isGroup) {
       const gs = await GroupSettings.findOne({ groupJid: ctx.remoteJid }).lean().catch(() => null);
-      if (gs?.isHosted && gs.hostedUntil && new Date(gs.hostedUntil) > new Date()) alugTxt = `🟢 Activo — ${Math.ceil((new Date(gs.hostedUntil) - Date.now()) / 86400000)} dias restantes`;
-      else if (gs?.trialExpiresAt && new Date(gs.trialExpiresAt) > new Date()) alugTxt = `🆓 Trial — ${Math.ceil((new Date(gs.trialExpiresAt) - Date.now()) / 86400000)} dias restantes`;
+      if (isHostedActive(gs)) {
+        const daysLeft = hostedDaysLeft(gs);
+        alugTxt = daysLeft == null ? '🟢 Aluguel permanente' : `🟢 Activo — ${daysLeft} dias restantes`;
+      } else if (isTrialActive(gs)) alugTxt = `🆓 Trial — ${Math.ceil((toMs(gs.trialExpiresAt) - Date.now()) / 86400000)} dias restantes`;
       else alugTxt = '🔴 Sem aluguel';
     }
 
@@ -510,7 +536,7 @@ module.exports = function registerRental2(registerCase) {
     ], { botName: localConfig.bot.name });
 
     try {
-      const { generateWAMessageFromContent, proto } = require('@systemzero/baileys');
+      const { generateWAMessageFromContent, proto } = require('baileys-v6');
       const m = generateWAMessageFromContent(ctx.remoteJid, {
         viewOnceMessage: { message: { interactiveMessage: proto.Message.InteractiveMessage.fromObject({
           body: proto.Message.InteractiveMessage.Body.fromObject({ text: body }),
@@ -530,18 +556,20 @@ module.exports = function registerRental2(registerCase) {
   registerCase(['trial', 'teste', 'experimentar'], async ({ sock, msg, ctx, config: cfg }) => {
     if (!ctx.isGroup) return tReply(sock, msg, ctx, '🆓 TRIAL', ['❌ Só em grupos']);
     const gs = await GroupSettings.findOne({ groupJid: ctx.remoteJid }).lean().catch(() => null);
-    if (gs?.isHosted && gs.hostedUntil && new Date(gs.hostedUntil) > new Date()) {
-      return tReply(sock, msg, ctx, '🆓 TRIAL', ['✅ Já tens aluguel activo!']);
-    }
-    if (gs?.trialExpiresAt && new Date(gs.trialExpiresAt) > new Date()) {
-      const daysLeft = Math.ceil((new Date(gs.trialExpiresAt) - Date.now()) / 86400000);
+    if (isHostedActive(gs)) return tReply(sock, msg, ctx, '🆓 TRIAL', ['✅ Já tens aluguel activo!']);
+    if (isTrialActive(gs)) {
+      const daysLeft = Math.ceil((toMs(gs.trialExpiresAt) - Date.now()) / 86400000);
       return tReply(sock, msg, ctx, '🆓 TRIAL', [`🆓 Trial activo — ${daysLeft} dias restantes`]);
     }
-    // v7.67: trial de 7 dias
+    // Trial é uma oferta única. Registos antigos sem trialUsedAt mas com data
+    // de trial já expirada contam como usados e não podem ser reciclados.
+    if (gs?.trialUsedAt || gs?.trialExpiresAt) {
+      return tReply(sock, msg, ctx, '🆓 TRIAL', ['⌛ Este grupo já usou o trial gratuito.', '💎 Usa !alugar para reactivar o bot.']);
+    }
     const trialEnd = new Date(Date.now() + 7 * 86400000);
     await GroupSettings.findOneAndUpdate(
       { groupJid: ctx.remoteJid },
-      { trialExpiresAt: trialEnd, isHosted: false, groupName: ctx.groupName || '' },
+      { trialExpiresAt: trialEnd, trialUsedAt: new Date(), isHosted: false, groupName: ctx.groupName || '' },
       { upsert: true, new: true }
     );
     try { require('../hotCache').forgetGroup(ctx.remoteJid); } catch {} // v7.53: fura o TTL
@@ -560,19 +588,19 @@ module.exports = function registerRental2(registerCase) {
     const gs = await GroupSettings.findOne({ groupJid: ctx.remoteJid }).lean().catch(() => null);
     if (!gs) return tReply(sock, msg, ctx, '🏠 STATUS', ['❌ Sem configuração. Usa !trial ou !alugar']);
 
-    const hosted = gs.isHosted && (!gs.hostedUntil || new Date(gs.hostedUntil) > new Date());
-    const trial = gs.trialExpiresAt && new Date(gs.trialExpiresAt) > new Date();
-    const expires = gs.hostedUntil ? new Date(gs.hostedUntil).toLocaleDateString('pt-PT') : '—';
-    const trialExp = gs.trialExpiresAt ? new Date(gs.trialExpiresAt).toLocaleDateString('pt-PT') : '—';
-    // v7.50: o submenu promete "Dias restantes" mas o status não mostrava.
-    const diasHost = gs.hostedUntil ? Math.max(0, Math.ceil((new Date(gs.hostedUntil) - Date.now()) / 86400000)) : 0;
-    const diasTrial = gs.trialExpiresAt ? Math.max(0, Math.ceil((new Date(gs.trialExpiresAt) - Date.now()) / 86400000)) : 0;
+    const hosted = isHostedActive(gs);
+    const trial = isTrialActive(gs);
+    const permanent = isPermanentHosted(gs);
+    const expires = permanent ? 'permanente' : (toMs(gs.hostedUntil) ? new Date(toMs(gs.hostedUntil)).toLocaleDateString('pt-PT') : '—');
+    const trialExp = toMs(gs.trialExpiresAt) ? new Date(toMs(gs.trialExpiresAt)).toLocaleDateString('pt-PT') : '—';
+    const diasHost = hostedDaysLeft(gs);
+    const diasTrial = toMs(gs.trialExpiresAt) ? Math.max(0, Math.ceil((toMs(gs.trialExpiresAt) - Date.now()) / 86400000)) : 0;
     const cmdsUsed = gs.commandsUsedToday || 0;
 
     return tReply(sock, msg, ctx, '🏠 STATUS ALUGUEL', [
       hosted ? '🟢 *ALUGUEL ACTIVO*' : trial ? '🆓 *TRIAL ACTIVO*' : '🔴 *INACTIVO*',
       '',
-      hosted ? `📅 Expira: ${expires} (*${diasHost} dias restantes*)` : '',
+      hosted ? (permanent ? '📅 Plano: *permanente*' : `📅 Expira: ${expires} (*${diasHost} dias restantes*)`) : '',
       trial ? `📅 Trial expira: ${trialExp} (*${diasTrial} dias restantes*)` : '',
       `👤 Activado por: ${gs.rentedBy || '—'}`,
       `📊 Comandos hoje: ${cmdsUsed}${hosted ? ' (ilimitado)' : ` / 500`}`,
@@ -610,9 +638,10 @@ module.exports = function registerRental2(registerCase) {
     if (!dias || dias < 1) return tReply(sock, msg, ctx, '🔄 ESTENDER', ['Uso: !estender <dias>', '> Ou: !alugar +7 / -3 / =30']);
 
     const gs = await GroupSettings.findOne({ groupJid: ctx.remoteJid }).lean().catch(() => null);
-    if (!gs?.isHosted || !gs.hostedUntil) return tReply(sock, msg, ctx, '🔄 ESTENDER', ['❌ Sem aluguel activo para estender']);
+    if (isPermanentHosted(gs)) return tReply(sock, msg, ctx, '🔄 ESTENDER', ['✅ Este grupo tem aluguel permanente; não precisa de extensão.']);
+    if (!isHostedActive(gs)) return tReply(sock, msg, ctx, '🔄 ESTENDER', ['❌ Sem aluguel activo para estender']);
 
-    const currentEnd = new Date(gs.hostedUntil);
+    const currentEnd = new Date(toMs(gs.hostedUntil));
     const base = currentEnd > new Date() ? currentEnd : new Date();
     const newEnd = new Date(base.getTime() + dias * 86400000);
 
@@ -705,7 +734,10 @@ module.exports = function registerRental2(registerCase) {
     if (ped.status === 'aprovado') return reply('✅ Este pedido *já estava aprovado*.');
     const agora = Date.now();
     const atual = await GroupSettings.findOne({ groupJid: ped.groupJid }).lean().catch(() => null);
-    const fimAtual = atual?.isHosted && atual.hostedUntil ? new Date(atual.hostedUntil).getTime() : 0;
+    if (isPermanentHosted(atual)) {
+      return reply('✅ Este grupo já tem aluguel permanente activo; este pedido não deve ser activado. Rejeita-o ou verifica o grupo antes de cobrar.');
+    }
+    const fimAtual = isHostedActive(atual, agora) ? toMs(atual.hostedUntil) : 0;
     const tinhaAtivo = fimAtual > agora;
     const novoFimMs = (tinhaAtivo ? fimAtual : agora) + ped.dias * 86400000;
     const until = new Date(novoFimMs);
@@ -802,8 +834,8 @@ module.exports = function registerRental2(registerCase) {
     }
     const agora = Date.now();
     const hosted = await GroupSettings.find({ isHosted: true }).lean().catch(() => []) || [];
-    const ativos = hosted.filter(g => g.hostedUntil && new Date(g.hostedUntil).getTime() > agora);
-    const expirando = ativos.filter(g => new Date(g.hostedUntil).getTime() - agora <= 3 * 86400000);
+    const ativos = hosted.filter(g => isHostedActive(g, agora));
+    const expirando = ativos.filter(g => !isPermanentHosted(g) && toMs(g.hostedUntil) - agora <= 3 * 86400000);
     const trials = await GroupSettings.countDocuments({ trialExpiresAt: { $gt: new Date() } }).catch(() => 0);
     const planoTxt = Object.entries(porPlano).sort((a, b) => b[1] - a[1])
       .map(([k, v]) => `   📦 ${k}: *${v}*`).join('\n');

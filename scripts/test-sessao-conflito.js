@@ -32,7 +32,7 @@ const t = (n, c, e) => { e = e || ''; c ? ok++ : fail++; console.log('  ' + (c ?
 
   // ── A. O código do Baileys ──────────────────────────────────
   console.log('\n▸ A. Código de conflito do WhatsApp');
-  const { DisconnectReason } = require('@systemzero/baileys');
+  const { DisconnectReason } = require('baileys-v6');
   t('connectionReplaced é 440', DisconnectReason.connectionReplaced === 440, String(DisconnectReason.connectionReplaced));
   t('loggedOut é 401 (diferente)', DisconnectReason.loggedOut === 401, String(DisconnectReason.loggedOut));
 

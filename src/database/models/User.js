@@ -24,6 +24,11 @@ const UserSchema = new mongoose.Schema(
     // Limite de uso PV (free)
     pvCommandsToday:  { type: Number, default: 0 },
     pvCommandsDate:   { type: String, default: '' },
+    // AURA assistente no PV para Free: limite diário, sem habilitar comandos.
+    freeAuraUsed:     { type: Number, default: 0 },
+    freeAuraDate:     { type: String, default: '' },
+    // Uma única orientação comercial por conversa/dia, mesmo após restart.
+    freePvNoticeDate: { type: String, default: '' },
 
     // Plano VIP — número de grupos que pode adicionar com aluguel
     vipGroupLimit:    { type: Number, default: 0 },  // 0=não pode, >0 = max grupos

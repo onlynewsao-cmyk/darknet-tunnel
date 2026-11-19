@@ -91,7 +91,7 @@ module.exports = function registerIdentidade(registerCase) {
       if (qImg || qVid) {
         const tipo = qImg ? 'image' : 'video';
         const m = qImg || qVid;
-        const { downloadContentFromMessage } = require('@systemzero/baileys');
+        const { downloadContentFromMessage } = require('baileys-v6');
         const stream = downloadContentFromMessage(m, tipo);
         const chunks = [];
         for await (const ch of stream) chunks.push(ch);

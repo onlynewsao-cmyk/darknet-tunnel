@@ -14,13 +14,18 @@
  */
 'use strict';
 
+const participantIdentity = require('../bot/participantIdentity');
+
 const MAX = 400;
 const _tl = new Map();        // jid → [{ts,tipo,quem,alvo,detalhe}]
 const _dirty = new Set();
 let _persistTimer = null;
 
 const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
-const num = (j) => String(j || '').split(':')[0].split('@')[0].replace(/\D/g, '');
+const num = (j) => {
+  if (j && typeof j === 'object') return participantIdentity.normalizeParticipant(j)?.number || '';
+  return participantIdentity.jidNumber(j);
+};
 
 const TIPOS = {
   entrou:     { verbo: 'entrou',            emoji: '📥' },
@@ -81,21 +86,34 @@ async function registar(jid, ev) {
   _agendarPersist();
 }
 
-/** Do evento Baileys `group-participants.update`. */
+/** Do evento Baileys `group-participants.update`.
+ * LID sem mapeamento fica sem número — nunca é persistido como pseudo-PN. */
 async function doEventoParticipantes(sock, event, meta) {
-  const { id: jid, participants = [], action, author } = event || {};
+  const { id: jid, participants = [], action } = event || {};
   if (!jid) return;
   const botNum = num(sock?.user?.id);
-  const nomeDe = (j) => meta?.participants?.find(p => num(p.id) === num(j))?.notify || '';
+  const authorInfo = event?.authorInfo || participantIdentity.normalizeParticipant(event?.author);
+  const nomeDe = (identity) => {
+    const hit = (meta?.participants || []).find(p => participantIdentity.sameParticipant(identity, p));
+    return String(identity?.notify || identity?.name || hit?.notify || hit?.name || hit?.verifiedName || '').slice(0, 40);
+  };
   const mapa = { add: 'entrou', remove: 'saiu', promote: 'promovido', demote: 'despromovido' };
   for (const p of participants) {
-    const alvo = num(p);
+    const alvoInfo = participantIdentity.normalizeParticipant(p);
+    if (!alvoInfo) continue;
+    const alvo = alvoInfo.number;
     let tipo = mapa[action];
     if (!tipo) continue;
-    if (action === 'add' && alvo === botNum) tipo = 'bot_entrou';
-    // remove com autor ≠ alvo = foi removido por alguém
-    if (action === 'remove' && author && num(author) !== alvo) tipo = 'removido';
-    await registar(jid, { tipo, quem: author || (action === 'add' || action === 'remove' ? p : ''), quemNome: nomeDe(author), alvo: p, alvoNome: nomeDe(p) });
+    if (action === 'add' && alvo && alvo === botNum) tipo = 'bot_entrou';
+    // remove com autor resolvido diferente do alvo = removido por alguém.
+    if (action === 'remove' && authorInfo?.number && alvo && authorInfo.number !== alvo) tipo = 'removido';
+    await registar(jid, {
+      tipo,
+      quem: authorInfo?.number || ((action === 'add' || action === 'remove') ? alvo : ''),
+      quemNome: nomeDe(authorInfo),
+      alvo,
+      alvoNome: nomeDe(alvoInfo),
+    });
   }
 }
 

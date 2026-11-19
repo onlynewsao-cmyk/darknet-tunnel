@@ -133,6 +133,12 @@ async function listar(jid) {
 /** Gera o conteúdo com a IA e publica. */
 async function _publicar(a, sock) {
   try {
+    // Publicação periódica em grupo é automação opcional: nunca fala se o
+    // grupo já não tiver trial/aluguel. Canais/PV seguem o fluxo próprio.
+    if (String(a?.jid || '').endsWith('@g.us')) {
+      const { groupHasActiveEntitlement } = require('../bot/groupEntitlement');
+      if (!(await groupHasActiveEntitlement(a.jid))) return false;
+    }
     // v7.73 PRO: resumo do grupo-fonte → canal
     if (a.tema === 'resumo_grupo' && a.fonte) {
       const C = require('./auraCanais');

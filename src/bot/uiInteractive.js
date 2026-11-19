@@ -14,14 +14,14 @@ const NODES = () => ([{
 }]);
 
 async function _relay(sock, jid, conteudo, quoted) {
-  const { generateWAMessageFromContent } = require('@systemzero/baileys');
+  const { generateWAMessageFromContent } = require('baileys-v6');
   const msg = generateWAMessageFromContent(jid, conteudo, { userJid: sock.user?.id, quoted: quoted || undefined });
   await sock.relayMessage(jid, msg.message, { messageId: msg.key.id, additionalNodes: NODES() });
   return msg;
 }
 
 function _proto() {
-  const { proto } = require('@systemzero/baileys');
+  const { proto } = require('baileys-v6');
   return proto;
 }
 

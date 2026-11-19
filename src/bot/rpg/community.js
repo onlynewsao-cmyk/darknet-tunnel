@@ -2,7 +2,7 @@
  * ╔═══════════════════════════════════════════════════════════════╗
  * ║   DARK BOT v7 — DARKRPG Community System v5 FINAL           ║
  * ║   Cria COMUNIDADE do WhatsApp + grupos dentro dela            ║
- * ║   Usa API oficial do Baileys: communityCreate, communityCreateGroup ║
+ * ║   Usa Baileys oficial: communityCreate + stanza linked_parent ║
  * ╚═══════════════════════════════════════════════════════════════╝
  */
 'use strict';
@@ -257,14 +257,14 @@ async function createWhatsAppCommunity(sock, ownerJid) {
 // o .darkrpg falhava nos 6 grupos com "rate-overlimit". A conta não
 // estava limitada — o problema era o NÚMERO DE QUERIES.
 //
-// Contagem real (lida no código do @systemzero/baileys 1.1.1):
+// Contagem real (lida no código do baileys-v6 1.1.1):
 //
 //   AURA → sock.groupCreate()
 //     1. create ................................. 1 query
 //     extractGroupMetadata() = parse LOCAL do XML  0 queries
 //     TOTAL: 1 query  ✅
 //
-//   .darkrpg (antes) → sock.communityCreateGroup()
+//   Fork anterior → helper communityCreateGroup()
 //     1. create ................................. 1
 //     2. parseGroupResult() → sock.groupMetadata()  1  ← ESCONDIDA
 //     3. groupUpdateDescription → groupMetadata()   1  ← ESCONDIDA
@@ -272,7 +272,7 @@ async function createWhatsAppCommunity(sock, ownerJid) {
 //     5. groupParticipantsUpdate promote ........ 1
 //     TOTAL: 5 queries × 6 grupos = 30 queries
 //
-// O communityCreateGroup do Baileys chama parseGroupResult(), que
+// O antigo helper communityCreateGroup chamava parseGroupResult(), que
 // faz um groupMetadata() EXTRA só para converter a resposta — e o
 // groupUpdateDescription faz outro. São 4 queries desperdiçadas por
 // grupo. Ao 2º/3º grupo o WhatsApp corta com rate-overlimit, e como
@@ -286,7 +286,7 @@ async function createWhatsAppCommunity(sock, ownerJid) {
 /** Lê o JID do grupo direto do XML de resposta — zero queries extra. */
 function _jidDoResultado(result) {
   try {
-    const B = require('@systemzero/baileys');
+    const B = require('baileys-v6');
     const node = B.getBinaryNodeChild(result, 'group');
     const id = node?.attrs?.id;
     if (!id) return null;
@@ -300,7 +300,7 @@ function _jidDoResultado(result) {
  * WhatsApp faz quando crias um grupo dentro de uma comunidade pela app.
  */
 async function _criarGrupoCru(sock, subject, participants, communityJid) {
-  const B = require('@systemzero/baileys');
+  const B = require('baileys-v6');
   const content = participants.map(jid => ({ tag: 'participant', attrs: { jid } }));
   if (communityJid) content.push({ tag: 'linked_parent', attrs: { jid: communityJid } });
 

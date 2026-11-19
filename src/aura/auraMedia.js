@@ -16,7 +16,7 @@
  */
 'use strict';
 
-const { downloadMediaMessage } = require('@systemzero/baileys');
+const { downloadMediaMessage } = require('baileys-v6');
 
 /* ══════════════════════════ Desembrulhar ══════════════════════════ */
 

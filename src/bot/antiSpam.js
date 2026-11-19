@@ -23,6 +23,7 @@
 
 const config = require('../config');
 const GroupSettings = require('../database/models/GroupSettings');
+const { hasActiveEntitlement } = require('./groupEntitlement');
 
 // ─────────────────────────────────────────────
 // CACHE EM MEMÓRIA
@@ -113,6 +114,7 @@ async function check(sock, msg) {
     if (ownerNum && senderNum === ownerNum) return false; // dono imune
 
     const gs = await require('./hotCache').getGroupSettings(msg, remoteJid); // v7.52: 1 query/msg partilhada
+    if (!hasActiveEntitlement(gs)) return false;
     // v7.35: interruptor global do dashboard (antispam_enabled) como padrão quando o grupo não definiu
     let ativo = !!gs?.antispam;
     if (!ativo && !gs?.antispamOptOut) {

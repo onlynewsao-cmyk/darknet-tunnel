@@ -1,5 +1,8 @@
 'use strict';
 
+const participantIdentity = require('./participantIdentity');
+const { hasActiveEntitlement } = require('./groupEntitlement');
+
 /**
  * ╔══════════════════════════════════════════════════════════════╗
  * ║   DARK BOT — Auto-apresentação v1 (incoming-cases)          ║
@@ -19,7 +22,11 @@ const MINUTO_MS = Math.max(50, Number(process.env.AUTOAP_MINUTO_MS) || 60000);
 const pendentes = new Map();
 
 function somenteDigitos(v) {
-  return String(v || '').split('@')[0].split(':')[0].replace(/\D/g, '');
+  return participantIdentity.jidNumber(v);
+}
+
+function textoMencao(numero, fallback = 'Membro') {
+  return numero ? `@${numero}` : `*${fallback}*`;
 }
 
 function botName() {
@@ -68,7 +75,7 @@ function cancelarPendenciasDoGrupo(grupoId) {
 function jidsDe(p) {
   if (!p) return [];
   if (typeof p === 'string') return [p];
-  return [p.id, p.jid, p.lid, p.phoneNumber, p.pn].filter(v => typeof v === 'string' && v);
+  return [p.id, p.jid, p.lid, p.phoneNumber, p.pn, p.pnJid].filter(v => typeof v === 'string' && v);
 }
 
 function ehAdmin(p) {
@@ -86,15 +93,31 @@ function botJidNumero(sock) {
   return somenteDigitos(sock?.user?.id || '');
 }
 
+function botEAdminNoMeta(sock, meta) {
+  const botNum = botJidNumero(sock);
+  if (!botNum) return false;
+  return (meta?.participants || []).some(p =>
+    ehAdmin(p) && jidsDe(p).some(j => somenteDigitos(j) === botNum));
+}
+
 // ── Remoção ──────────────────────────────────────────────────────
 
 async function enviarLembrete(sock, grupoId, token, minutoPassado) {
   const p = mapaDoGrupo(grupoId)?.get(token);
   if (!p || p.cancelada) return;
+  // Trial/aluguel pode expirar e o bot pode perder admin enquanto o timer
+  // está vivo. Nesse caso cancelar é sempre mais seguro do que continuar a
+  // avisar ou punir num grupo que já não tem o serviço activo.
+  const gs = await getSettings(grupoId);
+  const meta = await sock.groupMetadata(grupoId).catch(() => null);
+  if (!gs?.autoapresentar || !hasActiveEntitlement(gs) || !botEAdminNoMeta(sock, meta)) {
+    apagarPendencia(grupoId, token);
+    return;
+  }
   const restam = PRAZO_MINUTOS - minutoPassado;
   await sock.sendMessage(grupoId, {
     text: painel([
-      `*Alerta  »* ⏰ @${somenteDigitos(p.jid)}`,
+      `*Alerta  »* ⏰ ${textoMencao(p.numero, 'Novo membro')}`,
       `*Tempo   »* ${minutoPassado} ${minutoPassado === 1 ? 'minuto passado' : 'minutos passados'}`,
       `*Restam  »* ${restam} ${restam === 1 ? 'minuto' : 'minutos'}`,
       `*Ação    »* Envia uma mensagem para não seres removido.`,
@@ -107,6 +130,11 @@ async function removerSeNaoApresentou(sock, grupoId, token) {
   const mapa = mapaDoGrupo(grupoId);
   const p = mapa?.get(token);
   if (!p) return;
+  const gs = await getSettings(grupoId);
+  if (!gs?.autoapresentar || !hasActiveEntitlement(gs)) {
+    apagarPendencia(grupoId, token);
+    return;
+  }
   apagarPendencia(grupoId, token); // retira primeiro (anti-corrida)
   try {
     const meta = await sock.groupMetadata(grupoId);
@@ -116,13 +144,15 @@ async function removerSeNaoApresentou(sock, grupoId, token) {
     if (!membro) return;                       // saiu sozinho
     if (ehAdmin(membro)) return;                // promovido entretanto
     const bot = membros.find(m => jidsDe(m).some(j => somenteDigitos(j) === botJidNumero(sock)));
-    if (!ehAdmin(bot)) throw new Error('o bot nao e administrador do grupo');
-    const jidRemocao = membro.id || membro.jid || membro.lid || p.jid;
+    // Perdeu admin durante o prazo: fica silencioso, sem ameaçar/remeter
+    // culpa ao grupo por uma acção que já não pode executar.
+    if (!ehAdmin(bot)) return;
+    const jidRemocao = membro.phoneNumber || membro.pn || membro.pnJid || membro.id || membro.jid || membro.lid || p.jid;
     await sock.groupParticipantsUpdate(grupoId, [jidRemocao], 'remove');
     await sock.sendMessage(grupoId, {
       text: painel([
         `*Ação    »* 🚫 Membro removido`,
-        `*Membro  »* @${p.numero}`,
+        `*Membro  »* ${textoMencao(p.numero, 'Membro')}`,
         `*Motivo  »* Não enviou mensagem em ${PRAZO_MINUTOS} minutos.`,
       ]),
       mentions: [p.jid],
@@ -132,7 +162,7 @@ async function removerSeNaoApresentou(sock, grupoId, token) {
     await sock.sendMessage(grupoId, {
       text: painel([
         `*Aviso   »* ⚠️ Falha na remoção`,
-        `*Membro  »* @${p.numero}`,
+        `*Membro  »* ${textoMencao(p.numero, 'Membro')}`,
         `*Motivo  »* Verifica se o bot é administrador.`,
       ]),
       mentions: [p.jid],
@@ -143,10 +173,10 @@ async function removerSeNaoApresentou(sock, grupoId, token) {
 async function criarPendencia(sock, grupoId, participante, membros) {
   const ids = jidsDe(participante);
   const membro = (membros || []).find(m => jidsDe(m).some(j => ids.includes(j)));
-  const jid = membro?.id || membro?.jid || ids[0];
+  const jid = participante?.pnJid || participante?.phoneNumber || membro?.phoneNumber || membro?.pn || membro?.pnJid || membro?.id || membro?.jid || ids[0];
   if (!jid) return;
   if (ehAdmin(membro)) return; // admins isentos
-  const numero = somenteDigitos(membro?.phoneNumber || membro?.pn || (/lid$/.test(jid) ? '' : jid));
+  const numero = somenteDigitos(membro?.phoneNumber || membro?.pn || membro?.pnJid || participante?.phoneNumber || participante?.pnJid || jid);
   if (numero && numero === botJidNumero(sock)) return; // o próprio bot
 
   const jids = new Set([...jidsDe(membro || participante), jid]);
@@ -161,7 +191,7 @@ async function criarPendencia(sock, grupoId, participante, membros) {
   try {
     await sock.sendMessage(grupoId, {
       text: painel([
-        `*Aviso   »* ⚠️ @${numero || 'novato'}`,
+        `*Aviso   »* ⚠️ ${textoMencao(numero, 'Novo membro')}`,
         `*Ação    »* Apresenta-te ao grupo.`,
         `*Prazo   »* ${PRAZO_MINUTOS} minutos`,
         `*Alertas »* A cada 1 minuto.`,
@@ -204,8 +234,14 @@ async function onParticipantsUpdate(sock, groupJid, participants, action, meta) 
     }
     if (action !== 'add') return;
     const gs = await getSettings(groupJid);
-    if (!gs?.autoapresentar) return;
     const metadata = meta || await sock.groupMetadata(groupJid).catch(() => null);
+    // Nunca inicia contagens/regras automáticas num grupo sem trial/aluguel
+    // válido. Também exige o bot admin antes do primeiro aviso: sem esse
+    // poder, avisar alguém sobre uma remoção que não pode acontecer é ruído.
+    if (!gs?.autoapresentar || !hasActiveEntitlement(gs) || !botEAdminNoMeta(sock, metadata)) {
+      cancelarPendenciasDoGrupo(groupJid);
+      return;
+    }
     for (const participante of participants || []) {
       try { await criapPendenciaSafe(sock, groupJid, participante, metadata?.participants || []); }
       catch (e) { console.error('[autoapresentar] aviso:', e.message?.slice(0, 60)); }
@@ -241,5 +277,5 @@ function onMessage(sock, msg) {
 module.exports = {
   onParticipantsUpdate, onMessage, cancelarPendenciasDoGrupo,
   PRAZO_MINUTOS,
-  _internals: { pendentes, apagarPendencia, removerSeNaoApresentou },
+  _internals: { pendentes, apagarPendencia, removerSeNaoApresentou, botEAdminNoMeta },
 };

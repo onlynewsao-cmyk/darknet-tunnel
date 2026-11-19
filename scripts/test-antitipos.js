@@ -70,7 +70,6 @@ t('viewOnce desembrulha', d({ viewOnceMessageV2: { message: { documentMessage: {
 // check() completo com sock fake
 (async () => {
   const Model = require('../src/database/models/GroupSettings');
-  Model.findOne = () => ({ lean: async () => ({ antistatus: true }) });
   const ev = [];
   const sock = {
     user: { id: '244999:1@s.whatsapp.net' },
@@ -79,6 +78,10 @@ t('viewOnce desembrulha', d({ viewOnceMessageV2: { message: { documentMessage: {
     groupParticipantsUpdate: async (j, ps, a) => { ev.push('kick:' + a); },
   };
   const m = mk({ statusMentionMessage: {} });
+  Model.findOne = () => ({ lean: async () => ({ antistatus: true }) });
+  t('check sem serviço: flags legadas não apagam', await at.check(sock, m) === false && ev.length === 0, ev.join(','));
+  Model.findOne = () => ({ lean: async () => ({ antistatus: true, isHosted: true, hostedUntil: new Date(Date.now() + 60_000) }) });
+  delete m._hot;
   t('check: apaga + avisa (1/3)', await at.check(sock, m) === true && ev.join(',') === 'delete,text', ev.join(','));
   ev.length = 0; await at.check(sock, m);
   t('check: 2.º aviso dentro do cooldown → só apaga', ev.join(',') === 'delete', ev.join(','));
@@ -93,7 +96,7 @@ t('viewOnce desembrulha', d({ viewOnceMessageV2: { message: { documentMessage: {
   at._reset(); ev.length = 0;
   t('check: bot sem admin → não age', await at.check(sock, m) === false && ev.length === 0);
   // v7.75 PRO — slowmode no check() (outro grupo: o cache TTL do hotCache é por jid)
-  Model.findOne = () => ({ lean: async () => ({ slowmode: 30 }) });
+  Model.findOne = () => ({ lean: async () => ({ slowmode: 30, isHosted: true, hostedUntil: new Date(Date.now() + 60_000) }) });
   sock.groupMetadata = async () => ({ participants: [{ id: '244999@s.whatsapp.net', admin: 'admin' }, { id: '244901@s.whatsapp.net' }] });
   at._reset(); ev.length = 0;
   const G2 = '2@g.us', P2 = '244901@s.whatsapp.net';

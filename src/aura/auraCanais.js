@@ -652,9 +652,9 @@ async function criarCanalSeguro(sock, nome, desc) {
   if (!sock || typeof sock.query !== 'function') return null;
   let QueryIds, XWAPaths, S_WHATSAPP_NET;
   try {
-    const raiz = require('@systemzero/baileys');
+    const raiz = require('baileys-v6');
     QueryIds = raiz.QueryIds; XWAPaths = raiz.XWAPaths;
-    S_WHATSAPP_NET = require('@systemzero/baileys/lib/WABinary/index.js').S_WHATSAPP_NET;
+    S_WHATSAPP_NET = require('baileys-v6/lib/WABinary/index.js').S_WHATSAPP_NET;
     if (!QueryIds?.CREATE || !XWAPaths?.xwa2_newsletter_create) return null;
   } catch { return null; }
 
@@ -815,7 +815,7 @@ async function lerRespostasCanal(sock, alvo) {
     const voter = m.key?.participant || m.key?.remoteJid || '';
     let hashes = null;
     try {
-      const { decryptPollVote } = require('@systemzero/baileys');
+      const { decryptPollVote } = require('baileys-v6');
       const vote = decryptPollVote(
         { encPayload: pu.vote?.encPayload, encIv: pu.vote?.encIv },
         { pollCreatorJid: sock?.user?.id || '', pollMsgId: key.id, pollEncKey: info.secret, voterJid: voter }

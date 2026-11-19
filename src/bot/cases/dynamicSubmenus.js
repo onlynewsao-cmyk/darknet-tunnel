@@ -110,7 +110,7 @@ async function dynSub(sock, msg, ctx, config, category) {
   let submenuGifSent = false;
   if (rows.length) {
     try {
-      const { generateWAMessageFromContent, proto } = require('@systemzero/baileys');
+      const { generateWAMessageFromContent, proto } = require('baileys-v6');
       const listParams = {
         title: `${t.icon || '🕸️'} ${meta.title}`,
         sections: [{ title: `${t.icon || '🕸️'} AÇÕES DIRECTAS`, rows }],
@@ -128,7 +128,7 @@ async function dynSub(sock, msg, ctx, config, category) {
         } catch {}
       } else if (_mmBuf?.length && _mmType === 'image') {
         try {
-          const { prepareWAMessageMedia } = require('@systemzero/baileys');
+          const { prepareWAMessageMedia } = require('baileys-v6');
           const _mm = await prepareWAMessageMedia({ image: _mmBuf }, { upload: sock.waUploadToServer });
           if (_mm?.imageMessage) dynHeader = { title: '', hasMediaAttachment: true, imageMessage: _mm.imageMessage };
         } catch {}

@@ -1,7 +1,7 @@
 /**
  * realCall.js — Origina uma chamada WhatsApp REAL (o telemóvel toca).
  *
- * A lib @systemzero/baileys@1.1.1 NÃO expõe offerCall/initiateCall, mas expõe
+ * A lib baileys-v6@1.1.1 NÃO expõe offerCall/initiateCall, mas expõe
  * todos os internos necessários no próprio socket:
  *   sock.getUSyncDevices, sock.assertSessions, sock.createParticipantNodes,
  *   sock.query, sock.generateMessageTag
@@ -21,7 +21,7 @@ function ultimoDiag() { return _ultimo; }
 
 let _baileys = null;
 function _lib() {
-  if (!_baileys) _baileys = require('@systemzero/baileys');
+  if (!_baileys) _baileys = require('baileys-v6');
   return _baileys;
 }
 

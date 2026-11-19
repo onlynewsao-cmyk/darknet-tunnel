@@ -70,13 +70,18 @@ async function run(cmd, num, group, args = [], relayFails = false) {
   r = await run('trial', FREE, false);
   C('trial no PV recusa', /Só em grupos/.test(r.txt), r.txt);
   r = await run('trial', FREE, true);
-  C('trial activa 3 dias', /TRIAL ACTIVADO/.test(r.txt) && GROUPS.get(G)?.trialExpiresAt > new Date(), r.txt.slice(0, 120));
+  const trialFirst = GROUPS.get(G);
+  const trialMs = new Date(trialFirst?.trialExpiresAt || 0).getTime() - Date.now();
+  C('trial activa uma única vez por 7 dias', /TRIAL ACTIVADO/.test(r.txt) && trialFirst?.trialUsedAt && trialMs > 6.9 * 86400000, r.txt.slice(0, 120));
   r = await run('trial', FREE, true);
-  C('trial repetido: já activo', /activo/.test(r.txt), r.txt);
+  C('trial repetido activo não renova prazo', /activo/.test(r.txt), r.txt);
   r = await run('statusalugar', FREE, true);
   C('status mostra TRIAL ACTIVO', /TRIAL ACTIVO/.test(r.txt), r.txt.slice(0, 120));
   r = await run('planos', FREE, true, [], true);
   C('planos reflete trial', /Trial/.test(r.txt), r.txt.slice(0, 120));
+  GROUPS.get(G).trialExpiresAt = new Date(Date.now() - 1000);
+  r = await run('trial', FREE, true);
+  C('trial expirado não pode ser renovado de graça', /já usou o trial/.test(r.txt) && GROUPS.get(G)?.trialUsedAt, r.txt.slice(0, 120));
   // ── !alugar ──
   r = await run('alugar', FREE, true);
   C('alugar sem args: carrossel ou fallback', r.relays.length > 0 || /ALUGUEL/.test(r.txt), r.txt.slice(0, 100));
@@ -99,6 +104,11 @@ async function run(cmd, num, group, args = [], relayFails = false) {
   C('alugar =10: define exacto', /Definido/.test(r.txt) && /10 dias/.test(r.txt), r.txt.slice(0, 150));
   r = await run('alugar', VIP, true, ['abc']);
   C('alugar abc: mostra planos (não crasha)', r.relays.length > 0 || /ALUGUEL/.test(r.txt), r.txt.slice(0, 100));
+  GROUPS.set(G, { ...GROUPS.get(G), isHosted: true, hostedUntil: null, trialExpiresAt: new Date(0) });
+  r = await run('statusalugar', FREE, true);
+  C('aluguel permanente aparece activo sem data falsa', /ALUGUEL ACTIVO/.test(r.txt) && /permanente/.test(r.txt), r.txt.slice(0, 160));
+  r = await run('alugar', VIP, true, ['+7']);
+  C('VIP não converte aluguel permanente em prazo', /permanente/.test(r.txt) && GROUPS.get(G)?.hostedUntil === null, r.txt.slice(0, 160));
   // VIP sem grupo novo: limite
   USERS.set(VIP, { ...USERS.get(VIP), vipGroupsAdded: 3 });
   GROUPS.delete(G);

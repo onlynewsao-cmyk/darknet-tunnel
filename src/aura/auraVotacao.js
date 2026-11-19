@@ -7,7 +7,7 @@
  *  Dois mundos, uma porta:
  *
  *   A) ENQUETE REAL do WhatsApp (`content.poll`) — o motor pergunta
- *      ao fork `@systemzero/baileys`: envio com values[{optionName}] +
+ *      ao fork `baileys-v6`: envio com values[{optionName}] +
  *      selectableCount; o VOTO é um `pollUpdate` com `sha256Progression`
  *      = SHA-256 do nome da opção (é assim que o fork agrega em
  *      getAggregateVotesInPollMessage — verificado no código).
@@ -127,7 +127,7 @@ async function puxarResultados(sock, e) {
     if (store && typeof store.loadMessage === 'function') msg = await store.loadMessage(e.key.remoteJid, e.key.id);
     else if (store && typeof store.get === 'function') msg = store.get(e.key.id);
     if (!msg) return null;
-    const { getAggregateVotesInPollMessage } = require('@systemzero/baileys');
+    const { getAggregateVotesInPollMessage } = require('baileys-v6');
     const agg = getAggregateVotesInPollMessage({ message: msg.message, pollUpdates: msg.pollUpdates || [] });
     const counts = e.opcoes.map((o) => { const a = agg.find((x) => x.name === o); return a ? a.voters.length : 0; });
     e.puxada = { counts, total: counts.reduce((s, x) => s + x, 0) };

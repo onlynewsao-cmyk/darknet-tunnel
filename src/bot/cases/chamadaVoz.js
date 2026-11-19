@@ -19,7 +19,7 @@ module.exports = function registerChamadaVoz(registerCase) {
     // com NÚMERO → caminho antigo (toca no telemóvel de outra pessoa)
     const numero = String(args?.[0] || '').replace(/\D/g, '');
     if (numero.length >= 9) return require('../caseHandler').runCase('ligarnum', { sock, msg, ctx, args, text: args.join(' '), prefix, isOwner, config: require('../../config') });
-    if (!voip.suportado(sock)) return reply('Ainda não consigo ligar daqui — o servidor precisa da lib nova (@systemzero/baileys 1.1.4). Avisa o Dark. 😕');
+    if (!voip.suportado(sock)) return reply('Ainda não consigo ligar daqui — o servidor precisa da lib nova (baileys-v6 1.1.4). Avisa o Dark. 😕');
     const grupo = ctx.isGroup;
     // v7.44: chamadas só a pedido do Dono (qualquer um a pedir "call" ao bot
     // multiplica chamadas automáticas = restrição da Meta).

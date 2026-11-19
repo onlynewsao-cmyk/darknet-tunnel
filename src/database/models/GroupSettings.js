@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { DEFAULT_WELCOME_TEMPLATE, DEFAULT_GOODBYE_TEMPLATE } = require('../groupNoticeDefaults');
 
 const GroupSettingsSchema = new mongoose.Schema({
   groupJid: { type: String, required: true, unique: true, index: true },
@@ -62,11 +63,11 @@ const GroupSettingsSchema = new mongoose.Schema({
 
   maxWarns: { type: Number, default: 3 },
 
-  welcome: { type: Boolean, default: true },
-  goodbye: { type: Boolean, default: true },
+  welcome: { type: Boolean, default: false },
+  goodbye: { type: Boolean, default: false },
 
-  customWelcome: { type: String, default: '' },
-  customGoodbye: { type: String, default: '' },
+  customWelcome: { type: String, default: DEFAULT_WELCOME_TEMPLATE },
+  customGoodbye: { type: String, default: DEFAULT_GOODBYE_TEMPLATE },
 
   onlyAdmins: { type: Boolean, default: false },
   blockedCommands: [{ type: String }],
@@ -105,7 +106,10 @@ const GroupSettingsSchema = new mongoose.Schema({
 
   // ── Hospedagem / Aluguel ──────────────────────────────────
   isHosted: { type: Boolean, default: false },
-  trialExpiresAt: { type: Date, default: () => new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) }, // v7.67: 7 dias trial
+  // Trial é concedido uma única vez quando o bot entra ou via !trial — criar
+  // uma configuração administrativa não pode iniciar/renovar acesso grátis.
+  trialExpiresAt: { type: Date, default: null },
+  trialUsedAt: { type: Date, default: null },
   hostedUntil: { type: Date, default: null },
   commandsUsedToday: { type: Number, default: 0 },
   lastResetDate: { type: String, default: () => new Date().toISOString().split('T')[0] },
@@ -115,11 +119,13 @@ const GroupSettingsSchema = new mongoose.Schema({
   rentedAt: { type: Date, default: null },
 
   // ── Welcome / Goodbye por grupo ───────────────────────────
-  welcomeEnabled: { type: Boolean, default: true },
-  goodbyeEnabled: { type: Boolean, default: true },
-  customWelcomeMsg: { type: String, default: '' },  // {user} {grupo} {bot}
-  customGoodbyeMsg: { type: String, default: '' },
-  welcomeWithPhoto: { type: Boolean, default: true },
+  welcomeEnabled: { type: Boolean, default: false },
+  goodbyeEnabled: { type: Boolean, default: false },
+  // A entrada do próprio bot fica silenciosa para não parecer um replay.
+  botArrivalNotify: { type: Boolean, default: false },
+  customWelcomeMsg: { type: String, default: DEFAULT_WELCOME_TEMPLATE },  // {user} {grupo} {bot}
+  customGoodbyeMsg: { type: String, default: DEFAULT_GOODBYE_TEMPLATE },
+  welcomeWithPhoto: { type: Boolean, default: false },
   welcomeWithMedia: { type: String, default: '' },  // URL de imagem de boas-vindas
   goodbyeWithMedia: { type: String, default: '' },  // URL de imagem de despedida
   welcome2: { type: Boolean, default: false },   // v8.4: foto IA de entrada (PIP)

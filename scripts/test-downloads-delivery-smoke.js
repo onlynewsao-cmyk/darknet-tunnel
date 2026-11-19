@@ -7,22 +7,19 @@ const assert = require('assert');
 const Module = require('module');
 const originalRequire = Module.prototype.require;
 const samples = {};
-const cards = [];
-
-class FakeButtonV2 {
-  constructor(sock) { this.sock = sock; this.buttons = []; }
-  setTitle(value) { this.title = value; }
-  setBody(value) { this.body = value; }
-  setFooter(value) { this.footer = value; }
-  setThumbnail(value) { this.thumbnail = value; }
-  addButton(label, id) { this.buttons.push({ label, id }); }
-  async send(jid, opts) {
-    cards.push({ title: this.title, body: this.body, buttons: this.buttons });
-    await this.sock.sendMessage(jid, {
-      interactiveCard: true, title: this.title, body: this.body, buttons: this.buttons,
-    }, opts);
-  }
-}
+const relays = [];
+const fromObject = (obj) => obj;
+const fakeBaileys = {
+  downloadMediaMessage: async () => Buffer.alloc(0),
+  proto: { Message: { InteractiveMessage: {
+    fromObject, Header: { fromObject }, Body: { fromObject }, Footer: { fromObject },
+    NativeFlowMessage: { fromObject }, CarouselCard: { fromObject },
+  } } },
+  generateWAMessageFromContent: (jid, message, options) => ({
+    key: { id: 'native-card' }, message: { ...message, __jid: jid, __options: options },
+  }),
+  prepareWAMessageMedia: async () => ({ imageMessage: {} }),
+};
 
 const searchResult = {
   title: 'CC0 smoke media', author: 'MDN', duration: '0:05', views: 1,
@@ -55,8 +52,7 @@ const fakeDownloader = {
 };
 
 Module.prototype.require = function (id) {
-  if (id === '@systemzero/baileys') return { downloadMediaMessage: async () => Buffer.alloc(0) };
-  if (id === '@systemzero/baileys/lib/MB.cjs') return { ButtonV2: FakeButtonV2 };
+  if (id === 'baileys-v6') return fakeBaileys;
   if (id === '../../config') return { footer: 'DARK BOT', bot: { name: 'DARK BOT', prefix: '!' } };
   if (id === '../systemZeroPlay') return fakeSystemZeroPlay;
   if (id === '../ytdl') return fakeYtdl;
@@ -89,6 +85,10 @@ Module.prototype.require = function (id) {
       sent.push(payload);
       return { key: { id: 'mock-send' } };
     },
+    relayMessage: async (relayJid, message, options) => {
+      relays.push({ jid: relayJid, message, options });
+      return { key: { id: 'mock-relay' } };
+    },
   };
   const register = modulePath => {
     const cases = new Map();
@@ -110,11 +110,15 @@ Module.prototype.require = function (id) {
   };
   const passed = [];
 
-  cards.length = 0;
+  relays.length = 0;
   await playCases.get('play')({ sock, msg, m, ctx, text: 'smoke media', prefix: '!', command: 'play' });
-  assert.strictEqual(cards.length, 1, '!play must return one compact video card');
-  assert(cards[0].buttons.some(button => button.id.startsWith('!gyt ')), 'card must offer video');
-  assert(!cards[0].buttons.some(button => button.id.startsWith('!ytd ')), 'auto-sent audio should not be a redundant button');
+  assert.strictEqual(relays.length, 1, '!play must return one official native card');
+  const interactive = relays[0].message?.viewOnceMessage?.message?.interactiveMessage;
+  const quickReplies = interactive?.nativeFlowMessage?.buttons || [];
+  const ids = quickReplies.map(button => JSON.parse(button.buttonParamsJson || '{}').id);
+  assert(ids.some(id => String(id).startsWith('!gyt ')), 'card must offer video');
+  assert(!ids.some(id => String(id).startsWith('!ytd ')),
+    'automatic play card must not expose a repeat-audio button');
   assert(sent.some(payload => payload.audio?.equals(samples.mp3) && payload.mimetype === 'audio/mpeg'),
     '!play must auto-send the real MP3 bytes');
   passed.push('!play: áudio MP3 real automático + botão de vídeo');
@@ -142,10 +146,15 @@ Module.prototype.require = function (id) {
   ];
   for (const [command, args] of videoRoutes) {
     out = await run(socialCases, command, { args });
-    assert(out.some(payload => payload.video?.equals(samples.mp4)
-      && payload.mimetype === 'video/mp4'), `${command} must build a real MP4 payload`);
+    const sentVideo = out.find(payload => Buffer.isBuffer(payload.video) && payload.mimetype === 'video/mp4');
+    assert(sentVideo && videoCompat.isMp4(sentVideo.video), `${command} must build a real MP4 payload`);
+    if (command !== 'facebook') assert(sentVideo.video.equals(samples.mp4), `${command} preserves the provider bytes`);
     passed.push(`${command}: bytes MP4 reais no payload`);
   }
+
+  const downloads2Source = require('fs').readFileSync(require('path').join(__dirname, '..', 'src', 'bot', 'cases', 'downloads2.js'), 'utf8');
+  assert(downloads2Source.includes('normalizeForWhatsApp: true, maxHeight: 720'), 'Facebook must normalize MP4 before WhatsApp delivery');
+  passed.push('facebook: normalização H.264/AAC/yuv420p antes do envio');
 
   out = await run(socialCases, 'soundcloud', { args: ['https://soundcloud.com/sample/track'] });
   assert(out.some(payload => payload.audio?.equals(samples.mp3)

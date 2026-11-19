@@ -101,7 +101,7 @@ module.exports = function (registerCase) {
       }
       const wa = require('../welcomeArt');
       let ppUrl = null;
-      try { ppUrl = await sock.profilePictureUrl(ctx.senderJid || ctx.remoteJid, 'image').catch(() => null); } catch {}
+      try { ppUrl = (await require('../visualIdentity').resolveVisualProfile(sock, ctx.senderJid || ctx.senderNumber, { fallbackJid: ctx.remoteJid })).url || null; } catch {}
       const botName = (config.bot?.name) || 'DARK BOT';
       const gif = args.some(a => /gif|anim|welcm3|gif3/i.test(a));
       // A arte nasce da raça/classe/nível e também da cidade onde o
@@ -139,7 +139,7 @@ module.exports = function (registerCase) {
         await comPrazo(tenta(), 3500);
       } catch (e1) {
         // queda: gradiente local (0 rede) — rápido e bonito à mesma
-        const local = { profilePicUrl: null, fetchFn: async () => null, botName, region, jid: ctx.remoteJid };
+        const local = { profilePicUrl: ppUrl, localBackground: true, botName, region, jid: ctx.remoteJid };
         // A queda de prazo/rede é sempre uma imagem local, nunca um MP4
         // vazio. Isto mantém !rgcard rápido mesmo sem ffmpeg no host.
         await sock.sendMessage(ctx.remoteJid, {

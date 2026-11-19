@@ -87,7 +87,7 @@ async function _imagemPinterest(cacheKey, query, prazoMs = 4000) {
 async function enviarCarrossel(sock, msg, ctx, { corpo, rodape, cards, imgW = 768, imgH = 512 }) {
   if (!sock?.relayMessage || !Array.isArray(cards) || !cards.length) return false;
   try {
-    const { generateWAMessageFromContent, prepareWAMessageMedia, proto } = require('@systemzero/baileys');
+    const { generateWAMessageFromContent, prepareWAMessageMedia, proto } = require('baileys-v6');
 
     // Os clientes recentes são exigentes: objectos JS crus até podem renderizar
     // as cartas, mas o quick_reply pode chegar sem id (e a raça nunca avança).

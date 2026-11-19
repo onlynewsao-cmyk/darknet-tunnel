@@ -16,14 +16,14 @@ const { execSync } = require('child_process');
 console.log('📞 DARK BOT — VOZ REAL (baileys-caller)\n');
 console.log('Vai instalar (sem gravar no package.json):');
 console.log('  • baileys-caller     git+https://github.com/SheIITear/baileys-caller.git');
-console.log('  • @whiskeysockets/baileys  (peer dependency)');
+console.log('  • @whiskeysockets/baileys 7.0.0-rc14 (peer dependency)');
 console.log('  • @roamhq/wrtc       (módulo nativo — precisa de prebuild ou compilador)\n');
 
 try {
   execSync(
     'npm install --no-save --no-audit --no-fund ' +
     'git+https://github.com/SheIITear/baileys-caller.git ' +
-    '@whiskeysockets/baileys@^7.0.0-rc11',
+    '@whiskeysockets/baileys@7.0.0-rc14',
     { stdio: 'inherit' }
   );
 } catch (e) {

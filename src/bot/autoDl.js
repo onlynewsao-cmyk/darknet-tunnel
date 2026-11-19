@@ -14,6 +14,7 @@
  *  - falha = 1 linha humana, nunca stack trace.
  */
 const linkPolicy = require('./linkPolicy');
+const { hasActiveEntitlement } = require('./groupEntitlement');
 
 const EXTRA = [['soundcloud', /(soundcloud\.com|snd\.sc)$/]]; // fora do catálogo do escudo
 
@@ -56,6 +57,7 @@ async function check(sock, msg) {
     if (!texto || texto.length < 10) return false;
 
     const gs = (await require('./hotCache').getGroupSettings(msg, jid)) || {};
+    if (!hasActiveEntitlement(gs)) return false;
     if (gs.autoDl !== true) return false; // v7.86: default OFF — o grupo liga se quiser
     // v7.85: grupo sem redes aceites não tem o que baixar
     const redes = Array.isArray(gs.antilinkRedes) ? gs.antilinkRedes : null;

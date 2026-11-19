@@ -8,8 +8,8 @@
  *   2. Comunidades — o bot consegue criar comunidade e grupos lá dentro?
  *
  * O bot NUNCA tinha implementado comunidades: a API do Baileys
- * (communityCreate / communityCreateGroup / communityLinkGroup)
- * existe há muito, mas nenhum comando a chamava.
+ * expõe communityCreate; subgrupos usam o stanza oficial linked_parent
+ * quando os helpers privados não existem.
  *
  * Uso: node scripts/test-rpg-comunidades.js
  */
@@ -144,10 +144,10 @@ const check = (nome, cond, extra = '') => {
   // ══ 2. COMUNIDADES — a API existe? ════════════════════════
   console.log('\n▸ Comunidades: a API do Baileys suporta?');
   const dts = require('fs').readFileSync(
-    path.join(__dirname, '..', 'node_modules', '@systemzero', 'baileys', 'lib', 'Socket', 'communities.d.ts'), 'utf8');
+    path.join(__dirname, '..', 'node_modules', 'baileys-v6', 'lib', 'Socket', 'communities.d.ts'), 'utf8');
   check('communityCreate existe', /communityCreate:/.test(dts));
-  check('communityCreateGroup existe', /communityCreateGroup:/.test(dts));
-  check('communityLinkGroup existe', /communityLinkGroup:/.test(dts));
+  check('helpers privados de subgrupo não são exigidos',
+    !/communityCreateGroup:|communityLinkGroup:/.test(dts));
 
   // ══ 3. A AURA sabe usá-las? ═══════════════════════════════
   console.log('\n▸ A AURA cria comunidades por conversa');
@@ -195,6 +195,19 @@ const check = (nome, cond, extra = '') => {
   check('Cria grupo DENTRO da comunidade', r2.ok, r2.msg);
   check('Usou a comunidade certa', chamadas.some(c => c.startsWith('group:Avisos@999@g.us')),
     chamadas.find(c => c.startsWith('group:')) || '—');
+
+  // No Baileys oficial v6 os helpers communityCreateGroup/communityLinkGroup
+  // não são públicos. O caminho compatível envia linked_parent no stanza
+  // documentado pelo protocolo e nunca cria um grupo solto para fingir sucesso.
+  const Community = require(path.join(__dirname, '..', 'src', 'bot', 'rpg', 'community'));
+  let iq = null;
+  const raw = await Community.createNamedGroup({
+    query: async (node) => { iq = node; return { tag: 'iq', attrs: {}, content: [{ tag: 'group', attrs: { id: '777777' } }] }; },
+    groupCreate: async () => { throw new Error('não deve cair em grupo solto'); },
+  }, 'Oficial', OWNER + '@s.whatsapp.net', '999@g.us', { forcarLink: true });
+  const createNode = iq?.content?.[0];
+  check('Subgrupo oficial usa linked_parent numa única query', raw.ok && raw.ligado
+    && createNode?.content?.some(n => n.tag === 'linked_parent' && n.attrs?.jid === '999@g.us'), JSON.stringify(raw));
 
   const r3 = await ACT.executar('ligarComunidade', null, { sock: sockC, ctx: ctxC });
   check('Liga grupo existente à comunidade', r3.ok, r3.msg);

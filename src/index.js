@@ -113,6 +113,20 @@ async function bootstrap() {
   }
   await seedDefaults(conn);
 
+  // Reset global destrutivo expressamente aprovado: aplica templates padrão e
+  // deixa welcome, despedida e X9 OFF uma única vez em todos os grupos.
+  if (conn) {
+    try {
+      const notices = await require('./database/groupNoticeDefaults').applyApprovedGroupNoticeDefaults();
+      if (notices.applied) {
+        console.log(`✅ Avisos de grupo repostos e OFF: ${notices.modified}/${notices.matched} grupos (${notices.version})`);
+      }
+    } catch (e) {
+      // Sem o marcador a operação idempotente volta a ser tentada no próximo boot.
+      console.error('⚠️ Não foi possível repor avisos de grupo:', e.message?.slice(0, 120));
+    }
+  }
+
   // v12.9.36: Central de Contactos em ESCALA (1M+) — a base vive no MongoDB
   try { require('./bot/centralBase').carregarMongo().catch(() => {}); } catch (_) {}
 

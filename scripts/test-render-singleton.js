@@ -32,7 +32,7 @@ function fixture() {
   const originalOn = sc.on;
   sc.on = (event, fn) => { listeners.push({ event, fn }); return originalOn(event, fn); };
   whatsapp = load(path.join(base, 'src/bot/whatsapp.js'), (id, req) => {
-    if (id === '@systemzero/baileys') return {};
+    if (id === 'baileys-v6') return {};
     if (id === 'pino') return () => ({});
     if (id === 'qrcode') return {};
     if (id === 'fs') return { existsSync: () => true };

@@ -57,7 +57,7 @@ async function enviar(sock, ctx, { titulo, linhas = [], opcoes, botao, footer, e
   const corpoCurto = [String(titulo || ''), ...linhas, '', `👆 Toca em *${String(botao || 'Escolher').slice(0, 30)}* ▾ — ${rows.length} opções ${textoExtra}`.trim()].filter(Boolean).join('\n');
 
   try {
-    const { generateWAMessageFromContent, proto } = require('@systemzero/baileys');
+    const { generateWAMessageFromContent, proto } = require('baileys-v6');
     const m = generateWAMessageFromContent(ctx.remoteJid, {
       interactiveMessage: proto.Message.InteractiveMessage.fromObject({
         body: { text: corpoCurto },

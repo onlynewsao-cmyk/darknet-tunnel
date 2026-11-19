@@ -26,7 +26,7 @@
 
 ## v7.89 — ESCUDO DE VERDADE (antis vivos)
 - auto-visu1 baixava por `sock.downloadMediaMessage` (inexistente) → reenvio
-  em ver-uma-vez nunca acontecia; agora usa o export `@systemzero/baileys`
+  em ver-uma-vez nunca acontecia; agora usa o export `baileys-v6 (alias oficial @whiskeysockets/baileys 6.7.24)`
 - `antifoto/antivideo/antiaudio/antitexto/anticontacto/autoVisu1/autoDl` e
   **`modorpg`** agora EXISTEM no schema (antes o mongoose apagava os toggles:
   respondia "ON" mas nada persistia — o mundo RPG estava eternamente fechado)

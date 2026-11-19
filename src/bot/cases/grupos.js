@@ -126,7 +126,11 @@ module.exports = function registerGroupCases(registerCase) {
       const meta = ctx.groupMeta || await sock.groupMetadata(ctx.remoteJid);
       const mentions = meta.participants.map(p => p.id);
       const txt = args.join(' ') || '📢';
-      await sock.sendMessage(ctx.remoteJid, { text: txt, mentions }, { quoted: m });
+      // Hidetag publica um anúncio autónomo: não cita nem deixa o comando
+      // do admin exposto no chat. A remoção só é possível quando o bot também
+      // é admin; se WhatsApp a recusar, o anúncio continua a ser entregue.
+      await sock.sendMessage(ctx.remoteJid, { text: txt, mentions });
+      await sock.sendMessage(ctx.remoteJid, { delete: m.key }).catch(() => {});
     } catch (e) { reply('❌ ' + e.message); }
   });
 

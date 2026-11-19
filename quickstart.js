@@ -81,8 +81,8 @@ async function checkPrerequisites() {
   
   // Baileys
   try {
-    require.resolve('@systemzero/baileys');
-    checks.push({ name: 'Baileys', ok: true, detail: '@systemzero/baileys instalado' });
+    require.resolve('baileys-v6');
+    checks.push({ name: 'Baileys', ok: true, detail: 'Baileys oficial v6 instalado' });
   } catch {
     checks.push({ name: 'Baileys', ok: false, detail: 'NÃO INSTALADO — corre: npm install' });
   }

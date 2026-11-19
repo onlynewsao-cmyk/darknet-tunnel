@@ -128,7 +128,7 @@ async function imagemDaMensagem(msg, sock) {
       ? msg
       : { key: { remoteJid: msg.key?.remoteJid, id: ctxInfo?.stanzaId, participant: ctxInfo?.participant }, message: mCitada };
 
-    const { downloadMediaMessage } = require('@systemzero/baileys');
+    const { downloadMediaMessage } = require('baileys-v6');
     const buf = await downloadMediaMessage(alvo, 'buffer', {}, {
       reuploadRequest: sock?.updateMediaMessage,
     }).catch(() => null);

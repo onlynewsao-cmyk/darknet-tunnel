@@ -633,7 +633,7 @@ const selCmds = allowed.filter(it => it.sel === true);
   let submenuGifSent = false;
   if (rows.length) {
     try {
-      const { generateWAMessageFromContent, proto } = require('@systemzero/baileys');
+      const { generateWAMessageFromContent, proto } = require('baileys-v6');
       const listParams = {
         title:    `${t.icon} ${title}`,
         sections: [{ title: `${t.icon} COMANDOS`, rows }],
@@ -657,7 +657,7 @@ const selCmds = allowed.filter(it => it.sel === true);
               submenuGifSent = true;
             }
           } else if (_mmBuf?.length) {
-            const { prepareWAMessageMedia } = require('@systemzero/baileys');
+            const { prepareWAMessageMedia } = require('baileys-v6');
             if (_mmType === 'image') {
               const _mm = await prepareWAMessageMedia({ image: _mmBuf }, { upload: sock.waUploadToServer });
               if (_mm?.imageMessage) subMediaHeader = { title: '', hasMediaAttachment: true, imageMessage: _mm.imageMessage };
@@ -1141,7 +1141,7 @@ module.exports = {
 
     // ═══ 1º — CAROUSEL com mídia (vídeo GIF preferido, imagem fallback) ═══
     try {
-      const { generateWAMessageFromContent, prepareWAMessageMedia } = require('@systemzero/baileys');
+      const { generateWAMessageFromContent, prepareWAMessageMedia } = require('baileys-v6');
       const fs2  = require('fs');
       const path = require('path');
       const root = path.join(__dirname, '..', '..');
@@ -1290,31 +1290,14 @@ module.exports = {
     return reply(sock, msg, ctx, text);
   },
 
-  // !pvfree on|off|status — Dono escolhe se Free recebe respostas no privado.
-  // O gate é aplicado bem no início do commandHandler, antes da Aura e de
-  // automações, para manter o modo realmente silencioso.
-  async pvfree({ sock, msg, ctx, args, isOwner }) {
-    if (!isOwner) return reply(sock, msg, ctx, '🚫 Só o Dono pode alterar o modo de PV Free.');
-    const acao = String(args[0] || 'status').trim().toLowerCase();
-    if (['on', 'ligar', 'ativo', 'silenciar'].includes(acao)) {
-      await botConfigCache.set('free_pv_silent', true);
-      return reply(sock, msg, ctx,
-        '🔕 *PV Free silencioso: ATIVO*\n\n' +
-        'Utilizadores Free não receberão nenhuma resposta no privado. Dono e Premium continuam normais.\n\n' +
-        'Para reativar respostas: *' + (ctx.prefix || '!') + 'pvfree off*');
-    }
-    if (['off', 'desligar', 'inativo', 'normal'].includes(acao)) {
-      await botConfigCache.set('free_pv_silent', false);
-      return reply(sock, msg, ctx,
-        '🔔 *PV Free silencioso: DESATIVADO*\n\n' +
-        'O bot voltou a responder normalmente a utilizadores Free no privado.');
-    }
-    const ativo = await botConfigCache.get('free_pv_silent', false);
+  // !pvfree — política comercial fixa. Dono/Premium mantêm acesso total;
+  // Free usa stickers e AURA textual restrita, sem poder activar rotas extras.
+  async pvfree({ sock, msg, ctx, isOwner }) {
+    if (!isOwner) return reply(sock, msg, ctx, '🚫 Só o Dono pode consultar a política de PV Free.');
     return reply(sock, msg, ctx,
-      '🔐 *CONTROLE DE PV FREE*\n\n' +
-      'Estado: *' + (ativo === true || ativo === 'true' || ativo === 'on' ? 'SILENCIOSO 🔕' : 'RESPONDE NORMALMENTE 🔔') + '*\n\n' +
-      '• *' + (ctx.prefix || '!') + 'pvfree on* — não responde Free no PV\n' +
-      '• *' + (ctx.prefix || '!') + 'pvfree off* — volta a responder Free no PV');
+      '🔐 *POLÍTICA DE PV FREE*\n\n' +
+      'No privado, contas Free podem criar stickers ao responder a uma foto ou vídeo com *' + (ctx.prefix || '!') + 'sticker* e usar a AURA em modo assistente por até *10 perguntas simples por dia*.\n\n' +
+      'A AURA Free não executa comandos, automações, downloads, mídia nem ações externas. Para os demais recursos, é necessário *VIP* ou aluguel de grupo. Esta política é fixa; Dono e Premium mantêm acesso completo.');
   },
 
   async figubug({ sock, msg, ctx, config }) {
@@ -1370,7 +1353,7 @@ module.exports = {
   },
 
   // ══════════════════════════════════════════════════════════════════════
-  // !menu — Carousel interactivo com @systemzero/baileys
+  // !menu — Carousel interactivo com baileys-v6
   // Formato idêntico ao código original do repositório:
   //   Carousel com card (vídeo/imagem) + single_select + cta_url canal
   // ══════════════════════════════════════════════════════════════════════
@@ -1648,7 +1631,7 @@ module.exports = {
     const waLink = 'https://wa.me/' + num;
     const channelUrl = localConfig.channelUrl || 'https://whatsapp.com/channel/0029VbDMnJs6buMDAqf2Fq1z';
 
-    const { generateWAMessageFromContent, proto, prepareWAMessageMedia } = require('@systemzero/baileys');
+    const { generateWAMessageFromContent, proto, prepareWAMessageMedia } = require('baileys-v6');
     let headerMedia = null;
     try {
       const fs2 = require('fs');
@@ -3766,7 +3749,7 @@ module.exports = {
 
       if (!items.length) throw new Error('Sem imagens encontradas.');
 
-      const { generateWAMessageFromContent, prepareWAMessageMedia } = require('@systemzero/baileys');
+      const { generateWAMessageFromContent, prepareWAMessageMedia } = require('baileys-v6');
 
       const cards = [];
       for (const item of items) {

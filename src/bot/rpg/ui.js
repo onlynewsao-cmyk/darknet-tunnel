@@ -78,7 +78,7 @@ async function escolher(sock, msg, ctx, { titulo, subtitulo, linhas = [], opcoes
   // v7.92 — corpo curto: as opções aparecem DENTRO da lista (no toque).
   const corpoCurto = [...linhas, '', `👆 Toca em *${String(titulo).slice(0, 30)}* ▾ — tens ${opcoes.length} opções 【ou escreve !rpgescolher <número>】`].join('\n');
   try {
-    const { generateWAMessageFromContent, proto } = require('@systemzero/baileys');
+    const { generateWAMessageFromContent, proto } = require('baileys-v6');
     const m = generateWAMessageFromContent(ctx.remoteJid, {
       interactiveMessage: proto.Message.InteractiveMessage.fromObject({
         body: { text: corpoCurto },

@@ -28,6 +28,8 @@
 'use strict';
 
 const { mongoose } = require('../database/connection');
+const participantIdentity = require('./participantIdentity');
+const { hasActiveEntitlement } = require('./groupEntitlement');
 
 let _Model = null;
 function Model() {
@@ -44,6 +46,11 @@ function Model() {
 const cache = new Map();
 // groupJid → { on, notify, ts } (definições do grupo, com TTL)
 const interruptor = new Map();
+
+// A mesma mensagem pode chegar mais de uma vez durante reconnect/ack. Evita
+// apagar/notificar em duplicado sem manter estado infinito.
+const processadas = new Map(); // groupJid:messageId → timestamp
+const DEDUP_MS = 2 * 60 * 1000;
 
 function _grupo(groupJid) {
   const jid = String(groupJid || '');
@@ -84,6 +91,7 @@ async function carregar(force = false) {
         if (!nova.has(b.groupJid)) nova.set(b.groupJid, new Map());
         nova.get(b.groupJid).set(chave, {
           hash: b.hash || '', hashEnc: b.hashEnc || '', animated: !!b.animated,
+          reason: String(b.reason || '').slice(0, 120),
         });
       }
       // MERGE, não substituição: o que foi aprendido enquanto o Mongo
@@ -147,23 +155,26 @@ const TTL_INTERRUPTOR = 60000;
 
 async function _definissoes(groupJid) {
   const jid = String(groupJid || '');
-  if (!jid.endsWith('@g.us')) return { on: false, notify: true };
+  if (!jid.endsWith('@g.us')) return { on: false, notify: true, settings: null };
   const c = interruptor.get(jid);
   if (c && Date.now() - c.ts < TTL_INTERRUPTOR) return c;
-  if (!_dbUp()) return c ? { on: c.on, notify: c.notify } : { on: false, notify: true };
+  if (!_dbUp()) return c ? { on: c.on, notify: c.notify, settings: c.settings || null } : { on: false, notify: true, settings: null };
   try {
     const GroupSettings = require('../database/models/GroupSettings');
     const gs = await GroupSettings.findOne({ groupJid: jid }).lean();
-    const def = { on: !!gs?.antisticker, notify: gs?.antistickerNotify !== false, ts: Date.now() };
+    // Um grupo tem de activar esta protecção conscientemente E ter serviço
+    // activo. Configurações antigas nunca podem apagar mensagens fora disso.
+    const def = { on: gs?.antisticker === true && hasActiveEntitlement(gs), notify: gs?.antistickerNotify !== false, settings: gs || null, ts: Date.now() };
     interruptor.set(jid, def);
     return def;
   } catch {
-    return c ? { on: c.on, notify: c.notify } : { on: false, notify: true };
+    return c ? { on: c.on, notify: c.notify, settings: c.settings || null } : { on: false, notify: true, settings: null };
   }
 }
 
 async function estaActivo(groupJid) {
-  return (await _definissoes(groupJid)).on;
+  const def = await _definissoes(groupJid);
+  return !!def.on && hasActiveEntitlement(def.settings);
 }
 
 /** O bot avisa o grupo quando apaga? (!antisticker notify on/off) */
@@ -175,7 +186,7 @@ async function setActivo(groupJid, on) {
   const jid = String(groupJid || '');
   const valor = !!on;
   const anterior = interruptor.get(jid);
-  interruptor.set(jid, { on: valor, notify: anterior?.notify !== false, ts: Date.now() });
+  interruptor.set(jid, { on: valor, notify: anterior?.notify !== false, settings: anterior?.settings || null, ts: Date.now() });
   if (!_dbUp()) return valor;
   try {
     const GroupSettings = require('../database/models/GroupSettings');
@@ -184,6 +195,8 @@ async function setActivo(groupJid, on) {
       { $set: { groupJid: jid, antisticker: valor } },
       { upsert: true, setDefaultsOnInsert: true }
     );
+    // A próxima mensagem relê também a elegibilidade (trial/aluguel).
+    interruptor.delete(jid);
   } catch {}
   return valor;
 }
@@ -192,7 +205,7 @@ async function setAviso(groupJid, on) {
   const jid = String(groupJid || '');
   const valor = !!on;
   const anterior = interruptor.get(jid);
-  interruptor.set(jid, { on: anterior?.on ?? false, notify: valor, ts: Date.now() });
+  interruptor.set(jid, { on: anterior?.on ?? false, notify: valor, settings: anterior?.settings || null, ts: Date.now() });
   if (!_dbUp()) return valor;
   try {
     const GroupSettings = require('../database/models/GroupSettings');
@@ -201,6 +214,7 @@ async function setAviso(groupJid, on) {
       { $set: { groupJid: jid, antistickerNotify: valor } },
       { upsert: true, setDefaultsOnInsert: true }
     );
+    interruptor.delete(jid);
   } catch {}
   return valor;
 }
@@ -217,6 +231,7 @@ async function aprender(dados = {}) {
   if (!groupJid.endsWith('@g.us')) return { ok: false, motivo: 'só em grupos' };
   if (!hash && !hashEnc) return { ok: false, motivo: 'sem identidade' };
   const chave = hash || hashEnc;
+  const reason = String(dados.reason || '').replace(/[\r\n]+/g, ' ').trim().slice(0, 120);
 
   // cache primeiro — funciona mesmo sem Mongo
   const mapa = _grupo(groupJid);
@@ -224,7 +239,7 @@ async function aprender(dados = {}) {
   const jaSabia = !!anterior;
   // se já a conhecia por outra chave, não fica um registo duplicado
   if (anterior && anterior.chave !== chave) mapa.delete(anterior.chave);
-  mapa.set(chave, { hash, hashEnc, animated: !!dados.animated });
+  mapa.set(chave, { hash, hashEnc, animated: !!dados.animated, reason });
 
   if (_dbUp()) {
     try {
@@ -236,7 +251,7 @@ async function aprender(dados = {}) {
             animated: !!dados.animated,
             addedBy: String(dados.addedBy || ''),
             addedByName: String(dados.addedByName || ''),
-            reason: String(dados.reason || '').slice(0, 200),
+            reason,
           },
         },
         { upsert: true, setDefaultsOnInsert: true }
@@ -282,7 +297,7 @@ async function listaDe(groupJid) {
       if (docs.length) {
         return docs.map(d => ({
           hash: d.hash, hashEnc: d.hashEnc || '', animated: !!d.animated,
-          addedByName: d.addedByName || '', hits: d.hits || 0,
+          addedByName: d.addedByName || '', reason: d.reason || '', hits: d.hits || 0,
           createdAt: d.createdAt || null,
         }));
       }
@@ -293,7 +308,7 @@ async function listaDe(groupJid) {
   if (!mapa) return [];
   return [...mapa.values()].map(r => ({
     hash: r.hash, hashEnc: r.hashEnc || '', animated: !!r.animated,
-    addedByName: '', hits: 0, createdAt: null,
+    addedByName: '', reason: r.reason || '', hits: 0, createdAt: null,
   }));
 }
 
@@ -308,14 +323,54 @@ async function estaBanido(groupJid, { hash, hashEnc } = {}) {
   return estaBanidoSync(groupJid, hash) || estaBanidoSync(groupJid, hashEnc);
 }
 
-async function registarAcerto(groupJid, hash) {
-  if (!_dbUp() || !hash) return;
+async function registarAcerto(groupJid, { hash, hashEnc } = {}) {
+  if (!_dbUp() || (!hash && !hashEnc)) return;
   try {
+    const hashes = [...new Set([hash, hashEnc].filter(Boolean))];
     await Model().findOneAndUpdate(
-      { groupJid: String(groupJid), hash },
+      {
+        groupJid: String(groupJid),
+        $or: hashes.flatMap(value => [{ hash: value }, { hashEnc: value }]),
+      },
       { $inc: { hits: 1 }, $set: { lastHitAt: new Date() } }
     );
   } catch {}
+}
+
+async function registarAcertoDoGrupo(groupJid) {
+  if (!_dbUp()) return;
+  try {
+    const GroupSettings = require('../database/models/GroupSettings');
+    await GroupSettings.updateOne(
+      { groupJid: String(groupJid) },
+      { $inc: { 'antistickerStats.deleted': 1 }, $set: { 'antistickerStats.lastAction': new Date() } },
+    );
+  } catch {}
+}
+
+function chaveProcessada(groupJid, msg) {
+  const id = String(msg?.key?.id || '');
+  return id ? `${String(groupJid)}:${id}` : '';
+}
+function foiProcessada(chave) {
+  if (!chave) return false;
+  const agora = Date.now();
+  for (const [key, at] of processadas) if (agora - at > DEDUP_MS) processadas.delete(key);
+  return processadas.has(chave);
+}
+function marcarProcessada(chave) {
+  if (!chave) return;
+  if (processadas.size > 3000) processadas.clear();
+  processadas.set(chave, Date.now());
+}
+
+/** Menção humana: PN real quando disponível; nunca texto/LID bruto. */
+async function referenciaSegura(sock, participant) {
+  const person = await participantIdentity.resolveParticipant(sock, participant).catch(() => null);
+  if (person?.number && person?.pnJid) {
+    return { text: `@${person.number}`, mentions: [person.pnJid] };
+  }
+  return { text: 'Um membro', mentions: [] };
 }
 
 // ── O FILTRO (chamado pelo messageListener) ─────────────────
@@ -323,6 +378,8 @@ async function registarAcerto(groupJid, hash) {
  * Olha para uma mensagem que acabou de entrar. Se for uma figurinha
  * aprendida naquele grupo, apaga-a.
  *
+ * Não faz download, não expõe LID e não envia o aviso duas vezes para a
+ * mesma chave de mensagem.
  * @returns {Promise<{apagada:boolean, hash?:string, motivo?:string}>}
  */
 async function filtrar(sock, msg, opts = {}) {
@@ -335,25 +392,33 @@ async function filtrar(sock, msg, opts = {}) {
     if (!id) return { apagada: false };
 
     const def = await _definissoes(jid);
-    if (!def.on) return { apagada: false };
+    // Revalida a data até quando vem do cache de 45s: trial expirado nunca
+    // ganha uma última janela para apagar mensagens.
+    if (!def.on || !hasActiveEntitlement(def.settings)) return { apagada: false };
     if (!(await estaBanido(jid, id))) return { apagada: false };
+
+    const chave = chaveProcessada(jid, msg);
+    if (foiProcessada(chave)) return { apagada: true, duplicada: true, hash: id.hash || id.hashEnc };
 
     let apagada = false;
     if (sock?.sendMessage) {
       try { await sock.sendMessage(jid, { delete: msg.key }); apagada = true; } catch {}
     }
+    if (!apagada) return { apagada: false, motivo: 'não foi possível apagar' };
 
-    registarAcerto(jid, id.hash || id.hashEnc).catch?.(() => {});
+    marcarProcessada(chave);
+    registarAcerto(jid, id).catch?.(() => {});
+    registarAcertoDoGrupo(jid).catch?.(() => {});
 
-    if (apagada && def.notify && opts.notify !== false && sock?.sendMessage) {
-      const quem = msg.key?.participant ? `<@${String(msg.key.participant).split('@')[0]}>` : 'alguém';
+    if (def.notify && opts.notify !== false && sock?.sendMessage) {
+      const quem = await referenciaSegura(sock, msg.key?.participant);
       await sock.sendMessage(jid, {
-        text: `🚫 *Figurinha aprendida* — já a conheço.\n${quem} essa não entra aqui.`,
-        mentions: msg.key?.participant ? [msg.key.participant] : [],
+        text: `🚫 *FIGURINHA BLOQUEADA*\n${quem.text}, esta figurinha não é permitida neste grupo.`,
+        mentions: quem.mentions,
       }).catch(() => {});
     }
 
-    return { apagada, hash: id.hash || id.hashEnc };
+    return { apagada: true, hash: id.hash || id.hashEnc };
   } catch (e) {
     // nunca deixa o listener cair por causa do filtro
     return { apagada: false, erro: e.message?.slice(0, 80) };
@@ -364,6 +429,7 @@ async function filtrar(sock, msg, opts = {}) {
 function _reset() {
   cache.clear();
   interruptor.clear();
+  processadas.clear();
   _carregado = false;
 }
 
@@ -381,6 +447,7 @@ module.exports = {
   identidadeDe,
   normalizarHash,
   registarAcerto,
+  referenciaSegura,
   carregar,
   _reset,
   _cache: cache,

@@ -83,7 +83,7 @@ Module.prototype.require = function (id) {
   if (/models[\\/]/.test(id)) return { find: () => w([]), findOne: () => w(null), findOneAndUpdate: async () => null, countDocuments: async () => 0, create: async () => ({}), updateOne: async () => ({}), deleteMany: async () => ({}), deleteOne: async () => ({}) };
   if (id === 'axios') return axiosStub;
   if (id === '../ai' || id.endsWith('/bot/ai')) return { chat: async () => 'CONTEUDO IA PARA TESTE DO PDF' };
-  if (id === '@systemzero/baileys' && global.__STUB_DL__) {
+  if (id === 'baileys-v6' && global.__STUB_DL__) {
     return { downloadMediaMessage: async () => (global.__STUB_DL__ === 'video' ? FAKE_VID : FAKE_IMG) };
   }
   if (id.endsWith('botConfigCache')) return { get: async (k, d) => d, set: async () => {}, clear: () => {}, refresh: async () => {} };
@@ -303,6 +303,9 @@ const said = (arr, re) => arr.some(o => re.test(String(o)));
   t('limparhorarios limpa', gsDoc(G).aberturaHora === '' && said(r.out, /removidos/), r.out[0]);
   // scheduler executa no horário (tempo fake)
   gsDoc(G).aberturaHora = '06:00'; gsDoc(G).fechamentoHora = '23:00';
+  // Horários são automação de serviço: esta parte testa o caminho activo.
+  gsDoc(G).isHosted = true;
+  gsDoc(G).hostedUntil = new Date(Date.now() + 60_000);
   gsDoc(G).horariosExecuted = {};
   global.__FAKEBOT__ = { sock, connectionStatus: 'connected' };
   const sched = require('../src/bot/scheduler');
@@ -340,14 +343,24 @@ const said = (arr, re) => arr.some(o => re.test(String(o)));
 
   console.log('── engine: antiFoba ──');
   const antiFoba = require('../src/bot/antiFoba');
+  // A regra pode continuar guardada, mas sem serviço nenhum motor punitivo
+  // pode apagar ou remover membros.
   gsDoc(G).antifoba = true;
   gsDoc(G).fobaBlacklist = ['63'];
+  gsDoc(G).isHosted = false;
+  gsDoc(G).hostedUntil = null;
+  gsDoc(G).trialExpiresAt = null;
   const violMsg = mkMsg({
     key: { remoteJid: G, participant: MEMBRO, id: 'V1', fromMe: false },
     message: { interactiveMessage: { body: { text: 'clica' }, nativeFlowMessage: { buttons: [{ url: 'https://golpe.xyz/oferta' }] } } },
   });
   sent.length = 0; kicked.length = 0;
-  t('antifoba pune link oculto (apaga+bane+avisa)',
+  t('antifoba sem serviço não apaga nem bane',
+    await antiFoba.check(sock, violMsg) === false && sent.length === 0 && kicked.length === 0);
+  gsDoc(G).isHosted = true;
+  gsDoc(G).hostedUntil = new Date(Date.now() + 60_000);
+  delete violMsg._hot;
+  t('antifoba com serviço pune link oculto (apaga+bane+avisa)',
     await antiFoba.check(sock, violMsg) === true && sent.some(s => s.delete) &&
     kicked.some(k => k.action === 'remove') && sent.some(s => /Anti-Fobados/.test(s.text || '')),
     JSON.stringify(sent.map(s => Object.keys(s))) + ' ' + JSON.stringify(kicked));
@@ -375,9 +388,15 @@ const said = (arr, re) => arr.some(o => re.test(String(o)));
   console.log('── engine: autoApresentar ──');
   const autoAP = require('../src/bot/autoApresentar');
   gsDoc(G).autoapresentar = true;
+  gsDoc(G).isHosted = false;
+  gsDoc(G).hostedUntil = null;
   sent.length = 0;
   await autoAP.onParticipantsUpdate(sock, G, [MEMBRO], 'add', await sock.groupMetadata());
-  t('autoAP add → aviso + pendência', sent.some(s => /Apresenta-te/.test(s.text || '')) && (autoAP._internals.pendentes.get(G)?.size || 0) === 1);
+  t('autoAP sem serviço fica silenciosa e não cria pendência', sent.length === 0 && !(autoAP._internals.pendentes.get(G)?.size));
+  gsDoc(G).isHosted = true;
+  gsDoc(G).hostedUntil = new Date(Date.now() + 60_000);
+  await autoAP.onParticipantsUpdate(sock, G, [MEMBRO], 'add', await sock.groupMetadata());
+  t('autoAP com serviço add → aviso + pendência', sent.some(s => /Apresenta-te/.test(s.text || '')) && (autoAP._internals.pendentes.get(G)?.size || 0) === 1);
   const falou = autoAP.onMessage(sock, mkMsg({ key: { remoteJid: G, participant: MEMBRO, id: 'F1', fromMe: false }, message: { conversation: 'olá!' } }));
   t('autoAP membro falou → cancela', falou === true && (autoAP._internals.pendentes.get(G)?.size || 0) === 0);
   await autoAP.onParticipantsUpdate(sock, G, [MEMBRO], 'add', await sock.groupMetadata());
@@ -386,6 +405,31 @@ const said = (arr, re) => arr.some(o => re.test(String(o)));
   await autoAP._internals.removerSeNaoApresentou(sock, G, tok);
   t('autoAP prazo → remove + avisa', kicked.some(k => k.action === 'remove') && sent.some(s => /Membro removido/.test(s.text || '')));
   t('autoAP cancela em massa', (() => { autoAP._internals.pendentes.set(G, new Map([['a', {}], ['b', {}]])); return autoAP.cancelarPendenciasDoGrupo(G) === 2; })());
+
+  console.log('── gate comum: filtros sem serviço ──');
+  // Todos estes filtros tinham caminhos próprios fora do commandHandler.
+  // A regressão importante é: flags legadas ON não podem apagar/avisar num
+  // grupo sem trial/aluguel.
+  gsDoc(G).isHosted = false;
+  gsDoc(G).hostedUntil = null;
+  gsDoc(G).trialExpiresAt = null;
+  gsDoc(G).antispam = true;
+  gsDoc(G).antilink = true;
+  gsDoc(G).antitexto = true;
+  const filtroMsg = mkMsg({
+    key: { remoteJid: G, participant: MEMBRO, id: 'GATE1', fromMe: false },
+    message: { conversation: 'https://exemplo.test spam spam spam' },
+  });
+  sent.length = 0; kicked.length = 0;
+  const antiSpam = require('../src/bot/antiSpam');
+  const antiLink = require('../src/bot/antiLink');
+  const antiTipos = require('../src/bot/antiTipos');
+  const gates = await Promise.all([
+    antiSpam.check(sock, filtroMsg),
+    antiLink.check(sock, filtroMsg),
+    antiTipos.check(sock, filtroMsg),
+  ]);
+  t('anti-spam/link/tipos sem serviço não moderam', gates.every(x => x === false) && sent.length === 0 && kicked.length === 0, JSON.stringify(gates));
 
   console.log('── tomp3 fundido + cep ──');
   global.__STUB_DL__ = 'video';

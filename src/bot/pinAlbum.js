@@ -299,7 +299,7 @@ async function _renderPage(sock, msg, ctx, state) {
   _pendentes.set(_key(ctx), state);
 
   try {
-    const { generateWAMessageFromContent, proto } = require('@systemzero/baileys');
+    const { generateWAMessageFromContent, proto } = require('baileys-v6');
     const rows = [];
     for (let i = 0; i < n; i++) {
       const partes = String(sliceLinhas[i]).split('\n');

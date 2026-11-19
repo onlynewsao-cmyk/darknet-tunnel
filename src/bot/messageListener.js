@@ -8,6 +8,7 @@ const AntiStatus = require('../database/models/AntiStatus');
 const botConfigCache = require('./botConfigCache');
 const GroupSettings = require('../database/models/GroupSettings');
 const GroupMemberActivity = require('../database/models/GroupMemberActivity');
+const { hasActiveEntitlement } = require('./groupEntitlement');
 
 // --- INICIALIZAÇÃO DE CACHE (Topo do arquivo para evitar ReferenceError) ---
 const messageCache = new Map();
@@ -108,7 +109,16 @@ async function onUpsert(sock, m, io) {
     const msgType = Object.keys(msg.message)[0];
 
     // --- LÓGICA ANTI-STATUS ---
-    if (isGroup && antiStatusCache.has(remoteJid)) {
+    // O cache diz que a regra existe; a licença continua a mandar. Assim um
+    // grupo expirado não perde mensagens enquanto aguarda o refresh do cache.
+    const automacaoDeGrupoActiva = async () => {
+      if (!isGroup) return false;
+      try {
+        const gs = await require('./hotCache').getGroupSettings(msg, remoteJid);
+        return hasActiveEntitlement(gs);
+      } catch { return false; }
+    };
+    if (isGroup && antiStatusCache.has(remoteJid) && await automacaoDeGrupoActiva()) {
       const mObj = msg.message || {};
       const innerMsg = mObj.ephemeralMessage?.message || mObj.viewOnceMessage?.message || mObj.viewOnceMessageV2?.message || mObj;
       const innerKeys = Object.keys(innerMsg);
@@ -169,7 +179,7 @@ async function onUpsert(sock, m, io) {
     const fromNumber = fromJid?.split('@')[0] || '';
 
     // ── v12.4: MUTE ENFORCEMENT — apaga msg de usuário mutado ──
-    if (isGroup && mutedCache.has(remoteJid)) {
+    if (isGroup && mutedCache.has(remoteJid) && await automacaoDeGrupoActiva()) {
       try {
         const inner = mutedCache.get(remoteJid);
         const candidates = [_numOf(fromJid), _numOf(msg.key.participantAlt || '')].filter(Boolean);

@@ -437,13 +437,49 @@ const adminHandlers = {
     await botConfigCache.set('capturalink:' + ctx.remoteJid, on);
     return reply(sock, msg, ctx, `🔗 *CAPTURA DE LINKS* ${on ? 'ACTIVA ✅' : 'DESACTIVADA ❌'}`);
   },
-  async soadm({ sock, msg, ctx, args }) {
+  // Compatibilidade: !soadm configura a mesma política persistida de
+  // !onlyadm/!adm1. Não chama groupSettingUpdate: só !fechar altera o chat
+  // nativo do WhatsApp para "só admins falam".
+  async soadm({ sock, msg, ctx, args, isOwner }) {
     if (!ctx.isGroup) return reply(sock, msg, ctx, '👥 Só em grupos.');
-    const on = args[0]?.toLowerCase() !== 'off';
-    try {
-      await sock.groupSettingUpdate(ctx.remoteJid, on ? 'announcement' : 'not_announcement');
-      return reply(sock, msg, ctx, `🔒 *SÓ ADMINS FALAM* ${on ? 'ACTIVO ✅' : 'DESACTIVADO ❌'}`);
-    } catch (e) { return reply(sock, msg, ctx, '❌ ' + (e.message || e)); }
+    let isAdmin = !!isOwner;
+    if (!isAdmin) {
+      try {
+        const meta = await sock.groupMetadata(ctx.remoteJid);
+        const ids = new Set([
+          ctx.senderJid, ctx.senderLid, ctx.senderNumber && `${ctx.senderNumber}@s.whatsapp.net`,
+        ].filter(Boolean).map(value => String(value).replace(/:\d+(?=@)/, '').toLowerCase()));
+        isAdmin = (meta?.participants || []).some(person => {
+          const jid = String(person?.id || person?.jid || '').replace(/:\d+(?=@)/, '').toLowerCase();
+          return !!person?.admin && ids.has(jid);
+        });
+      } catch {}
+    }
+    if (!isAdmin) return reply(sock, msg, ctx, '🛡️ Só administradores do grupo ou o Dono podem usar *soadm*.');
+
+    const GroupSettings = require('../../database/models/GroupSettings');
+    const action = String(args[0] || '').trim().toLowerCase();
+    const current = await GroupSettings.findOne({ groupJid: ctx.remoteJid }).lean().catch(() => null);
+    const currentOn = current?.onlyAdmins === true;
+    let on;
+    if (['status', 'estado'].includes(action)) on = currentOn;
+    else if (['off', 'desativar', 'desactivar', 'desligar', '0'].includes(action)) on = false;
+    else if (['toggle', 'alternar'].includes(action) || !action) on = !currentOn;
+    else if (['on', 'ativar', 'activar', 'ligar', 'ativo', '1'].includes(action)) on = true;
+    else return reply(sock, msg, ctx, 'Uso: *!soadm on*, *!soadm off* ou *!soadm status*.');
+
+    if (!['status', 'estado'].includes(action)) {
+      await GroupSettings.findOneAndUpdate(
+        { groupJid: ctx.remoteJid },
+        { $set: { groupJid: ctx.remoteJid, onlyAdmins: on } },
+        { upsert: true, new: true },
+      );
+      try { require('../hotCache').forgetGroup(ctx.remoteJid); } catch {}
+    }
+    return reply(sock, msg, ctx,
+      on
+        ? '🛡️ *BOT SÓ PARA ADMINS: ACTIVO* ✅\n\nDARK BOT e AURA respondem apenas a admins, subdonos e Dono. O chat nativo não foi fechado.\n\nPara liberar todos: *!soadm off*'
+        : '🛡️ *BOT SÓ PARA ADMINS: DESACTIVADO* ❌\n\nOs membros voltam a poder usar o bot conforme as permissões do grupo.');
   },
   async grupo({ sock, msg, ctx }) {
     if (!ctx.isGroup) return reply(sock, msg, ctx, '👥 Só em grupos.');

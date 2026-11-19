@@ -22,7 +22,7 @@ module.exports = function registerPremiumCases(registerCase) {
     const ownerLink  = `https://wa.me/${ownerNum}`;
     const channelUrl = await require('../identidadeCanal').canalLink();
 
-    const { generateWAMessageFromContent, prepareWAMessageMedia } = require('@systemzero/baileys');
+    const { generateWAMessageFromContent, prepareWAMessageMedia } = require('baileys-v6');
     const path = require('path');
     const fs   = require('fs');
     const logoPath = path.join(__dirname, '../../public/img/logo.jpg');
@@ -252,7 +252,7 @@ module.exports = function registerPremiumCases(registerCase) {
     }
 
     try {
-      const { generateWAMessageFromContent } = require('@systemzero/baileys');
+      const { generateWAMessageFromContent } = require('baileys-v6');
       const listaParams = { title: '🔧 + CMDS', sections };
       const nativeBtns = [
         { name: 'single_select', buttonParamsJson: JSON.stringify(listaParams) },

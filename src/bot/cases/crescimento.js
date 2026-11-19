@@ -31,7 +31,7 @@ module.exports = function registerCrescimento(registerCase) {
       try {
         const tipo = qImg ? 'imageMessage' : 'videoMessage';
         const m = qImg || qVid;
-        const { downloadContentFromMessage } = require('@systemzero/baileys');
+        const { downloadContentFromMessage } = require('baileys-v6');
         const stream = downloadContentFromMessage(m, qImg ? 'image' : 'video');
         const chunks = [];
         for await (const ch of stream) chunks.push(ch);

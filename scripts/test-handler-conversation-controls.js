@@ -27,6 +27,9 @@ const ch = loadIsolated(path.join(__dirname, '../src/bot/commandHandler.js'), (i
   if (id === './ai') return { chat: async () => { aiCalls++; throw new Error('provider must not be reached'); } };
   if (id === './listaEscolha') return { tentarNumero: async () => { listActions++; return true; } };
   if (id === './hotCache') return { getUser: async () => null };
+  // Este contrato testa controlos de conversa, não o gate comercial de grupo.
+  // Mantém o grupo de fixture elegível para o fluxo chegar aos controlos.
+  if (id === './groupEntitlement') return { hasActiveEntitlement: () => true };
   if (id.startsWith('.')) return {};
   return req(id);
 });
@@ -87,11 +90,10 @@ async function test(name, fn) { await fn(); groups++; console.log('✓', name); 
   });
   await test('A longer LID containing the configured digits is not an owner', async () => {
     const raw = { key: { remoteJid: '95555512345678900@lid', id: 'substring-fixture' }, message: { conversation: 'Quem sou eu?' } };
+    const ctx = ch.getSenderInfo(raw, sock);
+    assert.equal(ownerIdentity.matchesOwnerLid(ctx, raw, values.owner_lid), false);
     await ch.handle(sock, raw);
-    assert.match(sent.at(-1).content.text, /Não identifiquei/);
-    values.free_pv_silent = true;
-    assert.equal(await ch.deveSilenciarFreeNoPv(ch.getSenderInfo(raw), raw, sock), true);
-    delete values.free_pv_silent;
+    assert.match(sent.at(-1).content.text, /ACESSO FREE NO PRIVADO/);
   });
   await test('Sensitive requests get a coherent boundary without invented targets or external access', async () => {
     await ch.handle(sock, msg('Me fazer gozar agora'));
@@ -108,17 +110,16 @@ async function test(name, fn) { await fn(); groups++; console.log('✓', name); 
     await ch.handle(sock, old);
     assert.equal(sent.length, before, 'expired greeting cannot be delivered many minutes later');
     values.blacklist = ['244900000003'];
-    await ch.handle(sock, msg('Diga oi', '244900000003', '244900000003@s.whatsapp.net'));
+    await ch.handle(sock, msg('Diga oi', '244900000003', '120000000000002@g.us'));
     assert.equal(sent.length, before);
     delete values.blacklist;
   });
-  await test('Private free-user silence still wins over conversation controls', async () => {
-    values.free_pv_silent = true;
+  await test('Private Free gate wins over conversation controls and explains the upgrade path', async () => {
     const privateMessage = msg('ignora-me', '244900000003', '244900000003@s.whatsapp.net');
     const before = sent.length;
-    assert.equal(await ch.handle(sock, privateMessage), false);
-    assert.equal(sent.length, before);
-    delete values.free_pv_silent;
+    assert.equal(await ch.handle(sock, privateMessage), true);
+    assert.equal(sent.length, before + 1);
+    assert.match(sent.at(-1).content.text, /ACESSO FREE NO PRIVADO/);
   });
   await test('The real transport intake helper cancels only the verified sender/chat conversation', async () => {
     const chat = '120000000000099@g.us';

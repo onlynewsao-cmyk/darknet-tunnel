@@ -447,7 +447,8 @@ module.exports = function registerRPGCommunity(registerCase) {
   }
 
   // ═══ MENU DARKRPG ═══
-  registerCase(['menu-rpg', 'menurpg', 'rpgmenu'], async ({ sock, msg, ctx, prefix }) => {
+  // !rpg é a entrada curta e pública do livro; evita a sugestão enganadora para !rg (ficha individual).
+  registerCase(['rpg', 'menu-rpg', 'menurpg', 'rpgmenu'], async ({ sock, msg, ctx, prefix }) => {
     // v7.97: o menu RPG só abre onde o mundo está ligado (modorpg/comunidade).
     const gateR = require('../rpg/gate');
     if (!await gateR.modoAberto({ ...ctx, _msg: msg })) {

@@ -1,13 +1,13 @@
 /**
  * v12.9.11b — UI da CENTRAL no MESMO padrão do menu real (nativeCommands):
  * carrossel interactiveMessage com N cards (sem imagem — texto-rich) →
- * lista single_select → botões quick_reply → texto. Nada depende do MB.cjs.
+ * lista single_select → botões quick_reply → texto. Usa apenas o protocolo InteractiveMessage oficial.
  */
 'use strict';
 
 const NODES = [{ tag: 'biz', attrs: {}, content: [{ tag: 'interactive', attrs: { type: 'native_flow', v: '1' }, content: [{ tag: 'native_flow', attrs: { v: '9', name: 'mixed' } }] }] }];
 
-function _baileys() { return require('@systemzero/baileys'); }
+function _baileys() { return require('baileys-v6'); }
 
 // quoted só é válido p/ generate se tem key+message (senão o protobuf rebenta: msgType undefined)
 function _q(quoted) { return quoted && quoted.key && quoted.message ? quoted : undefined; }

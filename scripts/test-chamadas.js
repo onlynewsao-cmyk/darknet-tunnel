@@ -2,7 +2,7 @@
  * DARK BOT — CHAMADAS: atender, ouvir, falar, responder (v6.68)
  *
  * ── O QUE O BAILEYS DEIXA MESMO FAZER ────────────────────────
- * Auditado no @systemzero/baileys 1.1.1:
+ * Auditado no baileys-v6 1.1.1:
  *   ✅ rejectCall(callId, callFrom)
  *   ✅ evento 'call' (offer/ringing/accept/reject/timeout/terminate)
  *   ❌ acceptCall — NÃO EXISTE
@@ -56,7 +56,7 @@ function mkSock() {
   // ── A. O que a API do Baileys realmente tem ────────────────
   console.log('\n▸ A. Limites reais da API (auditado no código-fonte)');
   const fs = require('fs');
-  const bail = path.join(__dirname, '..', 'node_modules', '@systemzero', 'baileys', 'lib', 'Socket', 'messages-recv.js');
+  const bail = path.join(__dirname, '..', 'node_modules', 'baileys-v6', 'lib', 'Socket', 'messages-recv.js');
   const src = fs.existsSync(bail) ? fs.readFileSync(bail, 'utf8') : '';
   t('rejectCall existe', /const rejectCall = async/.test(src), 'confirmado no código');
   t('acceptCall NÃO existe (é por isso que não há stream)', !/acceptCall|answerCall/.test(src), 'confirmado');

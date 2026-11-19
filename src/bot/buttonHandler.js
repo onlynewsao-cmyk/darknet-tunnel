@@ -1,6 +1,6 @@
 /**
  * DARK BOT v5.1 — Button Handler ULTRA 🕸️
- * Motor completo de interactividade via @systemzero/baileys
+ * Motor completo de interactividade via baileys-v6
  *
  * ── PORQUE É QUE OS BOTÕES NÃO APARECIAM ANTES ────────────────
  * 1. A cascata antiga tentava PRIMEIRO o interactiveMessage SEM
@@ -14,12 +14,11 @@
  *  sendButtons() tenta:
  *   1º sendInteractive()  — viewOnce + messageContextInfo +
  *                           nativeFlow quick_reply + additionalNodes
- *   2º sendButtonV2()     — ButtonV2 nativo do @systemzero (MB.cjs)
- *   3º sendNativeDirect() — interactiveMessage simples
- *   4º TEXTO formatado    — sempre funciona
+ *   2º sendNativeDirect() — interactiveMessage simples
+ *   3º TEXTO formatado    — sempre funciona
  *
  * Métodos disponíveis:
- *  sendButtonV2()   — ButtonV2 nativo do @systemzero (botões clicáveis reais)
+ *  sendButtonV2()   — adaptador legado para interactive oficial (botões clicáveis reais)
  *  sendCarousel()   — Carousel com cards + imagem + botões
  *  sendButtons()    — cascata automática acima
  *  sendList()       — single_select interactivo
@@ -34,15 +33,10 @@ const {
   generateWAMessageFromContent,
   proto,
   prepareWAMessageMedia,
-} = require('@systemzero/baileys');
+} = require('baileys-v6');
 
-// ── Lazy load MB.cjs ────────────────────────────────────────
-let _MB = null;
-function getMB() {
-  if (_MB) return _MB;
-  try { _MB = require('@systemzero/baileys/lib/MB.cjs'); } catch {}
-  return _MB;
-}
+// O fork removido expunha MB.cjs. O Baileys oficial usa directamente
+// InteractiveMessage; não carregamos módulos privados/não documentados.
 
 // ── additionalNodes — o "truque" native_flow do servidor WA ─
 const NATIVE_FLOW_NODES = [
@@ -152,85 +146,47 @@ async function sendInteractive(sock, jid, title, footer, buttons, quoted = null,
 }
 
 // ─────────────────────────────────────────────
-// 2º MÉTODO — BUTTONV2 nativo @systemzero (MB.cjs)
+// ADAPTADOR LEGADO — mantém a API pública, usando interactive oficial
 // ─────────────────────────────────────────────
 /**
- * Envia mensagem com botões ButtonV2 reais.
- * @param {string}   title     — título do card (setTitle)
- * @param {string}   body      — corpo do card (setBody)
- * @param {string}   footer    — rodapé (setFooter)
- * @param {Array}    buttons   — [{text, id}]
- * @param {string}   thumbnail — URL ou Buffer da imagem (opcional)
- * @param {object}   quoted    — mensagem original para citar
+ * Mantém os chamadores antigos de sendButtonV2 sem depender de MB.cjs.
+ * O payload é o InteractiveMessage oficial que o WhatsApp suporta.
  */
 async function sendButtonV2(sock, jid, title, body, footer, buttons, thumbnail = null, quoted = null) {
-  const MB = getMB();
-  if (!MB?.ButtonV2) throw new Error('ButtonV2 indisponível');
-
-  const build = (withThumb) => {
-    const msg = new MB.ButtonV2(sock);
-    if (title) msg.setTitle(String(title).slice(0, 60));
-    msg.setBody(String(body || title || ''));
-    if (footer) msg.setFooter(String(footer));
-    if (withThumb && thumbnail) {
-      try { msg.setThumbnail(thumbnail); } catch {}
-    }
-    for (const btn of normalizeButtons(buttons)) msg.addButton(btn.text, btn.id);
-    return msg;
-  };
-
-  try {
-    return await build(true).send(jid, { quoted });
-  } catch (e1) {
-    // Thumbnail pode falhar (URL offline, resize) — tenta sem imagem
-    try {
-      return await build(false).send(jid, { quoted });
-    } catch (e2) {
-      throw e2;
-    }
-  }
+  const text = [title, body].filter(Boolean).map(String).join('\n\n') || 'Escolhe uma opção';
+  return sendInteractive(sock, jid, text, footer, normalizeButtons(buttons), quoted, { image: thumbnail });
 }
 
 // ─────────────────────────────────────────────
 // CAROUSEL — cards com imagem + botões
 // ─────────────────────────────────────────────
 async function sendCarousel(sock, jid, cards, quoted = null) {
-  const MB = getMB();
-  if (!MB?.Carousel) throw new Error('Carousel indisponível');
-
-  const carousel = new MB.Carousel(sock);
-
-  for (const card of cards) {
-    const btns = normalizeButtons(card.buttons || []);
-    const nativeBtns = btns.map((b) => ({
+  if (!Array.isArray(cards) || !cards.length) throw new Error('carrossel sem cards');
+  const officialCards = await Promise.all(cards.slice(0, 10).map(async (card) => {
+    const buttons = normalizeButtons(card.buttons || []).map((b) => ({
       name: 'quick_reply',
       buttonParamsJson: JSON.stringify({ display_text: b.text, id: b.id }),
     }));
-
-    let header = { hasMediaAttachment: false };
-    if (card.thumbnail) {
-      try {
-        let buf = card.thumbnail;
-        if (!Buffer.isBuffer(card.thumbnail)) {
-          const { fetchBuffer } = require('./mediaHandler');
-          buf = await fetchBuffer(card.thumbnail);
-        }
-        if (buf && buf.length > 100) {
-          const media = await prepareWAMessageMedia({ image: buf }, { upload: sock.waUploadToServer });
-          if (media?.imageMessage) header = { hasMediaAttachment: true, imageMessage: media.imageMessage };
-        }
-      } catch {}
-    }
-
-    carousel.addCard({
+    const header = await buildHeader(sock, card.thumbnail);
+    const raw = {
       header,
-      body: { text: card.body || card.title || '' },
-      footer: { text: card.footer || (require('../config').bot.name + ' 🕸️') },
-      nativeFlowMessage: { buttons: nativeBtns },
-    });
-  }
-
-  return carousel.send(jid, { quoted });
+      body: proto.Message.InteractiveMessage.Body.fromObject({ text: String(card.body || card.title || '') }),
+      footer: proto.Message.InteractiveMessage.Footer.fromObject({ text: String(card.footer || require('../config').bot.name + ' 🕸️') }),
+      nativeFlowMessage: proto.Message.InteractiveMessage.NativeFlowMessage.fromObject({ buttons }),
+    };
+    return proto.Message.InteractiveMessage.CarouselCard?.fromObject
+      ? proto.Message.InteractiveMessage.CarouselCard.fromObject(raw)
+      : proto.Message.InteractiveMessage.fromObject(raw);
+  }));
+  const content = {
+    interactiveMessage: proto.Message.InteractiveMessage.fromObject({
+      body: proto.Message.InteractiveMessage.Body.fromObject({ text: '' }),
+      footer: proto.Message.InteractiveMessage.Footer.fromObject({ text: require('../config').bot.name + ' 🕸️' }),
+      carouselMessage: { cards: officialCards },
+    }),
+  };
+  const m = generateWAMessageFromContent(jid, content, { userJid: sock.user?.id, quoted });
+  return sock.relayMessage(jid, m.message, { messageId: m.key.id, additionalNodes: NATIVE_FLOW_NODES });
 }
 
 // ─────────────────────────────────────────────
@@ -258,8 +214,8 @@ async function sendNativeDirect(sock, jid, title, footer, buttons, quoted, opts 
 }
 
 // ─────────────────────────────────────────────
-// SEND BUTTONS — cascata automática CORRIGIDA
-// ordem: Interactive(viewOnce) → ButtonV2 → Direct → Texto
+// SEND BUTTONS — cascata automática oficial
+// ordem: Interactive(viewOnce) → Direct → Texto
 // ─────────────────────────────────────────────
 async function sendButtons(sock, jid, title, footer, buttons, quoted = null, opts = {}) {
   const clean = normalizeButtons(buttons);
@@ -272,11 +228,9 @@ async function sendButtons(sock, jid, title, footer, buttons, quoted = null, opt
 
   // 1º — interactive viewOnce (botões clicáveis na maioria dos clientes)
   try { return await sendInteractive(sock, jid, title, footer, clean, quoted, opts); } catch {}
-  // 2º — ButtonV2 nativo (MB.cjs)
-  try { return await sendButtonV2(sock, jid, '', title, footer, clean, opts.image, quoted); } catch {}
-  // 3º — interactive directo
+  // 2º — interactive directo
   try { return await sendNativeDirect(sock, jid, title, footer, clean, quoted, opts); } catch {}
-  // 4º — texto (sempre funciona)
+  // 3º — texto (sempre funciona)
   return sock.sendMessage(jid, { text: buttonsText(title, footer, clean) }, { quoted });
 }
 

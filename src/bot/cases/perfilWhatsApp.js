@@ -32,7 +32,7 @@ function imagemDaMensagem(msg) {
 }
 
 async function descarregarImagem(img) {
-  const { downloadContentFromMessage } = require('@systemzero/baileys');
+  const { downloadContentFromMessage } = require('baileys-v6');
   const partes = [];
   for await (const parte of downloadContentFromMessage(img, 'image')) partes.push(parte);
   return Buffer.concat(partes);

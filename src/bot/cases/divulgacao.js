@@ -103,7 +103,7 @@ async function _relayBiz(sock, jid, m, extra = {}) {
 
 /** Lista de seleção (single_select) darktoxic. */
 async function _lista(sock, msg, ctx, { titulo, corpo, seccoes, rodape }) {
-  const { generateWAMessageFromContent, proto } = require('@systemzero/baileys');
+  const { generateWAMessageFromContent, proto } = require('baileys-v6');
   const m = generateWAMessageFromContent(_alvo(ctx), {
     interactiveMessage: proto.Message.InteractiveMessage.fromObject({
       body: { text: corpo },
@@ -597,7 +597,7 @@ async function _onda(sock, msg, ctx, montar, vis, rotulo, vezes = 1, cb = null) 
   // e já nasce a próxima acção à mão (repõe a sessão, vê stats, para).
   const textoR = _resumo(r, p);
   try {
-    const { generateWAMessageFromContent, proto } = require('@systemzero/baileys');
+    const { generateWAMessageFromContent, proto } = require('baileys-v6');
     const m = generateWAMessageFromContent(_alvo(ctx), {
       interactiveMessage: proto.Message.InteractiveMessage.fromObject({
         body: { text: textoR },
@@ -630,7 +630,7 @@ async function _mediaDe(msg, tipo, caption) {
   const alvo = q?.[chave] || msg?.message?.[chave];
   if (!alvo) return null;
   try {
-    const { downloadMediaMessage } = require('@systemzero/baileys');
+    const { downloadMediaMessage } = require('baileys-v6');
     // a chave da MENSAGEM CITADA (stanzaId) — a desencriptação usa o id dela
     const ctxInfo = msg?.message?.extendedTextMessage?.contextInfo || {};
     const fakeMsg = {
@@ -1554,7 +1554,10 @@ module.exports = function registerDivulgacao(_registerCase) {
       const secret = pollKey?.messageSecret;
       if (stanzaId && secret) {
         // v9.21: votar com encryptPollVote se disponível
-        const { encryptPollVote } = require('@systemzero/baileys');
+        const { encryptPollVote } = require('baileys-v6');
+        if (typeof encryptPollVote !== 'function') {
+          return reply('☣️ Esta versão oficial do Baileys não expõe voto encriptado manual. Vota directamente na enquete no WhatsApp.');
+        }
         const vote = encryptPollVote({
           selectedOptions: [opcaoEscolhida],
         }, {

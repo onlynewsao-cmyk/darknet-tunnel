@@ -46,7 +46,10 @@ function ffmpegBin() {
 let _ytdlp = null;
 function ytdlpBin() {
   if (_ytdlp !== null) return _ytdlp;
-  for (const p of ['yt-dlp', '/usr/bin/yt-dlp', '/usr/local/bin/yt-dlp']) {
+  // `pip install --user yt-dlp` é o caminho padrão em hosts sem root;
+  // encontrá-lo aqui mantém o motor pronto sem chave, proxy ou PATH manual.
+  const userPipBin = path.join(os.homedir(), '.local', 'bin', process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp');
+  for (const p of ['yt-dlp', '/usr/bin/yt-dlp', '/usr/local/bin/yt-dlp', userPipBin]) {
     try { const r = spawnSync(p, ['--version'], { timeout: 3000, stdio: 'pipe' }); if (r.status === 0) { _ytdlp = p; return p; } } catch {}
   }
   _ytdlp = ''; return '';

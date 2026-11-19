@@ -20,11 +20,11 @@
 
 /** @returns {{USyncQuery:Function, USyncUser:Function}} */
 function pegarClasses() {
-  const raiz = require('@systemzero/baileys');
+  const raiz = require('baileys-v6');
   if (raiz.USyncQuery && raiz.USyncUser) return raiz;
   // fallback para import directo do sub-módulo
-  const q = require('@systemzero/baileys/lib/WAUSync/USyncQuery.js');
-  const u = require('@systemzero/baileys/lib/WAUSync/USyncUser.js');
+  const q = require('baileys-v6/lib/WAUSync/USyncQuery.js');
+  const u = require('baileys-v6/lib/WAUSync/USyncUser.js');
   return { USyncQuery: q.USyncQuery, USyncUser: u.USyncUser };
 }
 

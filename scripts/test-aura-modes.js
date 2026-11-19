@@ -119,6 +119,14 @@ const check = (nome, cond, extra = '') => {
   check('Prompt define-se como assistente', /assistente/i.test(p));
   check('Prompt pede respostas curtas', /curt|1 a 3 frases/i.test(p));
 
+  console.log('\n▸ Assistente Free restrito no PV');
+  const pFree = modes.buildAssistantPrompt({
+    botName: 'DARK BOT', userName: 'Free', isGroup: false, freePvLimited: true,
+  });
+  check('Prompt Free só permite conversa textual simples', /respostas textuais simples/i.test(pFree));
+  check('Prompt Free proíbe comandos, mídia e ações externas', /não executes.*comandos.*m[ií]dia.*acção externa/i.test(pFree));
+  check('Prompt Free não reutiliza a instrução de executar', !/TU EXECUTAS, NÃO SÓ EXPLICAS/i.test(pFree));
+
   console.log('\n▸ Sanitização (se a persona escapar)');
   const mod = require(path.join(__dirname, '..', 'src', 'aura', 'auraModes'));
   // acede à função interna via assistantFallback/behaviour observável

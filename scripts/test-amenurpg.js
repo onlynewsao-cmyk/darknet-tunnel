@@ -55,7 +55,7 @@ const MSG = (id) => ({ key: { id, remoteJid: 'GRP@g.us', participant: '2449@s.wh
 
   const reg = {};
   require('../src/bot/cases/rpgCommunity')((nomes, fn) => { for (const n of [].concat(nomes)) reg[n] = fn; });
-  assert.ok(reg.menurpg && reg['menu-rpg'] && reg.rpgmenu, 'menurpg registado');
+  assert.ok(reg.rpg && reg.menurpg && reg['menu-rpg'] && reg.rpgmenu, '!rpg e menurpg registados');
 
   // ── 1. Fechado → MSG_MODO ──────────────────────────────────
   _gs = null; sent.length = 0; relays = 0;

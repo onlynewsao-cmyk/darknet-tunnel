@@ -394,9 +394,8 @@ async function executar(acao, valor, { sock, ctx }) {
     }
 
     // ── v6.61: COMUNIDADES ────────────────────────────────
-    // A API do Baileys tem communityCreate/communityCreateGroup/
-    // communityLinkGroup, mas o bot nunca as usava — por isso
-    // "criar comunidade" nunca funcionou.
+    // Baileys oficial expõe communityCreate. Para subgrupos, a camada
+    // de comunidade usa linked_parent e só recorre a helpers extras se existirem.
     case 'criarComunidade': {
       if (!valor) return { ok: false, msg: 'Diz-me o nome. Ex: *cria uma comunidade chamada Dark Net*' };
       if (typeof sock.communityCreate !== 'function') {

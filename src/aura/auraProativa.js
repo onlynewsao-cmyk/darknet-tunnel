@@ -119,11 +119,21 @@ async function _chatsAcordados() {
   const chats = [];
   try {
     const GroupSettings = require('../database/models/GroupSettings');
-    // v7.71: todos os grupos MENOS os que o Dark mandou dormir.
-    const gs = await GroupSettings.find({ auraMode: { $ne: 'sleep' } })
-      .select('groupJid groupName').lean().catch(() => []);
+    // Só grupos com serviço activo entram no território proactivo. O filtro
+    // reduz consultas e a verificação em memória cobre documentos legados.
+    const now = new Date();
+    const gs = await GroupSettings.find({
+      auraMode: { $ne: 'sleep' },
+      $or: [
+        { isHosted: true, hostedUntil: { $exists: false } },
+        { isHosted: true, hostedUntil: null },
+        { isHosted: true, hostedUntil: { $gt: now } },
+        { trialExpiresAt: { $gt: now } },
+      ],
+    }).select('groupJid groupName isHosted hostedUntil trialExpiresAt').lean().catch(() => []);
+    const { hasActiveEntitlement } = require('../bot/groupEntitlement');
     for (const g of gs || []) {
-      if (g.groupJid) chats.push({ jid: g.groupJid, tipo: 'grupo', nome: g.groupName || '' });
+      if (g.groupJid && hasActiveEntitlement(g)) chats.push({ jid: g.groupJid, tipo: 'grupo', nome: g.groupName || '' });
     }
   } catch {}
   const dono = String(config.owner.number || '').replace(/\D/g, '');

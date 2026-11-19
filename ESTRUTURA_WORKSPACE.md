@@ -11,7 +11,7 @@ Branch: `main` · Último commit visto: `v11.2.0` (RPG Multiverso)
 
 Bot WhatsApp Node.js com 4 superfícies:
 
-1. **Runtime WhatsApp** (Baileys `@systemzero/baileys`)
+1. **Runtime WhatsApp** (Baileys `baileys-v6 (alias oficial @whiskeysockets/baileys 6.7.24)`)
 2. **AURA** — IA conversacional com memória, voz, intenções e acções
 3. **Dashboard web** — Express + EJS + Socket.IO
 4. **Domínio** — MongoDB, downloads, RPG, DarkShield, VoIP, Decrypter

@@ -202,7 +202,7 @@ async function tentarAceitarChamada(sock, call) {
   const tentativas = [];
 
   // v6.76: cada sock.query respeita defaultQueryTimeoutMs (60s). Como
-  // acceptCall/answerCall/IQ accept NÃO existem no @systemzero/baileys
+  // acceptCall/answerCall/IQ accept NÃO existem no baileys-v6
   // (só rejectCall), estas tentativas falham SEMPRE — e falhavam devagar:
   // 2 querys × 60s = até 2 minutos até cair no fallback PTT. Nesse tempo
   // o WhatsApp já desistiu da chamada e quem ligou não recebeu nada.

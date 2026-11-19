@@ -59,7 +59,7 @@ module.exports = function registerAuraHub(registerCase) {
     ];
 
     try {
-      const { generateWAMessageFromContent, proto } = require('@systemzero/baileys');
+      const { generateWAMessageFromContent, proto } = require('baileys-v6');
       const m = generateWAMessageFromContent(ctx.remoteJid, {
         interactiveMessage: proto.Message.InteractiveMessage.fromObject({
           body: { text: corpo },

@@ -9,64 +9,44 @@ const botConfigCache  = require('./botConfigCache');
 const GroupSettings   = require('../database/models/GroupSettings');
 const changeThemes    = require('./changeThemes');
 const { generateWelcomeImage } = require('./welcomeImage');
+const participantIdentity = require('./participantIdentity');
+const { DEFAULT_WELCOME_TEMPLATE, DEFAULT_GOODBYE_TEMPLATE } = require('../database/groupNoticeDefaults');
+const { hasActiveEntitlement } = require('./groupEntitlement');
 
-function fillVars(text, { userName, groupName, botName, ownerName, number } = {}) {
+function fillVars(text, { userName, groupName, botName, ownerName, number, memberCount } = {}) {
+  // Sem PN resolvido, {user} usa o nome legível; nunca `@` + dígitos do LID.
+  const safeUser = number ? `@${number}` : (userName || 'Membro');
   return String(text || '')
-    .replace(/\{user\}/gi,  `@${number}`)
-    .replace(/\{nome\}/gi,  userName  || number || '')
+    .replace(/\{user\}/gi,  safeUser)
+    .replace(/\{nome\}/gi,  userName  || number || 'Membro')
     .replace(/\{grupo\}/gi, groupName || '')
+    .replace(/\{membros\}/gi, String(Number(memberCount) || 0))
     .replace(/\{bot\}/gi,   botName   || 'DARK BOT')
     .replace(/\{dono\}/gi,  ownerName || 'Dark Net')
     .trim();
 }
 
 /**
- * v11.2.3 — Baileys moderno manda participants como OBJECTOS
- *   { id, lid?, phoneNumber?, admin?, notify?, name? }  (Contact / GroupParticipant)
- * e NÃO como strings "244…@s.whatsapp.net".
- *
- * Devolve sempre { jid, pnJid, number, raw, notify?, name? } com jid preferindo o PN.
+ * Compatibilidade pública para os consumidores antigos deste módulo. A
+ * normalização segura vive em participantIdentity e NUNCA extrai telefone de
+ * um `@lid`.
  */
 function normalizeParticipant(p) {
-  if (!p) return null;
-  if (typeof p === 'string') {
-    const jid = p;
-    const number = String(jid).split(':')[0].split('@')[0].replace(/\D/g, '');
-    return {
-      jid,
-      pnJid: jid.includes('@s.whatsapp.net') ? jid : (number ? number + '@s.whatsapp.net' : jid),
-      number,
-      raw: p,
-    };
-  }
-  if (typeof p === 'object') {
-    const id = p.id || p.jid || '';
-    const lid = p.lid || (String(id).includes('@lid') ? id : '');
-    const phone = p.phoneNumber || p.pn || '';
-    let pnJid = '';
-    if (typeof phone === 'string' && phone.includes('@')) pnJid = phone;
-    else if (typeof phone === 'string' && phone.replace(/\D/g, '').length >= 8) pnJid = phone.replace(/\D/g, '') + '@s.whatsapp.net';
-    else if (typeof id === 'string' && id.includes('@s.whatsapp.net')) pnJid = id;
-    const jid = pnJid || id || lid || '';
-    let number = '';
-    if (pnJid) number = pnJid.split(':')[0].split('@')[0].replace(/\D/g, '');
-    if (!number && phone) number = String(phone).replace(/\D/g, '');
-    if (!number && id && !String(id).includes('@lid')) number = String(id).split(':')[0].split('@')[0].replace(/\D/g, '');
-    return {
-      jid,
-      pnJid: pnJid || jid,
-      number,
-      lid,
-      notify: p.notify || p.pushName || '',
-      name: p.name || p.verifiedName || '',
-      raw: p,
-    };
-  }
-  return null;
+  return participantIdentity.normalizeParticipant(p);
+}
+
+async function resolveParticipant(sock, p, meta) {
+  return participantIdentity.resolveParticipant(sock, p, meta);
 }
 
 function jidNum(j) {
-  return String(j || '').split(':')[0].split('@')[0].replace(/\D/g, '');
+  return participantIdentity.jidNumber(j);
+}
+
+function safeMentionJids(...jids) {
+  return jids
+    .filter(jid => typeof jid === 'string' && jid && !participantIdentity.isLid(jid))
+    .filter((jid, index, all) => all.indexOf(jid) === index);
 }
 
 /** True se o texto parece só um número de telefone (não um nome). */
@@ -181,13 +161,16 @@ async function _comboDispara(sock, groupJid) {
   const combo = _comboWel.get(groupJid);
   _comboWel.delete(groupJid);
   if (!combo || !combo.pessoas.length) return;
+  // A janela anti-rajada é assíncrona; revalida o serviço antes de falar.
+  const gs = await GroupSettings.findOne({ groupJid }).lean().catch(() => null);
+  if (!hasActiveEntitlement(gs)) return;
   const mostrados = combo.pessoas.slice(0, WEL_COMBO_MAX_NOMES);
   const resto = combo.pessoas.length - mostrados.length;
   const nomes = mostrados.map((p) => {
-    const label = p.name && !looksLikePhone(p.name) && p.name !== p.num
+    if (!p.num) return `*${p.name || 'Novo membro'}*`;
+    return p.name && !looksLikePhone(p.name) && p.name !== p.num
       ? `*${p.name}* (@${p.num})`
       : `@${p.num}`;
-    return label;
   }).join(', ');
   const nomeBot = config.bot?.name || 'DARK BOT';
   const texto =
@@ -198,7 +181,7 @@ async function _comboDispara(sock, groupJid) {
   _ultimoWel.set(groupJid, Date.now());
   await sock.sendMessage(groupJid, {
     text: texto,
-    mentions: mostrados.map((p) => p.jid),
+    mentions: safeMentionJids(...mostrados.map((p) => p.jid)),
   }).catch(() => {});
 }
 
@@ -208,24 +191,52 @@ async function ownerPv(sock, text) {
   return sock.sendMessage(`${num}@s.whatsapp.net`, { text }).catch(() => {});
 }
 
-/** X9 profissional (sem one-liner amador). */
-function buildX9Text(action, number, displayName) {
-  const verbs = {
-    add:     { icon: '➕', label: 'Entrou no grupo' },
-    remove:  { icon: '➖', label: 'Saiu do grupo' },
-    promote: { icon: '⬆️', label: 'Promovido a administrador' },
-    demote:  { icon: '⬇️', label: 'Removido da administração' },
-  };
-  const v = verbs[action] || { icon: '•', label: action };
-  const showName = displayName && !looksLikePhone(displayName) && String(displayName) !== String(number);
-  const who = showName
-    ? `*${displayName}*\n@${number}`
-    : `@${number || 'membro'}`;
-  return (
-    `📡 *X9 · actividade*\n` +
-    `${v.icon} ${v.label}\n` +
-    `${who}`
-  );
+/** Formata uma pessoa sem vazar identificadores LID em texto. */
+function x9Person(identity, fallbackName) {
+  const p = typeof identity === 'object' && identity
+    ? identity
+    : { number: identity, name: fallbackName };
+  const number = String(p.number || '').replace(/\D/g, '');
+  const name = p.displayName || p.name || p.notify || fallbackName || '';
+  const showName = name && !looksLikePhone(name) && String(name) !== number;
+  if (number) return showName ? `*${name}*\n@${number}` : `@${number}`;
+  return showName ? `*${name}*` : '_Identidade não informada pelo WhatsApp_';
+}
+
+/**
+ * X9 com sujeito e autor. A assinatura antiga (action, number, nome) continua
+ * aceite; a forma nova é `buildX9Text(action, subject, undefined, actor)`.
+ */
+function buildX9Text(action, subject, displayName, actor) {
+  const alvo = typeof subject === 'object' && subject
+    ? { ...subject, displayName: subject.displayName || displayName }
+    : { number: subject, displayName };
+  const executor = actor && typeof actor === 'object' ? actor : null;
+  const mesmo = executor && participantIdentity.sameParticipant(alvo, executor);
+
+  let icon = '•';
+  let label = String(action || 'Evento do grupo');
+  let papelAlvo = 'Pessoa afectada';
+  let papelAutor = 'Acção feita por';
+  if (action === 'add') {
+    icon = '➕'; label = mesmo ? 'Entrada no grupo' : 'Membro adicionado ao grupo';
+    papelAlvo = mesmo ? 'Entrou' : 'Entrou';
+    papelAutor = 'Adicionado por';
+  } else if (action === 'remove') {
+    icon = mesmo ? '🚪' : '🚫';
+    label = mesmo ? 'Saída voluntária do grupo' : (executor ? 'Membro removido do grupo' : 'Saída ou remoção do grupo');
+    papelAlvo = mesmo ? 'Saiu' : (executor ? 'Removido' : 'Participante');
+    papelAutor = 'Removido por';
+  } else if (action === 'promote') {
+    icon = '⬆️'; label = 'Promoção a administrador'; papelAlvo = 'Promovido'; papelAutor = 'Promovido por';
+  } else if (action === 'demote') {
+    icon = '⬇️'; label = 'Rebaixamento de administrador'; papelAlvo = 'Rebaixado'; papelAutor = 'Rebaixado por';
+  }
+
+  let text = `📡 *X9 · actividade*\n${icon} ${label}\n👤 *${papelAlvo}:* ${x9Person(alvo, displayName)}`;
+  if (executor && !mesmo) text += `\n🛡️ *${papelAutor}:* ${x9Person(executor)}`;
+  else if (!executor && ['remove', 'promote', 'demote'].includes(action)) text += '\n🛡️ *Autor:* _não informado pelo WhatsApp_';
+  return text;
 }
 
 async function handle(sock, event) {
@@ -233,9 +244,12 @@ async function handle(sock, event) {
     const { id: groupJid, action } = event;
     if (!groupJid?.endsWith('@g.us')) return;
 
-    // v11.2.3: normaliza participants (string LEGACY ou objecto Baileys actual)
+    // O metadata pode trazer o PN já associado ao LID; se não trouxer,
+    // resolveParticipant consulta a tabela privada do Signal no socket.
     const rawParts = Array.isArray(event.participants) ? event.participants : [];
-    const parts = rawParts.map(normalizeParticipant).filter(Boolean);
+    const meta = event._participantMetadata || await sock.groupMetadata(groupJid).catch(() => null);
+    const parts = (await Promise.all(rawParts.map(p => resolveParticipant(sock, p, meta)))).filter(Boolean);
+    const author = event.authorInfo || await resolveParticipant(sock, event.author, meta);
     if (!parts.length && rawParts.length) {
       console.warn('[GroupEvents] participants ilegíveis:', typeof rawParts[0], JSON.stringify(rawParts[0]).slice(0, 120));
     }
@@ -251,8 +265,6 @@ async function handle(sock, event) {
     const participanteDoBot = (p) => (p?.number && botNums.has(p.number)) ||
       [p?.jid, p?.pnJid, p?.lid, p?.raw?.id, p?.raw?.jid].some((id) => botIds.has(String(id || '').toLowerCase()));
     const botRemoved = action === 'remove' && parts.some(participanteDoBot);
-
-    const meta      = await sock.groupMetadata(groupJid).catch(() => null);
     const groupName = meta?.subject || 'grupo';
 
     // v12.9.24 CAPTURA PASSIVA: cada movimento num grupo alimenta a base
@@ -292,14 +304,23 @@ async function handle(sock, event) {
 
     const gs = await GroupSettings.findOne({ groupJid }).lean().catch(() => null);
 
+    // Eventos chegam mesmo em grupos onde o bot foi apenas adicionado. Sem
+    // trial/aluguel não há welcome, X9, promoção automática, avisos ou
+    // punições. A única chamada mantida é a limpeza da auto-apresentação,
+    // para cancelar qualquer timer velho caso o serviço tenha acabado.
+    if (!hasActiveEntitlement(gs)) {
+      try { await require('./autoApresentar').onParticipantsUpdate(sock, groupJid, parts, action, meta); } catch {}
+      return;
+    }
+
     // anti-fobados / auto-apresentação (aceitam string OU objecto)
     let banidosFoba = [];
     if (action === 'add') {
-      try { banidosFoba = await require('./antiFoba').onJoin(sock, groupJid, rawParts, meta) || []; } catch {}
-      try { await require('./autoApresentar').onParticipantsUpdate(sock, groupJid, rawParts, action, meta); } catch {}
+      try { banidosFoba = await require('./antiFoba').onJoin(sock, groupJid, parts, meta) || []; } catch {}
+      try { await require('./autoApresentar').onParticipantsUpdate(sock, groupJid, parts, action, meta); } catch {}
     }
     if (action === 'remove') {
-      try { await require('./autoApresentar').onParticipantsUpdate(sock, groupJid, rawParts, action, meta); } catch {}
+      try { await require('./autoApresentar').onParticipantsUpdate(sock, groupJid, parts, action, meta); } catch {}
     }
     const banidosSet = new Set((banidosFoba || []).map(b => {
       if (typeof b === 'string') return b;
@@ -314,7 +335,7 @@ async function handle(sock, event) {
       const actJid = p.jid || p.pnJid;
       if (banidosSet.has(p.jid) || banidosSet.has(p.pnJid) || banidosSet.has(actJid)) continue;
 
-      const number = p.number || jidNum(mentionJid);
+      const number = p.number || "";
       const displayName = await resolveDisplayName(sock, { number, mentionJid, part: p, meta });
 
       if (action === 'add') {
@@ -337,9 +358,24 @@ async function handle(sock, event) {
       // X9 profissional
       if (gs?.x9 && ['add', 'remove', 'promote', 'demote'].includes(action)) {
         try {
+          // `resolveDisplayName` devolve "Membro" como fallback de welcome.
+          // No X9, sem PN e sem nome real, é mais honesto dizer que WhatsApp
+          // não informou a identidade do que fingir reconhecer a pessoa.
+          const x9DisplayName = !number && displayName === 'Membro' ? '' : displayName;
+          const subject = { ...p, number, displayName: x9DisplayName };
+          const actorName = author ? await resolveDisplayName(sock, {
+            number: author.number, mentionJid: author.pnJid || author.jid, part: author, meta,
+          }) : '';
+          const x9Actor = author ? {
+            ...author,
+            displayName: !author.number && actorName === 'Membro' ? '' : actorName,
+          } : null;
+          const mentions = safeMentionJids(...[subject, x9Actor]
+            .filter(Boolean)
+            .map(person => person.pnJid || person.jid));
           await sock.sendMessage(groupJid, {
-            text: buildX9Text(action, number, displayName),
-            mentions: number ? [mentionJid] : [],
+            text: buildX9Text(action, subject, displayName, x9Actor),
+            mentions,
           }).catch(() => {});
         } catch {}
       }
@@ -350,7 +386,8 @@ async function handle(sock, event) {
 }
 
 async function onBotAdded(sock, groupJid, groupName, meta) {
-  const trialEnd = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+  const trialDays = 7;
+  const trialEnd = new Date(Date.now() + trialDays * 24 * 60 * 60 * 1000);
   let gs = await GroupSettings.findOne({ groupJid }).catch(() => null);
   if (!gs) {
     gs = await GroupSettings.create({
@@ -358,19 +395,37 @@ async function onBotAdded(sock, groupJid, groupName, meta) {
       groupName,
       isHosted:        false,
       trialExpiresAt:  trialEnd,
+      trialUsedAt:     new Date(),
       hostedUntil:     null,
       commandsUsedToday: 0,
-      welcomeEnabled:  true,
-      goodbyeEnabled:  true,
+      welcome:         false,
+      goodbye:         false,
+      welcomeEnabled:  false,
+      goodbyeEnabled:  false,
+      x9:              false,
+      botArrivalNotify: false,
     }).catch(() => null);
   } else {
-    gs.trialExpiresAt = trialEnd;
+    // Re-adicionar o bot não pode renovar um trial expirado nem criar tempo
+    // grátis depois de um aluguel. Só documentos antigos sem qualquer registo
+    // de trial recebem a primeira activação.
+    const hasTrialHistory = !!gs.trialUsedAt || !!gs.trialExpiresAt;
+    if (!gs.isHosted && !hasTrialHistory) {
+      gs.trialExpiresAt = trialEnd;
+      gs.trialUsedAt = new Date();
+    }
     gs.groupName = groupName;
     await gs.save().catch(() => {});
   }
 
+  // Por padrão o bot entra em silêncio. Isso evita que um replay/sincronização
+  // de participantes pareça uma nova entrada em todos os grupos.
+  if (gs?.botArrivalNotify !== true) return;
+  const trialActive = !gs.isHosted && gs.trialExpiresAt && new Date(gs.trialExpiresAt) > new Date();
+  // Num re-add sem trial novo não anunciamos uma oferta que já não existe.
+  if (!trialActive) return;
+
   const p = config.bot.prefix;
-  const trialDays = 3;
 
   const arrival =
     `🕸️ *${config.bot.name}* chegou!\n\n` +
@@ -391,9 +446,13 @@ async function onBotAdded(sock, groupJid, groupName, meta) {
 
   await sock.sendMessage(groupJid, { text: arrival }).catch(() => {});
 
+  // Relatório ao dono também não deve transformar LID interno em telefone.
   const admins = (meta?.participants || [])
     .filter(p => p.admin === 'admin' || p.admin === 'superadmin')
-    .map(p => String(p.id || '').split('@')[0]).join(', ');
+    .map((p) => {
+      const ident = normalizeParticipant(p);
+      return prettyName(p.notify || p.name || p.verifiedName) || ident?.number || 'Admin';
+    }).join(', ');
 
   await ownerPv(sock,
     `🆕 *Bot adicionado!*\n\n` +
@@ -408,7 +467,7 @@ async function onBotAdded(sock, groupJid, groupName, meta) {
 
 async function onJoin(sock, groupJid, participantJid, number, groupName, gs, meta, displayName) {
   if (gs?.welcomeEnabled === false) return;
-  const globalOn = await botConfigCache.get('welcome_enabled', true).catch(() => true);
+  const globalOn = await botConfigCache.get('welcome_enabled', false).catch(() => false);
   if (!globalOn) return;
 
   const memberName = (displayName && !looksLikePhone(displayName)) ? displayName : String(number || 'Membro');
@@ -430,24 +489,21 @@ async function onJoin(sock, groupJid, participantJid, number, groupName, gs, met
     themeName = t?.name || tn || 'dark';
   } catch {}
 
-  // Foto de perfil
+  // Foto de perfil: só a URL temporária que o WhatsApp já expõe; se a
+  // privacidade do membro negar acesso, o cartão usa o avatar com inicial.
   let ppUrl = null;
-  try { ppUrl = await sock.profilePictureUrl(participantJid, 'image').catch(() => null); } catch {}
+  try {
+    ppUrl = (await require('./visualIdentity').resolveVisualProfile(sock, participantJid, { metadata })).url || null;
+  } catch {}
 
-  // Caption limpa (sem molduras/vibe de tema) — custom do grupo mantém-se
-  const defaultMsg =
-    `🎉 *Bem-vindo(a)!*\n\n` +
-    `👤 @${number}\n` +
-    (memberName && memberName !== String(number) ? `✨ *${memberName}*\n` : '') +
-    `🏠 Entrou em *${groupName}*\n` +
-    `👥 Membro nº *${memberCount}*\n\n` +
-    `— ${config.bot.name}`;
-
-  const template = gs?.customWelcomeMsg || gs?.customWelcome || defaultMsg;
+  // Template universal, limpo e seguro. Se não houver PN resolvido,
+  // {user} torna-se o nome/fallback, nunca os dígitos de um @lid.
+  const template = gs?.customWelcomeMsg || gs?.customWelcome || DEFAULT_WELCOME_TEMPLATE;
   const caption = fillVars(template, {
     userName: memberName, groupName, botName: config.bot.name,
-    ownerName: config.owner.name, number,
+    ownerName: config.owner.name, number, memberCount,
   });
+  const mentions = safeMentionJids(participantJid);
 
   // Media custom do grupo
   const welcomeImg = gs?.welcomeWithMedia;
@@ -458,13 +514,13 @@ async function onJoin(sock, groupJid, participantJid, number, groupName, gs, met
         const buf = await mediaHandler.fetchBuffer(welcomeImg);
         if (buf?.length > 200) {
           await sock.sendMessage(groupJid, {
-            image: buf, caption, mentions: [participantJid],
+            image: buf, caption, mentions,
           }).catch(() => {});
           return;
         }
       } else {
         await sock.sendMessage(groupJid, {
-          image: { url: welcomeImg }, caption, mentions: [participantJid],
+          image: { url: welcomeImg }, caption, mentions,
         }).catch(() => {});
         return;
       }
@@ -487,7 +543,7 @@ async function onJoin(sock, groupJid, participantJid, number, groupName, gs, met
       if (mp4?.length > 2048) {
         await sock.sendMessage(groupJid, {
           video: mp4, gifPlayback: true, mimetype: 'video/mp4',
-          caption, mentions: [participantJid],
+          caption, mentions,
         }).catch(() => {});
         return;
       }
@@ -502,7 +558,7 @@ async function onJoin(sock, groupJid, participantJid, number, groupName, gs, met
         kind: 'welcome',
       });
       if (png?.length > 2048) {
-        await sock.sendMessage(groupJid, { image: png, caption, mentions: [participantJid] }).catch(() => {});
+        await sock.sendMessage(groupJid, { image: png, caption, mentions }).catch(() => {});
         return;
       }
     } catch (e) { console.warn('[Welcome GIF]', e.message); }
@@ -522,7 +578,7 @@ async function onJoin(sock, groupJid, participantJid, number, groupName, gs, met
       });
       if (png?.length > 2048) {
         await sock.sendMessage(groupJid, {
-          image: png, caption, mentions: [participantJid],
+          image: png, caption, mentions,
         }).catch(() => {});
         return;
       }
@@ -532,7 +588,7 @@ async function onJoin(sock, groupJid, participantJid, number, groupName, gs, met
   // Imagem clássica (foto + nome)
   const welcomeImageEnabled = await botConfigCache.get('welcome_image_enabled', true).catch(() => true);
 
-  if (welcomeImageEnabled !== false) {
+  if (gs?.welcomeWithPhoto !== false && welcomeImageEnabled !== false) {
     try {
       const imgBuf = await generateWelcomeImage({
         profilePicUrl: ppUrl,
@@ -544,7 +600,7 @@ async function onJoin(sock, groupJid, participantJid, number, groupName, gs, met
       });
       if (imgBuf) {
         await sock.sendMessage(groupJid, {
-          image: imgBuf, caption, mentions: [participantJid],
+          image: imgBuf, caption, mentions,
         });
         return;
       }
@@ -553,25 +609,25 @@ async function onJoin(sock, groupJid, participantJid, number, groupName, gs, met
     }
   }
 
-  await sock.sendMessage(groupJid, { text: caption, mentions: [participantJid] }).catch(() => {});
+  await sock.sendMessage(groupJid, { text: caption, mentions }).catch(() => {});
 }
 
 async function onLeave(sock, groupJid, participantJid, number, groupName, gs, displayName) {
   if (gs?.goodbyeEnabled === false) return;
   if (gs?.goodbye === false && gs?.goodbyeEnabled == null) return;
-  const globalOn = await botConfigCache.get('welcome_enabled', true).catch(() => true);
+  const globalOn = await botConfigCache.get('welcome_enabled', false).catch(() => false);
   if (!globalOn) return;
 
   const memberName = (displayName && !looksLikePhone(displayName)) ? displayName : String(number || 'Membro');
 
-  const defaultMsg = memberName && memberName !== String(number)
-    ? `👋 *${memberName}* (@${number}) saiu de *${groupName}*. Até à próxima!`
-    : `👋 @${number} saiu de *${groupName}*. Até à próxima!`;
-  const template = gs?.customGoodbyeMsg || gs?.customGoodbye || defaultMsg;
+  // O template de despedida usa a mesma fonte de identidade segura do
+  // welcome. Isto corrige a marcação com LID/falso telefone.
+  const template = gs?.customGoodbyeMsg || gs?.customGoodbye || DEFAULT_GOODBYE_TEMPLATE;
   const text = fillVars(template, {
     userName: memberName, groupName, botName: config.bot.name,
     ownerName: config.owner.name, number,
   });
+  const mentions = safeMentionJids(participantJid);
 
   const byeImg = gs?.goodbyeWithMedia;
   if (byeImg) {
@@ -581,25 +637,26 @@ async function onLeave(sock, groupJid, participantJid, number, groupName, gs, di
         const buf = await mediaHandler.fetchBuffer(byeImg);
         if (buf?.length > 200) {
           await sock.sendMessage(groupJid, {
-            image: buf, caption: text, mentions: [participantJid],
+            image: buf, caption: text, mentions,
           }).catch(() => {});
           return;
         }
       } else {
         await sock.sendMessage(groupJid, {
-          image: { url: byeImg }, caption: text, mentions: [participantJid],
+          image: { url: byeImg }, caption: text, mentions,
         }).catch(() => {});
         return;
       }
     } catch (e) { console.warn('[Goodbye Image]', e.message); }
   }
 
-  await sock.sendMessage(groupJid, { text, mentions: [participantJid] }).catch(() => {});
+  await sock.sendMessage(groupJid, { text, mentions }).catch(() => {});
 }
 
 module.exports = {
   handle,
   normalizeParticipant,
+  resolveParticipant,
   resolveDisplayName,
   buildX9Text,
   _welDebug: { _ultimoWel, _comboWel, WEL_JANELA_MS, WEL_COMBO_DEBOUNCE, _comboEncaixa, _comboDispara },

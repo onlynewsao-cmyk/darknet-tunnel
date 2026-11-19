@@ -49,9 +49,29 @@ function _libertar() {
 // cópia podia seguir um caminho diferente (print: duas respostas
 // contraditórias no mesmo minuto). Chave: chat|id|participante.
 const _vistos = new Set();
+// O mesmo evento pode chegar primeiro com @lid e depois com o PN alternativo.
+// A chave antiga usava o JID bruto e tratava isso como duas mensagens, fazendo
+// o PV responder duas vezes. Normalizamos apenas identificadores fornecidos
+// pelo WhatsApp; não inferimos nenhum número a partir de um LID sem alt.
+function _jidDaMensagem(principal = '', alternativo = '') {
+  const alt = String(alternativo || '');
+  const raw = /@(s\.whatsapp\.net|c\.us)$/i.test(alt) ? alt : String(principal || '');
+  const semDispositivo = raw.replace(/:\d+(?=@)/, '');
+  if (/@(s\.whatsapp\.net|c\.us)$/i.test(semDispositivo)) {
+    const numero = semDispositivo.split('@')[0].replace(/\D/g, '');
+    return numero ? `${numero}@s.whatsapp.net` : semDispositivo;
+  }
+  if (/@lid$/i.test(semDispositivo)) {
+    const lid = semDispositivo.split('@')[0].replace(/\D/g, '');
+    return lid ? `${lid}@lid` : semDispositivo;
+  }
+  return semDispositivo;
+}
 function _chaveMsg(msg) {
   const k = msg?.key || {};
-  return `${k.remoteJid || ''}|${k.id || ''}|${k.participant || ''}`;
+  const chat = _jidDaMensagem(k.remoteJid, k.remoteJidAlt || k.remoteJidPn);
+  const remetente = _jidDaMensagem(k.participant || k.remoteJid, k.participantAlt || k.participantPn || k.remoteJidAlt || k.remoteJidPn);
+  return `${chat}|${k.id || ''}|${remetente}`;
 }
 
 /**

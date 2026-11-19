@@ -6,7 +6,7 @@ let ok = 0, bad = 0;
 const C = (n, c, x = '') => { if (c) { ok++; console.log('  ✅', n); } else { bad++; console.log('  ❌', n, x); } };
 (async () => {
   console.log('test-call-voip');
-  C('lib ≥1.1.3 instalada', require('@systemzero/baileys/package.json').version >= '1.1.3');
+  C('lib ≥1.1.3 instalada', require('baileys-v6/package.json').version >= '1.1.3');
   C('opusscript instalado', (() => { try { require.resolve('opusscript'); return true; } catch { return false; } })());
   const ev = new EventEmitter(); const played = []; let ended = null, stopped = 0, groupStarts = 0;
   const sock = { ev, calls: {}, user: { id: '1@s.whatsapp.net' },

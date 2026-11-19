@@ -1,12 +1,12 @@
 /**
  * ╔══════════════════════════════════════════════════════════════╗
  * ║   DARK BOT v7.43 — CHAMADAS DE VOZ REAIS (VoIP)              ║
- * ║   @systemzero/baileys ≥ 1.1.3: sock.startCall / playCallAudio ║
+ * ║   Adaptador VoIP opcional: só activa se o socket o expuser ║
  * ╚══════════════════════════════════════════════════════════════╝
  *
  * O que a AURA precisava para fazer chamadas a sério:
- *   • lib com WebRTC/SRTP: @systemzero/baileys 1.1.4 (o bot estava em
- *     1.1.1, que só tinha rejectCall) — activa sozinha `setupVoip(sock)`.
+ *   • Estes métodos não pertencem ao Baileys oficial v6; o adaptador só
+ *     actua se um socket VoIP opcional, explicitamente configurado, os expuser.
  *   • opusscript (codec Opus) e ffmpeg (mp3 → PCM s16le 16 kHz mono).
  *
  * API real (lib 1.1.4):
@@ -137,7 +137,7 @@ function _vigiarFim(sock, chatJid, callId) {
  * @returns {{ok:boolean, callId?:string, motivo?:string, grupo?:boolean}}
  */
 async function ligar(sock, chatJid, { esperar = 35000 } = {}) {
-  if (!suportado(sock)) return { ok: false, motivo: 'lib sem VoIP (precisa @systemzero/baileys ≥ 1.1.3)' };
+  if (!suportado(sock)) return { ok: false, motivo: 'lib sem VoIP: requer o adaptador opcional de chamadas configurado' };
   if (activas.has(chatJid)) return { ok: true, callId: activas.get(chatJid).callId, jaEstava: true };
   if (activas.size >= 1) return { ok: false, motivo: 'já estou noutra chamada' };
   const agora = Date.now();

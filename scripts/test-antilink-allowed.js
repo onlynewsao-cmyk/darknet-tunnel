@@ -3,11 +3,11 @@
 const assert = require('assert/strict');
 const Module = require('module');
 const orig = Module.prototype.require;
-let gs, globalOn = false, stats = [];
+let gs, globalOn = false, stats = [], premiumUser = null;
 Module.prototype.require = function (id) {
   if (id === '../config') return { owner: { number: '244900000001' } };
   if (id.endsWith('models/GroupSettings')) return { updateOne: async (...args) => { stats.push(args); } };
-  if (id === './hotCache') return { getGroupSettings: async () => gs, getUser: async () => null };
+  if (id === './hotCache') return { getGroupSettings: async () => gs, getUser: async () => premiumUser };
   if (id === './botConfigCache') return { get: async () => globalOn };
   if (id === './prefixEngine') return { detect: async t => t.startsWith('!') ? { command: 'play' } : null };
   if (id === './liveBroadcaster') return { antilinkAction: () => {} };
@@ -20,8 +20,8 @@ function ok(name, cond) { assert.ok(cond, name); console.log('  ✅', name); n++
 const OWNER = '244900000001', USER = '244900000003', BOT = '244900000002';
 let seq = 0;
 function fixture(overrides = {}) {
-  gs = { antilink: true, antilinkMode: 'all_links', antilinkAction: 'warn', antilinkMaxWarns: 2, antilinkWhitelist: [], ...overrides };
-  stats = []; globalOn = false;
+  gs = { antilink: true, antilinkMode: 'all_links', antilinkAction: 'warn', antilinkMaxWarns: 2, antilinkWhitelist: [], trialExpiresAt: new Date(Date.now() + 60_000), ...overrides };
+  stats = []; globalOn = false; premiumUser = null;
   const jid = `group-${++seq}@g.us`, sent = [], kicks = [];
   const sock = {
     user: { id: BOT + ':1@s.whatsapp.net' },
@@ -97,6 +97,14 @@ function fixture(overrides = {}) {
   await al.check(f.sock, f.msg('https://evil.org', { participant: OWNER + '@s.whatsapp.net' }));
   await al.check(f.sock, f.msg('!play https://evil.org'));
   ok('imunidade do bot/dono/comando preservada', f.sent.length === 0);
+  f = fixture({ antilinkVipImmune: true });
+  premiumUser = { role: 'premium', premiumUntil: new Date(Date.now() - 60_000) };
+  await al.check(f.sock, f.msg('https://evil.org'));
+  ok('VIP expirado não recebe imunidade anti-link', f.sent.some(c => c.delete));
+  f = fixture({ antilinkVipImmune: true });
+  premiumUser = { role: 'premium', premiumUntil: new Date(Date.now() + 60_000) };
+  await al.check(f.sock, f.msg('https://evil.org'));
+  ok('VIP activo recebe imunidade anti-link quando configurada', f.sent.length === 0);
   f = fixture(); f.sock.groupMetadata = async () => ({ participants: [{ id: BOT + '@s.whatsapp.net' }, { id: USER + '@s.whatsapp.net' }] });
   await al.check(f.sock, f.msg('https://evil.org'));
   ok('bot sem admin não apaga nem avisa remoção', f.sent.length === 0);

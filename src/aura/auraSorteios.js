@@ -545,7 +545,7 @@ async function _buscarVotos(sock, canalJid, pollId) {
     const voter = m.key?.participant || m.key?.remoteJid || '';
     let selectedOptions = null;
     try {
-      const { decryptPollVote } = require('@systemzero/baileys');
+      const { decryptPollVote } = require('baileys-v6');
       const vote = decryptPollVote(
         { encPayload: pu.vote?.encPayload, encIv: pu.vote?.encIv },
         { pollCreatorJid: sock?.user?.id || '', pollMsgId: pollId, pollEncKey: info.secret, voterJid: voter }

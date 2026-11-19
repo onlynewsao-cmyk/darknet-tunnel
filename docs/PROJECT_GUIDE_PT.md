@@ -41,7 +41,7 @@ src/index.js
   ├─ WhatsApp singleton (getBot) + recuperação da sessão
   └─ scheduler, agendas, AURA proactiva e tarefas de domínio
 
-WhatsApp (@systemzero/baileys)
+WhatsApp (baileys-v6 (alias oficial @whiskeysockets/baileys 6.7.24))
   └─ messages.upsert → src/bot/messageRouter.js
        ├─ normalização de JID/LID/PN, filtros e deduplicação
        ├─ messageListener (cache, actividade, anti-delete/spy opcionais)

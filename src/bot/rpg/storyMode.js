@@ -1655,7 +1655,7 @@ async function enviarBotoes(sock, msg, ctx, corpo, botoes) {
 // Original enviarBotoes (fallback)
 async function _enviarBotoesOriginal(sock, msg, ctx, corpo, botoes) {
   try {
-    const { generateWAMessageFromContent, proto } = require('@systemzero/baileys');
+    const { generateWAMessageFromContent, proto } = require('baileys-v6');
     const m = generateWAMessageFromContent(ctx.remoteJid, {
       interactiveMessage: proto.Message.InteractiveMessage.fromObject({
         body: { text: corpo },
@@ -1687,7 +1687,7 @@ async function enviarLista(sock, msg, ctx, titulo, rows, corpo) {
 // Original enviarLista (fallback)
 async function _enviarListaOriginal(sock, msg, ctx, titulo, rows, corpo) {
   try {
-    const { generateWAMessageFromContent, proto } = require('@systemzero/baileys');
+    const { generateWAMessageFromContent, proto } = require('baileys-v6');
     const m = generateWAMessageFromContent(ctx.remoteJid, {
       interactiveMessage: proto.Message.InteractiveMessage.fromObject({
         body: { text: corpo },
@@ -1718,7 +1718,7 @@ async function _enviarListaOriginal(sock, msg, ctx, titulo, rows, corpo) {
 
 async function enviarCarrossel(sock, msg, ctx, cards) {
   try {
-    const { generateWAMessageFromContent, proto, prepareWAMessageMedia } = require('@systemzero/baileys');
+    const { generateWAMessageFromContent, proto, prepareWAMessageMedia } = require('baileys-v6');
     const carouselCards = [];
     for (const card of cards) {
       let headerObj = { title: card.title, hasMediaAttachment: false };

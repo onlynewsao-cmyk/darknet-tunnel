@@ -60,7 +60,7 @@ async function rpgReply(sock, msg, ctx, title, lines) {
 
 async function rpgBotoes(sock, msg, ctx, corpo, botoes) {
   try {
-    const { generateWAMessageFromContent, proto } = require('@systemzero/baileys');
+    const { generateWAMessageFromContent, proto } = require('baileys-v6');
     const corpoRPG = rpgRender('', [corpo]);
     const m = generateWAMessageFromContent(ctx.remoteJid, {
       interactiveMessage: proto.Message.InteractiveMessage.fromObject({
@@ -95,7 +95,7 @@ async function rpgLista(sock, msg, ctx, titulo, rows, corpo) {
     const sections = isSections
       ? rows
       : [{ title: titulo, rows }];
-    const { generateWAMessageFromContent, proto } = require('@systemzero/baileys');
+    const { generateWAMessageFromContent, proto } = require('baileys-v6');
     const corpoRPG = rpgRender('', [corpo]);
     const m = generateWAMessageFromContent(ctx.remoteJid, {
       interactiveMessage: proto.Message.InteractiveMessage.fromObject({

@@ -17,6 +17,7 @@ const pendDocs = [
 const hostedDocs = [
   { groupJid: 'GA@g.us', groupName: 'GA', isHosted: true, hostedUntil: new Date(NOW + 30 * D) },
   { groupJid: 'GB@g.us', groupName: 'GB', isHosted: true, hostedUntil: new Date(NOW + 2 * D) },
+  { groupJid: 'GP@g.us', groupName: 'GP', isHosted: true, hostedUntil: null },
   { groupJid: 'GC@g.us', groupName: 'GC', isHosted: true, hostedUntil: new Date(NOW - 1 * D) },
 ];
 const got = {};
@@ -56,7 +57,7 @@ const cfg = { bot: { prefix: '!' }, owner: { number: '244900000000' } };
   check('vendas soma BRL das notes', /R\$ 20/.test(out));
   check('vendas conta aprovados + por plano', /2/.test(out) && /mensal.*1/.test(out) && /semanal.*1/.test(out));
   check('vendas este mês só o recente', /Este mês: \*1\*/.test(out));
-  check('vendas ativos/expirando/trials', /ativos: \*2\*/.test(out) && /expirar ≤3d/.test(out) && /Trials ativos: \*3\*/.test(out), out.slice(-120));
+  check('vendas inclui aluguel permanente nos ativos/expirando/trials', /ativos: \*3\*/.test(out) && /expirar ≤3d/.test(out) && /Trials ativos: \*3\*/.test(out), out.slice(-120));
   check('vendas pendentes pagos a aguardar', /Pendentes: \*2\*/.test(out) && /1 pagos a aguardar/.test(out));
   // vendas bloqueia não-dono
   out = '';

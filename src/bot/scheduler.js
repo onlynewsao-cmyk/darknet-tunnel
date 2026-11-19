@@ -4,6 +4,7 @@ const GroupMemberActivity = require('../database/models/GroupMemberActivity');
 const mediaHandler = require('./mediaHandler');
 const { getBot } = require('./whatsapp');
 const ai = require('./ai');
+const { hasActiveEntitlement } = require('./groupEntitlement');
 
 let interval = null;
 let lastInactivitySweep = 0;
@@ -59,7 +60,7 @@ async function checkGroupSchedules(nowOverride = null) {
   }).lean().catch(() => []);
   let acted = 0;
   for (const gs of grupos || []) {
-    if (!gs?.groupJid?.endsWith('@g.us')) continue;
+    if (!gs?.groupJid?.endsWith('@g.us') || !hasActiveEntitlement(gs)) continue;
     try {
       const exec = gs.horariosExecuted || {};
       if (gs.aberturaHora && gs.aberturaHora === hm && exec.abertura !== hoje) {
@@ -85,8 +86,22 @@ async function checkGroupSchedules(nowOverride = null) {
 
 async function send(item, recurring = false) {
   const bot = getBot();
-  if (!bot.sock || bot.connectionStatus !== 'connected') return;
+  if (!bot.sock || bot.connectionStatus !== 'connected') return false;
   try {
+    // Agenda genérica também pode apontar para um grupo. Uma entrega única
+    // pendente não deve ressuscitar depois da expiração do serviço; agenda
+    // recorrente avança o ciclo sem publicar e volta a ser elegível apenas
+    // se o grupo for reactivado antes da próxima ocorrência.
+    if (String(item.targetJid || '').endsWith('@g.us')) {
+      const gs = await GroupSettings.findOne({ groupJid: item.targetJid }).lean().catch(() => null);
+      if (!hasActiveEntitlement(gs)) {
+        item.lastSentAt = new Date();
+        if (!recurring) item.sent = true;
+        await item.save().catch(() => {});
+        bot.log?.('info', `📅 Agendamento não enviado: grupo sem serviço (${item.targetJid})`);
+        return false;
+      }
+    }
     if (item.mediaUrl && item.mediaType) {
       const buf = await mediaHandler.fetchBuffer(item.mediaUrl);
       const payload = item.mediaType === 'image' || item.mediaType === 'gif' ? { image: buf, caption: item.message }
@@ -124,6 +139,7 @@ async function runDarkSideGroupAutomation() {
 
   const groups = await GroupSettings.find({ $or: [{ inactiveEnabled: true }, { idleNudgeEnabled: true }] }).limit(250);
   for (const gs of groups) {
+    if (!hasActiveEntitlement(gs)) continue;
     try {
       await maybeNudgeIdleGroup(sock, gs);
       await maybeHandleInactiveMembers(sock, gs);
